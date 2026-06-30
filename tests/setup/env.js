@@ -1,0 +1,12 @@
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.DB_HOST = process.env.DB_HOST || 'localhost';
+process.env.DB_PORT = process.env.DB_PORT || '3306';
+process.env.DB_USER = process.env.DB_USER || 'root';
+process.env.DB_PASSWORD = process.env.DB_PASSWORD || '';
+process.env.DB_NAME = process.env.DB_NAME || 'autoparts_test';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-12345';
+process.env.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
+process.env.BCRYPT_SALT_ROUNDS = process.env.BCRYPT_SALT_ROUNDS || '4';
+process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES = process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES || '30';
+process.env.PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
+process.env.PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || '';
