@@ -48,6 +48,7 @@ describe('products service', () => {
         vehicleMake: 'Toyota',
         vehicleModel: 'Camry',
         vehicleYear: 2010,
+        condition: 'new',
         page: 2,
         limit: 5
       });
@@ -59,6 +60,7 @@ describe('products service', () => {
         vehicleYear: 2010,
         category: null,
         partNumber: null,
+        condition: 'new',
         minPriceKobo: null,
         maxPriceKobo: null,
         location: null,

@@ -17,6 +17,7 @@ describe('products validator', () => {
         vehicleYear: '2010',
         category: 'brake-system',
         partNumber: 'FBP',
+        condition: 'new',
         minPriceKobo: '1000000',
         maxPriceKobo: '3000000',
         location: 'Lagos',
@@ -35,6 +36,7 @@ describe('products validator', () => {
       vehicleYear: 2010,
       category: 'brake-system',
       partNumber: 'FBP',
+      condition: 'new',
       minPriceKobo: 1000000,
       maxPriceKobo: 3000000,
       location: 'Lagos',
@@ -57,6 +59,19 @@ describe('products validator', () => {
 
     expect(error).toBeDefined();
     expect(error.message).toContain('maxPriceKobo');
+  });
+
+  it('rejects an invalid product condition filter', () => {
+    const { error } = listProductsSchema.validate({
+      body: {},
+      params: {},
+      query: {
+        condition: 'brand-new'
+      }
+    });
+
+    expect(error).toBeDefined();
+    expect(error.message).toContain('"query.condition"');
   });
 
   it('rejects an invalid product id parameter', () => {

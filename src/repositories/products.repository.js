@@ -69,6 +69,11 @@ function buildProductFilterQuery(filters) {
     params.push(`%${filters.partNumber}%`);
   }
 
+  if (filters.condition) {
+    whereClauses.push('p.`condition` = ?');
+    params.push(filters.condition);
+  }
+
   if (filters.category !== null && filters.category !== undefined) {
     if (typeof filters.category === 'number') {
       whereClauses.push('c.id = ?');

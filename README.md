@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow. This repository currently implements `AGENTS.md` Milestones A, B, and C: buyer authentication, catalogue browsing, cart management, and checkout order creation.
+Backend API for the AutoParts Marketplace buyer flow. This repository currently implements `AGENTS.md` Milestones A, B, C, and D: buyer authentication, catalogue browsing, cart management, checkout order creation, and Paystack-backed payment initialization and verification.
 
 ## Implemented Milestone
 
@@ -12,9 +12,11 @@ Backend API for the AutoParts Marketplace buyer flow. This repository currently 
 - Public catalogue browsing with filtering, pagination, and single-product detail
 - Authenticated buyer cart management with quantity updates and removal
 - Buyer checkout order creation with saved-or-inline delivery address support
+- Paystack payment initialization for paystack, bank transfer, and USSD checkout methods
+- Paystack payment verification via callback and webhook, including order confirmation on successful verification
 - Joi request validation, auth rate limiting, central error handling
 - MySQL migration and seed scaffolding for buyer-flow tables built so far
-- Unit and integration test suites for auth, catalogue browsing, cart, and checkout
+- Unit and integration test suites for auth, catalogue browsing, cart, checkout, and payments
 
 ## Project Structure
 
@@ -84,6 +86,12 @@ npm run lint
 
 - `POST /api/v1/orders`
 
+### Payments
+
+- `POST /api/v1/payments/initialize`
+- `GET /api/v1/payments/callback`
+- `POST /api/v1/payments/webhook`
+
 ### Sample Requests
 
 Register with email:
@@ -135,7 +143,7 @@ Reset password:
 Browse products:
 
 ```text
-GET /api/v1/products?partName=brake%20pad&vehicleMake=Toyota&vehicleModel=Camry&vehicleYear=2010&category=brake-system&minPriceKobo=1000000&maxPriceKobo=3000000&location=Lagos&sellerRating=4.5&sellerBusinessName=Prime&page=1&limit=10
+GET /api/v1/products?partName=brake%20pad&vehicleMake=Toyota&vehicleModel=Camry&vehicleYear=2010&category=brake-system&condition=new&minPriceKobo=1000000&maxPriceKobo=3000000&location=Lagos&sellerRating=4.5&sellerBusinessName=Prime&page=1&limit=10
 ```
 
 Fetch a single product:
@@ -185,6 +193,30 @@ Create an order with an existing saved address:
 }
 ```
 
+Initialize a payment:
+
+```json
+{
+  "orderId": 1,
+  "callbackUrl": "https://example.com/payments/callback"
+}
+```
+
+Initialize a payment for a phone-only buyer:
+
+```json
+{
+  "orderId": 1,
+  "email": "buyer@example.com"
+}
+```
+
+Verify a payment callback:
+
+```text
+GET /api/v1/payments/callback?reference=APT-1-1234567890-ABCDEF12
+```
+
 ## Auth Notes
 
 - Login accepts `identifier` and `password`. `identifier` may be an email address or a Nigerian phone number.
@@ -198,10 +230,13 @@ Create an order with an existing saved address:
 - Checkout currently supports `paystack`, `bank_transfer`, and `ussd` as payment-method selections.
 - For Milestone C, delivery fees are stored as `0` kobo until logistics pricing is introduced.
 - `POST /api/v1/orders` accepts either a saved `deliveryAddressId` or an inline `deliveryAddress` object, and stores an address snapshot on the order.
+- `POST /api/v1/payments/initialize` uses the authenticated buyer email by default. If the buyer registered without an email, the request can include an `email` field for Paystack initialization.
+- Successful Paystack verification moves the order from `pending_payment` to `confirmed`.
+- The webhook endpoint expects the `x-paystack-signature` header and stores only sanitized Paystack references/status metadata. No card data is stored.
 
 ## Database
 
 - Money values are stored in kobo.
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
 - Run `npm run seed` to load the sample catalogue data for local browsing.
-- The current migration set creates the auth, catalogue, cart, buyer address, and order tables needed for Milestones A through C.
+- The current migration set creates the auth, catalogue, cart, buyer address, order, and payment tables needed for Milestones A through D.

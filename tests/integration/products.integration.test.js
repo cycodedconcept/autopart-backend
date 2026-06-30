@@ -25,6 +25,7 @@ describe('Products API integration', () => {
         vehicleMake: 'Toyota',
         vehicleModel: 'Camry',
         vehicleYear: 2010,
+        condition: 'new',
         sellerRating: 4.5,
         page: 1,
         limit: 2
@@ -41,6 +42,20 @@ describe('Products API integration', () => {
       total: 1,
       totalPages: 1
     });
+  });
+
+  it('filters products by condition', async () => {
+    const response = await request(app)
+      .get('/api/v1/products')
+      .query({
+        condition: 'refurbished'
+      });
+
+    expect(response.status).to.equal(200);
+    expect(response.body.success).to.equal(true);
+    expect(response.body.data.products).to.have.length(1);
+    expect(response.body.data.products[0].id).to.equal(4004);
+    expect(response.body.data.products[0].condition).to.equal('refurbished');
   });
 
   it('returns a single product detail with photos and compatibility', async () => {

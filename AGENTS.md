@@ -11,16 +11,17 @@
 - [x] Milestone A — Auth & accounts: buyer signup, login (JWT), forgot password, reset password, `GET /me`, auth middleware
 - [x] Milestone B — Catalogue browsing: catalogue schema + seeds, `GET /api/v1/products` with filtering and pagination, `GET /api/v1/products/:id`
 - [x] Milestone C — Cart & checkout: cart CRUD, checkout address selection, `POST /api/v1/orders`, totals in kobo, initial `pending_payment` orders
+- [x] Milestone D — Payment: Paystack transaction initialization, webhook/callback verification, bank transfer/USSD channel support, sanitized payment storage, and `pending_payment` -> `confirmed` transition on verified success
 
-**NEXT TASK → Milestone D — Payment (Section 6).**
+**NEXT TASK → Milestone E — Order tracking & history (Section 6).**
 Build, in this order:
-1. Integrate Paystack (primary): initialise transaction + verify via webhook/callback; support bank transfer / USSD channels.
-2. Never store card data. Store only Paystack references and payment status.
-3. On successful verification, move order status from `pending_payment` to `confirmed`.
+1. Add buyer order status lifecycle support: `pending_payment -> confirmed -> picked_up -> in_transit -> delivered` with `cancelled` and `disputed` available.
+2. Expose buyer endpoints to read current order status and status history.
+3. Add order history listing, single-order detail, and a receipt response (JSON/HTML for now).
 
-For each unit of work follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after Milestone D so I can review before tracking/history work.**
+For each unit of work follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after Milestone E planning/implementation points are ready for review.**
 
-**After this:** Milestone D (payment) -> E (order tracking & history).
+**After this:** Milestone E (order tracking & history).
 
 ---
 

@@ -102,6 +102,7 @@ function createProductsService({ productsRepository }) {
       vehicleYear: query.vehicleYear ?? null,
       category: query.category ?? null,
       partNumber: query.partNumber || null,
+      condition: query.condition || null,
       minPriceKobo: query.minPriceKobo ?? null,
       maxPriceKobo: query.maxPriceKobo ?? null,
       location: query.location || null,

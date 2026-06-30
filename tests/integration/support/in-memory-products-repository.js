@@ -18,6 +18,10 @@ function matchesProductFilters(product, filters) {
     return false;
   }
 
+  if (filters.condition && product.condition !== filters.condition) {
+    return false;
+  }
+
   if (filters.category !== null && filters.category !== undefined) {
     if (typeof filters.category === 'number' && product.categoryId !== filters.category) {
       return false;

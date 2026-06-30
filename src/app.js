@@ -7,24 +7,29 @@ const { createProductsRepository } = require('./repositories/products.repository
 const { createBuyerAddressesRepository } = require('./repositories/buyer-addresses.repository');
 const { createCartsRepository } = require('./repositories/carts.repository');
 const { createOrdersRepository } = require('./repositories/orders.repository');
+const { createPaymentsRepository } = require('./repositories/payments.repository');
 const { createAuthService } = require('./services/auth.service');
 const { createCartService } = require('./services/cart.service');
 const { createOrdersService } = require('./services/orders.service');
+const { createPaymentsService } = require('./services/payments.service');
 const { createProductsService } = require('./services/products.service');
 const { createAuthController } = require('./controllers/auth.controller');
 const { createCartController } = require('./controllers/cart.controller');
 const { createMeController } = require('./controllers/me.controller');
 const { createOrdersController } = require('./controllers/orders.controller');
+const { createPaymentsController } = require('./controllers/payments.controller');
 const { createProductsController } = require('./controllers/products.controller');
 const { createAuthRouter } = require('./routes/auth.routes');
 const { createCartRouter } = require('./routes/cart.routes');
 const { createMeRouter } = require('./routes/me.routes');
 const { createOrdersRouter } = require('./routes/orders.routes');
+const { createPaymentsRouter } = require('./routes/payments.routes');
 const { createProductsRouter } = require('./routes/products.routes');
 const { createAuthMiddleware } = require('./middleware/auth.middleware');
 const { createErrorMiddleware } = require('./middleware/error.middleware');
 const env = require('./config/env');
 const jwtUtils = require('./utils/jwt');
+const { createPaystackClient } = require('./utils/paystack');
 const passwordUtils = require('./utils/password');
 const passwordResetUtils = require('./utils/password-reset');
 
@@ -53,12 +58,20 @@ function createDependencies(overrides = {}) {
   const ordersRepository = overrides.ordersRepository || createOrdersRepository({
     db: resolveDb()
   });
+  const paymentsRepository = overrides.paymentsRepository || createPaymentsRepository({
+    db: resolveDb()
+  });
+  const appEnv = overrides.env || env;
+  const paystackClient = overrides.paystackClient || createPaystackClient({
+    secretKey: appEnv.PAYSTACK_SECRET_KEY,
+    logger: appLogger
+  });
   const authService = overrides.authService || createAuthService({
     usersRepository,
     jwtUtils: overrides.jwtUtils || jwtUtils,
     passwordUtils: overrides.passwordUtils || passwordUtils,
     passwordResetUtils: overrides.passwordResetUtils || passwordResetUtils,
-    env: overrides.env || env
+    env: appEnv
   });
   const cartService = overrides.cartService || createCartService({
     cartsRepository,
@@ -72,12 +85,17 @@ function createDependencies(overrides = {}) {
   const productsService = overrides.productsService || createProductsService({
     productsRepository
   });
+  const paymentsService = overrides.paymentsService || createPaymentsService({
+    paymentsRepository,
+    paystackClient
+  });
 
   return {
     authController: overrides.authController || createAuthController({ authService }),
     cartController: overrides.cartController || createCartController({ cartService }),
     meController: overrides.meController || createMeController(),
     ordersController: overrides.ordersController || createOrdersController({ ordersService }),
+    paymentsController: overrides.paymentsController || createPaymentsController({ paymentsService }),
     productsController: overrides.productsController || createProductsController({ productsService }),
     authMiddleware: overrides.authMiddleware || createAuthMiddleware({ authService }),
     errorMiddleware: overrides.errorMiddleware || createErrorMiddleware({ logger: appLogger }),
@@ -89,7 +107,11 @@ function createApp(overrides = {}) {
   const dependencies = createDependencies(overrides);
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({
+    verify: (req, _res, buffer) => {
+      req.rawBody = buffer && buffer.length ? buffer.toString('utf8') : '';
+    }
+  }));
   app.use(morgan('dev', { stream: dependencies.logger.stream }));
 
   app.get('/health', (req, res) => {
@@ -124,6 +146,11 @@ function createApp(overrides = {}) {
   app.use('/api/v1/orders', createOrdersRouter({
     authMiddleware: dependencies.authMiddleware,
     ordersController: dependencies.ordersController
+  }));
+
+  app.use('/api/v1/payments', createPaymentsRouter({
+    authMiddleware: dependencies.authMiddleware,
+    paymentsController: dependencies.paymentsController
   }));
 
   app.use((req, res) => {
