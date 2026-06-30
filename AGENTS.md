@@ -10,16 +10,17 @@
 - [x] Project skeleton (Section 3 layout)
 - [x] Milestone A — Auth & accounts: buyer signup, login (JWT), forgot password, reset password, `GET /me`, auth middleware
 - [x] Milestone B — Catalogue browsing: catalogue schema + seeds, `GET /api/v1/products` with filtering and pagination, `GET /api/v1/products/:id`
+- [x] Milestone C — Cart & checkout: cart CRUD, checkout address selection, `POST /api/v1/orders`, totals in kobo, initial `pending_payment` orders
 
-**NEXT TASK → Milestone C — Cart & checkout (Section 6).**
+**NEXT TASK → Milestone D — Payment (Section 6).**
 Build, in this order:
-1. Cart: `GET /api/v1/cart`, `POST /api/v1/cart/items`, `PATCH /api/v1/cart/items/:id`, `DELETE /api/v1/cart/items/:id`.
-2. Checkout: review order, select delivery address, choose payment method, create an order.
-3. Order creation persists `orders` + `order_items`, captures delivery address, computes totals in kobo. Initial status = `pending_payment`.
+1. Integrate Paystack (primary): initialise transaction + verify via webhook/callback; support bank transfer / USSD channels.
+2. Never store card data. Store only Paystack references and payment status.
+3. On successful verification, move order status from `pending_payment` to `confirmed`.
 
-For each unit of work follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after Milestone C so I can review before payment work.**
+For each unit of work follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after Milestone D so I can review before tracking/history work.**
 
-**After this:** Milestone C (cart & checkout) -> D (payment) -> E (order tracking & history).
+**After this:** Milestone D (payment) -> E (order tracking & history).
 
 ---
 
@@ -116,18 +117,18 @@ Ground every endpoint in PRD section 4.1 (Buyer Features) and 5.1 (Buyer Purchas
 ### Milestone A — Auth & accounts  [DONE]
 Buyer registration (email or NG phone + password), login (JWT), forgot/reset password, `GET /me`, auth middleware.
 
-### Milestone B — Catalogue browsing  [NEXT]
+### Milestone B — Catalogue browsing  [DONE]
 1. List products with filtering: part name, vehicle make/model/year, category, part number; filter by price range, location, seller rating, seller business name.
 2. Pagination on all list endpoints (page + limit, return total count).
 3. View a single product's full detail: photos, condition (new/used/refurbished), compatibility, seller info, price, stock.
    - Product/seller data is read-only here. Mark seller references `// SELLER-STUB`. Seed sample products.
 
-### Milestone C — Cart & checkout
+### Milestone C — Cart & checkout  [DONE]
 4. Cart: add item, update quantity, remove item, view cart. Cart is per authenticated buyer.
 5. Checkout: review order, select delivery address, choose payment method, create an order.
 6. Order creation persists `orders` + `order_items`, captures delivery address, computes totals in kobo. Initial status = `pending_payment`.
 
-### Milestone D — Payment
+### Milestone D — Payment  [NEXT]
 7. Integrate Paystack (primary): initialise transaction + verify via webhook/callback; support bank transfer / USSD channels.
 8. **Never store card data.** Store only Paystack references and status. On verification, move order status to `confirmed`. Use TEST keys from `.env`.
 

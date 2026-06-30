@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow. This repository currently implements `AGENTS.md` Milestones A and B: buyer authentication, profile access, and catalogue browsing.
+Backend API for the AutoParts Marketplace buyer flow. This repository currently implements `AGENTS.md` Milestones A, B, and C: buyer authentication, catalogue browsing, cart management, and checkout order creation.
 
 ## Implemented Milestone
 
@@ -10,9 +10,11 @@ Backend API for the AutoParts Marketplace buyer flow. This repository currently 
 - Auth-protected `GET /api/v1/me`
 - Product catalogue schema and seed data for categories, products, images, compatibility, and vehicle taxonomy
 - Public catalogue browsing with filtering, pagination, and single-product detail
+- Authenticated buyer cart management with quantity updates and removal
+- Buyer checkout order creation with saved-or-inline delivery address support
 - Joi request validation, auth rate limiting, central error handling
 - MySQL migration and seed scaffolding for buyer-flow tables built so far
-- Unit and integration test suites for auth and catalogue browsing
+- Unit and integration test suites for auth, catalogue browsing, cart, and checkout
 
 ## Project Structure
 
@@ -70,6 +72,17 @@ npm run lint
 
 - `GET /api/v1/products`
 - `GET /api/v1/products/:id`
+
+### Cart
+
+- `GET /api/v1/cart`
+- `POST /api/v1/cart/items`
+- `PATCH /api/v1/cart/items/:id`
+- `DELETE /api/v1/cart/items/:id`
+
+### Orders
+
+- `POST /api/v1/orders`
 
 ### Sample Requests
 
@@ -131,6 +144,47 @@ Fetch a single product:
 GET /api/v1/products/4001
 ```
 
+Add a cart item:
+
+```json
+{
+  "productId": 4001,
+  "quantity": 2
+}
+```
+
+Update a cart item:
+
+```json
+{
+  "quantity": 3
+}
+```
+
+Create an order with a new delivery address:
+
+```json
+{
+  "paymentMethod": "paystack",
+  "deliveryAddress": {
+    "label": "Workshop",
+    "street": "12 Adeola Odeku Street",
+    "city": "Ikeja",
+    "state": "Lagos",
+    "phone": "08012345678"
+  }
+}
+```
+
+Create an order with an existing saved address:
+
+```json
+{
+  "paymentMethod": "bank_transfer",
+  "deliveryAddressId": 3
+}
+```
+
 ## Auth Notes
 
 - Login accepts `identifier` and `password`. `identifier` may be an email address or a Nigerian phone number.
@@ -140,10 +194,14 @@ GET /api/v1/products/4001
 - Catalogue list responses return `{ products, pagination }`.
 - Product price fields and price filters use kobo integers, for example `minPriceKobo=1000000`.
 - The `sellerRating` catalogue filter is treated as a minimum public seller rating threshold.
+- Cart responses return `{ id, items, summary }`.
+- Checkout currently supports `paystack`, `bank_transfer`, and `ussd` as payment-method selections.
+- For Milestone C, delivery fees are stored as `0` kobo until logistics pricing is introduced.
+- `POST /api/v1/orders` accepts either a saved `deliveryAddressId` or an inline `deliveryAddress` object, and stores an address snapshot on the order.
 
 ## Database
 
 - Money values are stored in kobo.
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
 - Run `npm run seed` to load the sample catalogue data for local browsing.
-- The current migration set creates the auth and catalogue tables needed for Milestones A and B.
+- The current migration set creates the auth, catalogue, cart, buyer address, and order tables needed for Milestones A through C.

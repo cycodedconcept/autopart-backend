@@ -2,19 +2,47 @@ const USER_ROLES = {
   BUYER: 'buyer'
 };
 
+const ORDER_STATUSES = {
+  CANCELLED: 'cancelled',
+  CONFIRMED: 'confirmed',
+  DELIVERED: 'delivered',
+  DISPUTED: 'disputed',
+  IN_TRANSIT: 'in_transit',
+  PENDING_PAYMENT: 'pending_payment',
+  PICKED_UP: 'picked_up'
+};
+
+const PAYMENT_METHODS = {
+  BANK_TRANSFER: 'bank_transfer',
+  PAYSTACK: 'paystack',
+  USSD: 'ussd'
+};
+
+const PAYMENT_STATUSES = {
+  CANCELLED: 'cancelled',
+  FAILED: 'failed',
+  PAID: 'paid',
+  PENDING: 'pending'
+};
+
 const ERROR_CODES = {
   AUTH_REQUIRED: 'AUTH_REQUIRED',
+  CART_EMPTY: 'CART_EMPTY',
   CONFLICT: 'CONFLICT',
   FORBIDDEN: 'FORBIDDEN',
   INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   INVALID_RESET_TOKEN: 'INVALID_RESET_TOKEN',
   NOT_FOUND: 'NOT_FOUND',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
   UNAUTHORIZED: 'UNAUTHORIZED',
   VALIDATION_ERROR: 'VALIDATION_ERROR'
 };
 
 module.exports = {
+  ORDER_STATUSES,
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
   USER_ROLES,
   ERROR_CODES
 };
