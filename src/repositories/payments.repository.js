@@ -32,6 +32,20 @@ function mapOrderRow(row) {
   };
 }
 
+async function insertOrderStatusHistoryWithConnection(connection, payload) {
+  await connection.execute(
+    `
+      INSERT INTO order_status_history (
+        order_id,
+        status,
+        note
+      )
+      VALUES (?, ?, ?)
+    `,
+    [payload.orderId, payload.status, payload.note || null]
+  );
+}
+
 function mapPaymentRow(row) {
   if (!row) {
     return null;
@@ -267,6 +281,14 @@ function createPaymentsRepository({ db }) {
               `,
               [reference, payload.paymentStatus, existingPayment.orderId]
             );
+
+            if (existingPayment.orderStatus === 'pending_payment') {
+              await insertOrderStatusHistoryWithConnection(connection, {
+                orderId: existingPayment.orderId,
+                status: 'confirmed',
+                note: 'Payment verified and order confirmed.'
+              });
+            }
           }
         } else if (existingPayment.orderPaymentStatus !== 'paid') {
           await connection.execute(

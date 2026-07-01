@@ -19,34 +19,96 @@ function mapOrderRow(row) {
     deliveryPhone: row.delivery_phone,
     paymentReference: row.payment_reference,
     paymentStatus: row.payment_status,
+    totalItems: row.total_items === undefined || row.total_items === null
+      ? 0
+      : Number(row.total_items),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-async function findOrderById(connection, orderId, buyerId) {
+function mapOrderItemRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    productId: row.product_id,
+    sellerId: row.seller_id,
+    quantity: Number(row.quantity),
+    unitPriceKobo: Number(row.unit_price_kobo),
+    lineTotalKobo: Number(row.line_total_kobo),
+    title: row.title,
+    partNumber: row.part_number,
+    condition: row.condition,
+    location: row.location,
+    sellerBusinessName: row.seller_business_name,
+    sellerRating: row.seller_rating === null ? null : Number(row.seller_rating),
+    primaryImageUrl: row.primary_image_url,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapOrderStatusHistoryRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    status: row.status,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function insertOrderStatusHistoryWithConnection(connection, payload) {
+  await connection.execute(
+    `
+      INSERT INTO order_status_history (
+        order_id,
+        status,
+        note
+      )
+      VALUES (?, ?, ?)
+    `,
+    [payload.orderId, payload.status, payload.note || null]
+  );
+}
+
+async function findOrderByIdForBuyerWithConnection(connection, orderId, buyerId) {
   const [rows] = await connection.execute(
     `
       SELECT
-        id,
-        buyer_id,
-        status,
-        payment_method,
-        subtotal_kobo,
-        delivery_fee_kobo,
-        total_kobo,
-        delivery_address_id,
-        delivery_label,
-        delivery_street,
-        delivery_city,
-        delivery_state,
-        delivery_phone,
-        payment_reference,
-        payment_status,
-        created_at,
-        updated_at
-      FROM orders
-      WHERE id = ? AND buyer_id = ?
+        o.id,
+        o.buyer_id,
+        o.status,
+        o.payment_method,
+        o.subtotal_kobo,
+        o.delivery_fee_kobo,
+        o.total_kobo,
+        o.delivery_address_id,
+        o.delivery_label,
+        o.delivery_street,
+        o.delivery_city,
+        o.delivery_state,
+        o.delivery_phone,
+        o.payment_reference,
+        o.payment_status,
+        (
+          SELECT COALESCE(SUM(oi.quantity), 0)
+          FROM order_items oi
+          WHERE oi.order_id = o.id
+        ) AS total_items,
+        o.created_at,
+        o.updated_at
+      FROM orders o
+      WHERE o.id = ? AND o.buyer_id = ?
       LIMIT 1
     `,
     [orderId, buyerId]
@@ -125,6 +187,12 @@ function createOrdersRepository({ db }) {
           );
         }
 
+        await insertOrderStatusHistoryWithConnection(connection, {
+          orderId: result.insertId,
+          status: payload.status,
+          note: 'Order created and awaiting payment.'
+        });
+
         await connection.execute(
           `
             DELETE FROM cart_items
@@ -133,7 +201,11 @@ function createOrdersRepository({ db }) {
           [payload.cartId]
         );
 
-        const order = await findOrderById(connection, result.insertId, payload.buyerId);
+        const order = await findOrderByIdForBuyerWithConnection(
+          connection,
+          result.insertId,
+          payload.buyerId
+        );
         await connection.commit();
 
         return order;
@@ -143,6 +215,131 @@ function createOrdersRepository({ db }) {
       } finally {
         connection.release();
       }
+    },
+
+    async listOrdersForBuyer(filters) {
+      const whereClauses = ['buyer_id = ?'];
+      const params = [filters.buyerId];
+
+      if (filters.status) {
+        whereClauses.push('status = ?');
+        params.push(filters.status);
+      }
+
+      const [countRows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM orders
+          WHERE ${whereClauses.join(' AND ')}
+        `,
+        params
+      );
+      const [rows] = await db.execute(
+        `
+          SELECT
+            o.id,
+            o.buyer_id,
+            o.status,
+            o.payment_method,
+            o.subtotal_kobo,
+            o.delivery_fee_kobo,
+            o.total_kobo,
+            o.delivery_address_id,
+            o.delivery_label,
+            o.delivery_street,
+            o.delivery_city,
+            o.delivery_state,
+            o.delivery_phone,
+            o.payment_reference,
+            o.payment_status,
+            (
+              SELECT COALESCE(SUM(oi.quantity), 0)
+              FROM order_items oi
+              WHERE oi.order_id = o.id
+            ) AS total_items,
+            o.created_at,
+            o.updated_at
+          FROM orders o
+          WHERE ${whereClauses.map((clause) => `o.${clause}`).join(' AND ')}
+          ORDER BY o.created_at DESC, o.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [...params, filters.limit, filters.offset]
+      );
+
+      return {
+        orders: rows.map(mapOrderRow),
+        total: Number(countRows[0].total)
+      };
+    },
+
+    async findOrderByIdForBuyer(orderId, buyerId) {
+      const connection = await db.getConnection();
+
+      try {
+        return await findOrderByIdForBuyerWithConnection(connection, orderId, buyerId);
+      } finally {
+        connection.release();
+      }
+    },
+
+    async findOrderItemsByOrderId(orderId, buyerId) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            oi.id,
+            oi.order_id,
+            oi.product_id,
+            oi.seller_id,
+            oi.quantity,
+            oi.unit_price_kobo,
+            oi.line_total_kobo,
+            p.title,
+            p.part_number,
+            p.\`condition\` AS \`condition\`,
+            p.location,
+            p.seller_business_name,
+            p.seller_rating,
+            (
+              SELECT pi.url
+              FROM product_images pi
+              WHERE pi.product_id = p.id
+              ORDER BY pi.position ASC, pi.id ASC
+              LIMIT 1
+            ) AS primary_image_url,
+            oi.created_at,
+            oi.updated_at
+          FROM order_items oi
+          INNER JOIN orders o ON o.id = oi.order_id
+          INNER JOIN products p ON p.id = oi.product_id
+          WHERE oi.order_id = ? AND o.buyer_id = ?
+          ORDER BY oi.id ASC
+        `,
+        [orderId, buyerId]
+      );
+
+      return rows.map(mapOrderItemRow);
+    },
+
+    async findOrderStatusHistoryByOrderId(orderId, buyerId) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            osh.id,
+            osh.order_id,
+            osh.status,
+            osh.note,
+            osh.created_at,
+            osh.updated_at
+          FROM order_status_history osh
+          INNER JOIN orders o ON o.id = osh.order_id
+          WHERE osh.order_id = ? AND o.buyer_id = ?
+          ORDER BY osh.created_at ASC, osh.id ASC
+        `,
+        [orderId, buyerId]
+      );
+
+      return rows.map(mapOrderStatusHistoryRow);
     }
   };
 }

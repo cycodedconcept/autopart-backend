@@ -1,5 +1,5 @@
 const Joi = require('joi');
-const { PAYMENT_METHODS } = require('../config/constants');
+const { ORDER_STATUSES, PAYMENT_METHODS } = require('../config/constants');
 const { isValidNigerianPhone } = require('../utils/phone');
 
 function nigerianPhoneRule(value, helpers) {
@@ -30,6 +30,46 @@ const createOrderSchema = Joi.object({
   query: Joi.object({}).default({})
 });
 
+const orderIdParamsSchema = Joi.object({
+  id: Joi.number().integer().positive().required()
+}).required();
+
+const listOrdersSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: Joi.object({
+    status: Joi.string()
+      .valid(...Object.values(ORDER_STATUSES))
+      .optional(),
+    page: Joi.number().integer().positive().optional(),
+    limit: Joi.number().integer().positive().max(50).optional()
+  }).default({})
+});
+
+const getOrderByIdSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: orderIdParamsSchema,
+  query: Joi.object({}).default({})
+});
+
+const getOrderStatusSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: orderIdParamsSchema,
+  query: Joi.object({}).default({})
+});
+
+const getOrderReceiptSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: orderIdParamsSchema,
+  query: Joi.object({
+    format: Joi.string().valid('json', 'html').optional()
+  }).default({})
+});
+
 module.exports = {
-  createOrderSchema
+  createOrderSchema,
+  getOrderByIdSchema,
+  getOrderReceiptSchema,
+  getOrderStatusSchema,
+  listOrdersSchema
 };

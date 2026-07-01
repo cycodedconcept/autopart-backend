@@ -4,6 +4,7 @@ function createInMemoryCommerceStore() {
     cartItems: [],
     carts: [],
     orderItems: [],
+    orderStatusHistory: [],
     orders: [],
     payments: [],
     counters: {
@@ -12,6 +13,7 @@ function createInMemoryCommerceStore() {
       cartItemId: 1,
       orderId: 1,
       orderItemId: 1,
+      orderStatusHistoryId: 1,
       paymentId: 1
     }
   };

@@ -12,16 +12,14 @@
 - [x] Milestone B — Catalogue browsing: catalogue schema + seeds, `GET /api/v1/products` with filtering and pagination, `GET /api/v1/products/:id`
 - [x] Milestone C — Cart & checkout: cart CRUD, checkout address selection, `POST /api/v1/orders`, totals in kobo, initial `pending_payment` orders
 - [x] Milestone D — Payment: Paystack transaction initialization, webhook/callback verification, bank transfer/USSD channel support, sanitized payment storage, and `pending_payment` -> `confirmed` transition on verified success
+- [x] Milestone E — Order tracking & history: order status lifecycle storage, buyer order history/detail/status endpoints, and JSON/HTML receipts
 
-**NEXT TASK → Milestone E — Order tracking & history (Section 6).**
-Build, in this order:
-1. Add buyer order status lifecycle support: `pending_payment -> confirmed -> picked_up -> in_transit -> delivered` with `cancelled` and `disputed` available.
-2. Expose buyer endpoints to read current order status and status history.
-3. Add order history listing, single-order detail, and a receipt response (JSON/HTML for now).
+**NEXT TASK → Buyer flow review.**
+Buyer milestones A through E are now implemented. Stop here for review before starting any seller, logistics, or admin scope.
 
-For each unit of work follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after Milestone E planning/implementation points are ready for review.**
+For each unit of work follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass.
 
-**After this:** Milestone E (order tracking & history).
+**After this:** Await product direction on post-buyer milestones.
 
 ---
 
@@ -129,11 +127,11 @@ Buyer registration (email or NG phone + password), login (JWT), forgot/reset pas
 5. Checkout: review order, select delivery address, choose payment method, create an order.
 6. Order creation persists `orders` + `order_items`, captures delivery address, computes totals in kobo. Initial status = `pending_payment`.
 
-### Milestone D — Payment  [NEXT]
+### Milestone D — Payment  [DONE]
 7. Integrate Paystack (primary): initialise transaction + verify via webhook/callback; support bank transfer / USSD channels.
 8. **Never store card data.** Store only Paystack references and status. On verification, move order status to `confirmed`. Use TEST keys from `.env`.
 
-### Milestone E — Order tracking & history
+### Milestone E — Order tracking & history  [DONE]
 9. Order status lifecycle: `pending_payment -> confirmed -> picked_up -> in_transit -> delivered` (+ `cancelled`, `disputed`). Buyer endpoint to read current status and history.
 10. Order history: list past orders, view one order, download receipt (JSON/HTML now; PDF later).
 

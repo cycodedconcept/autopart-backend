@@ -45,6 +45,18 @@ function mapPayment(payment, order) {
 }
 
 function createInMemoryPaymentsRepository({ store }) {
+  function appendOrderStatusHistory(orderId, status, note, timestamp) {
+    store.orderStatusHistory.push({
+      id: store.counters.orderStatusHistoryId,
+      orderId,
+      status,
+      note,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    store.counters.orderStatusHistoryId += 1;
+  }
+
   return {
     async findOrderForBuyer(orderId, buyerId) {
       return mapOrder(
@@ -136,6 +148,12 @@ function createInMemoryPaymentsRepository({ store }) {
 
           if (order.status === 'pending_payment') {
             order.status = 'confirmed';
+            appendOrderStatusHistory(
+              order.id,
+              'confirmed',
+              'Payment verified and order confirmed.',
+              now
+            );
           }
         } else if (order.paymentStatus !== 'paid') {
           order.paymentReference = reference;

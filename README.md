@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow. This repository currently implements `AGENTS.md` Milestones A, B, C, and D: buyer authentication, catalogue browsing, cart management, checkout order creation, and Paystack-backed payment initialization and verification.
+Backend API for the AutoParts Marketplace buyer flow. This repository currently implements `AGENTS.md` Milestones A, B, C, D, and E: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, and buyer order tracking/history.
 
 ## Implemented Milestone
 
@@ -14,9 +14,11 @@ Backend API for the AutoParts Marketplace buyer flow. This repository currently 
 - Buyer checkout order creation with saved-or-inline delivery address support
 - Paystack payment initialization for paystack, bank transfer, and USSD checkout methods
 - Paystack payment verification via callback and webhook, including order confirmation on successful verification
+- Buyer order history listing, single-order detail, current status/history, and receipt responses
+- Order status-history persistence for `pending_payment` and `confirmed`, with buyer-readable lifecycle tracking
 - Joi request validation, auth rate limiting, central error handling
 - MySQL migration and seed scaffolding for buyer-flow tables built so far
-- Unit and integration test suites for auth, catalogue browsing, cart, checkout, and payments
+- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, and buyer order history
 
 ## Project Structure
 
@@ -85,6 +87,10 @@ npm run lint
 ### Orders
 
 - `POST /api/v1/orders`
+- `GET /api/v1/orders`
+- `GET /api/v1/orders/:id`
+- `GET /api/v1/orders/:id/status`
+- `GET /api/v1/orders/:id/receipt`
 
 ### Payments
 
@@ -217,6 +223,36 @@ Verify a payment callback:
 GET /api/v1/payments/callback?reference=APT-1-1234567890-ABCDEF12
 ```
 
+List buyer orders:
+
+```text
+GET /api/v1/orders?status=confirmed&page=1&limit=10
+```
+
+Fetch a single buyer order:
+
+```text
+GET /api/v1/orders/1
+```
+
+Fetch current order status and history:
+
+```text
+GET /api/v1/orders/1/status
+```
+
+Fetch a receipt as JSON:
+
+```text
+GET /api/v1/orders/1/receipt
+```
+
+Fetch a receipt as HTML:
+
+```text
+GET /api/v1/orders/1/receipt?format=html
+```
+
 ## Auth Notes
 
 - Login accepts `identifier` and `password`. `identifier` may be an email address or a Nigerian phone number.
@@ -230,8 +266,13 @@ GET /api/v1/payments/callback?reference=APT-1-1234567890-ABCDEF12
 - Checkout currently supports `paystack`, `bank_transfer`, and `ussd` as payment-method selections.
 - For Milestone C, delivery fees are stored as `0` kobo until logistics pricing is introduced.
 - `POST /api/v1/orders` accepts either a saved `deliveryAddressId` or an inline `deliveryAddress` object, and stores an address snapshot on the order.
+- `GET /api/v1/orders` returns `{ orders, pagination }` and supports optional filtering by buyer order `status`.
+- `GET /api/v1/orders/:id` returns the order detail, item lines, delivery snapshot, and status history for the authenticated buyer.
+- `GET /api/v1/orders/:id/status` returns the current buyer-visible order status plus the status history timeline.
+- `GET /api/v1/orders/:id/receipt` returns JSON by default and supports `?format=html` for a printable HTML receipt.
 - `POST /api/v1/payments/initialize` uses the authenticated buyer email by default. If the buyer registered without an email, the request can include an `email` field for Paystack initialization.
 - Successful Paystack verification moves the order from `pending_payment` to `confirmed`.
+- Order creation records an initial `pending_payment` status-history entry, and successful payment verification records `confirmed`.
 - The webhook endpoint expects the `x-paystack-signature` header and stores only sanitized Paystack references/status metadata. No card data is stored.
 
 ## Database
@@ -239,4 +280,4 @@ GET /api/v1/payments/callback?reference=APT-1-1234567890-ABCDEF12
 - Money values are stored in kobo.
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
 - Run `npm run seed` to load the sample catalogue data for local browsing.
-- The current migration set creates the auth, catalogue, cart, buyer address, order, and payment tables needed for Milestones A through D.
+- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, and order-status-history tables needed for Milestones A through E.
