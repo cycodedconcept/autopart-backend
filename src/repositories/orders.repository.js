@@ -27,6 +27,27 @@ function mapOrderRow(row) {
   };
 }
 
+function mapSellerOrderRow(row) {
+  const order = mapOrderRow(row);
+
+  if (!order) {
+    return null;
+  }
+
+  return {
+    ...order,
+    sellerLineItems: row.seller_line_items === undefined || row.seller_line_items === null
+      ? 0
+      : Number(row.seller_line_items),
+    sellerTotalItems: row.seller_total_items === undefined || row.seller_total_items === null
+      ? 0
+      : Number(row.seller_total_items),
+    sellerTotalKobo: row.seller_total_kobo === undefined || row.seller_total_kobo === null
+      ? 0
+      : Number(row.seller_total_kobo)
+  };
+}
+
 function mapOrderItemRow(row) {
   if (!row) {
     return null;
@@ -40,6 +61,7 @@ function mapOrderItemRow(row) {
     quantity: Number(row.quantity),
     unitPriceKobo: Number(row.unit_price_kobo),
     lineTotalKobo: Number(row.line_total_kobo),
+    itemStatus: row.item_status,
     title: row.title,
     partNumber: row.part_number,
     condition: row.condition,
@@ -49,6 +71,22 @@ function mapOrderItemRow(row) {
     primaryImageUrl: row.primary_image_url,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+function mapSellerOrderItemStateRow(row) {
+  const item = mapOrderItemRow(row);
+
+  if (!item) {
+    return null;
+  }
+
+  return {
+    ...item,
+    orderStatus: row.order_status,
+    paymentMethod: row.payment_method,
+    paymentReference: row.payment_reference,
+    paymentStatus: row.payment_status
   };
 }
 
@@ -172,9 +210,10 @@ function createOrdersRepository({ db }) {
                 seller_id,
                 quantity,
                 unit_price_kobo,
-                line_total_kobo
+                line_total_kobo,
+                item_status
               )
-              VALUES (?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
             `,
             [
               result.insertId,
@@ -182,7 +221,8 @@ function createOrdersRepository({ db }) {
               item.sellerId,
               item.quantity,
               item.unitPriceKobo,
-              item.lineTotalKobo
+              item.lineTotalKobo,
+              item.itemStatus
             ]
           );
         }
@@ -273,6 +313,86 @@ function createOrdersRepository({ db }) {
       };
     },
 
+    async listOrdersForSeller(filters) {
+      const whereClauses = ['oi.seller_id = ?'];
+      const params = [filters.sellerId];
+
+      if (filters.itemStatus) {
+        whereClauses.push('oi.item_status = ?');
+        params.push(filters.itemStatus);
+      }
+
+      const [countRows] = await db.execute(
+        `
+          SELECT COUNT(DISTINCT o.id) AS total
+          FROM orders o
+          INNER JOIN order_items oi ON oi.order_id = o.id
+          WHERE ${whereClauses.join(' AND ')}
+        `,
+        params
+      );
+
+      const [rows] = await db.execute(
+        `
+          SELECT
+            o.id,
+            o.buyer_id,
+            o.status,
+            o.payment_method,
+            o.subtotal_kobo,
+            o.delivery_fee_kobo,
+            o.total_kobo,
+            o.delivery_address_id,
+            o.delivery_label,
+            o.delivery_street,
+            o.delivery_city,
+            o.delivery_state,
+            o.delivery_phone,
+            o.payment_reference,
+            o.payment_status,
+            (
+              SELECT COALESCE(SUM(all_items.quantity), 0)
+              FROM order_items all_items
+              WHERE all_items.order_id = o.id
+            ) AS total_items,
+            COUNT(oi.id) AS seller_line_items,
+            COALESCE(SUM(oi.quantity), 0) AS seller_total_items,
+            COALESCE(SUM(oi.line_total_kobo), 0) AS seller_total_kobo,
+            o.created_at,
+            o.updated_at
+          FROM orders o
+          INNER JOIN order_items oi ON oi.order_id = o.id
+          WHERE ${whereClauses.join(' AND ')}
+          GROUP BY
+            o.id,
+            o.buyer_id,
+            o.status,
+            o.payment_method,
+            o.subtotal_kobo,
+            o.delivery_fee_kobo,
+            o.total_kobo,
+            o.delivery_address_id,
+            o.delivery_label,
+            o.delivery_street,
+            o.delivery_city,
+            o.delivery_state,
+            o.delivery_phone,
+            o.payment_reference,
+            o.payment_status,
+            o.created_at,
+            o.updated_at
+          ORDER BY o.created_at DESC, o.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [...params, filters.limit, filters.offset]
+      );
+
+      return {
+        orders: rows.map(mapSellerOrderRow),
+        total: Number(countRows[0].total)
+      };
+    },
+
     async findOrderByIdForBuyer(orderId, buyerId) {
       const connection = await db.getConnection();
 
@@ -294,12 +414,13 @@ function createOrdersRepository({ db }) {
             oi.quantity,
             oi.unit_price_kobo,
             oi.line_total_kobo,
+            oi.item_status,
             p.title,
             p.part_number,
             p.\`condition\` AS \`condition\`,
             p.location,
-            p.seller_business_name,
-            p.seller_rating,
+            sp.business_name AS seller_business_name,
+            sp.rating AS seller_rating,
             (
               SELECT pi.url
               FROM product_images pi
@@ -312,6 +433,7 @@ function createOrdersRepository({ db }) {
           FROM order_items oi
           INNER JOIN orders o ON o.id = oi.order_id
           INNER JOIN products p ON p.id = oi.product_id
+          INNER JOIN seller_profiles sp ON sp.id = oi.seller_id
           WHERE oi.order_id = ? AND o.buyer_id = ?
           ORDER BY oi.id ASC
         `,
@@ -319,6 +441,94 @@ function createOrdersRepository({ db }) {
       );
 
       return rows.map(mapOrderItemRow);
+    },
+
+    async findOrderItemsByOrderIdsForSeller(orderIds, sellerId) {
+      if (!orderIds.length) {
+        return [];
+      }
+
+      const placeholders = orderIds.map(() => '?').join(', ');
+      const [rows] = await db.execute(
+        `
+          SELECT
+            oi.id,
+            oi.order_id,
+            oi.product_id,
+            oi.seller_id,
+            oi.quantity,
+            oi.unit_price_kobo,
+            oi.line_total_kobo,
+            oi.item_status,
+            p.title,
+            p.part_number,
+            p.\`condition\` AS \`condition\`,
+            p.location,
+            sp.business_name AS seller_business_name,
+            sp.rating AS seller_rating,
+            (
+              SELECT pi.url
+              FROM product_images pi
+              WHERE pi.product_id = p.id
+              ORDER BY pi.position ASC, pi.id ASC
+              LIMIT 1
+            ) AS primary_image_url,
+            oi.created_at,
+            oi.updated_at
+          FROM order_items oi
+          INNER JOIN products p ON p.id = oi.product_id
+          INNER JOIN seller_profiles sp ON sp.id = oi.seller_id
+          WHERE oi.seller_id = ? AND oi.order_id IN (${placeholders})
+          ORDER BY oi.order_id DESC, oi.id ASC
+        `,
+        [sellerId, ...orderIds]
+      );
+
+      return rows.map(mapOrderItemRow);
+    },
+
+    async findSellerOrderItemById(orderItemId, sellerId) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            oi.id,
+            oi.order_id,
+            oi.product_id,
+            oi.seller_id,
+            oi.quantity,
+            oi.unit_price_kobo,
+            oi.line_total_kobo,
+            oi.item_status,
+            p.title,
+            p.part_number,
+            p.\`condition\` AS \`condition\`,
+            p.location,
+            sp.business_name AS seller_business_name,
+            sp.rating AS seller_rating,
+            (
+              SELECT pi.url
+              FROM product_images pi
+              WHERE pi.product_id = p.id
+              ORDER BY pi.position ASC, pi.id ASC
+              LIMIT 1
+            ) AS primary_image_url,
+            o.status AS order_status,
+            o.payment_method,
+            o.payment_reference,
+            o.payment_status,
+            oi.created_at,
+            oi.updated_at
+          FROM order_items oi
+          INNER JOIN orders o ON o.id = oi.order_id
+          INNER JOIN products p ON p.id = oi.product_id
+          INNER JOIN seller_profiles sp ON sp.id = oi.seller_id
+          WHERE oi.id = ? AND oi.seller_id = ?
+          LIMIT 1
+        `,
+        [orderItemId, sellerId]
+      );
+
+      return mapSellerOrderItemStateRow(rows[0]);
     },
 
     async findOrderStatusHistoryByOrderId(orderId, buyerId) {
@@ -340,6 +550,19 @@ function createOrdersRepository({ db }) {
       );
 
       return rows.map(mapOrderStatusHistoryRow);
+    },
+
+    async updateSellerOrderItemStatus(payload) {
+      await db.execute(
+        `
+          UPDATE order_items
+          SET item_status = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND seller_id = ?
+        `,
+        [payload.itemStatus, payload.orderItemId, payload.sellerId]
+      );
+
+      return this.findSellerOrderItemById(payload.orderItemId, payload.sellerId);
     }
   };
 }

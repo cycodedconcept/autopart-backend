@@ -17,7 +17,6 @@ function mapCartItem(item) {
       stockQty: item.product.stockQty,
       status: item.product.status,
       primaryImageUrl: item.product.primaryImageUrl,
-      // SELLER-STUB public seller info is projected from the product record for buyer reads.
       seller: {
         id: item.product.seller.id,
         businessName: item.product.seller.businessName,

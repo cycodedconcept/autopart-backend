@@ -1,5 +1,23 @@
 const { createCatalogueFixture } = require('./catalogue-fixture');
 
+function clone(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : null;
+}
+
+function buildCategories(products) {
+  return products.reduce((categories, product) => {
+    if (!categories.find((entry) => entry.id === product.categoryId)) {
+      categories.push({
+        id: product.categoryId,
+        name: product.categoryName,
+        slug: product.categorySlug
+      });
+    }
+
+    return categories;
+  }, []);
+}
+
 function matchesProductFilters(product, filters) {
   if (product.status !== 'active') {
     return false;
@@ -121,9 +139,156 @@ function toRepositoryProduct(product) {
 }
 
 function createInMemoryProductsRepository() {
-  const products = createCatalogueFixture();
+  const products = clone(createCatalogueFixture());
+  const categories = buildCategories(products);
+  const counters = {
+    productId: Math.max(...products.map((product) => product.id)) + 1,
+    imageId: Math.max(...products.flatMap((product) => product.images.map((image) => image.id))) + 1,
+    compatibilityId: Math.max(
+      ...products.flatMap((product) => product.compatibility.map((entry) => entry.id))
+    ) + 1
+  };
+
+  function findProductRecord(productId) {
+    return products.find((entry) => entry.id === Number(productId)) || null;
+  }
+
+  function applyField(product, field) {
+    switch (field.column) {
+      case 'title':
+        product.title = field.value;
+        break;
+      case 'description':
+        product.description = field.value;
+        break;
+      case 'category_id': {
+        const category = categories.find((entry) => entry.id === field.value);
+
+        product.categoryId = field.value;
+        product.categoryName = category ? category.name : product.categoryName;
+        product.categorySlug = category ? category.slug : product.categorySlug;
+        break;
+      }
+      case 'part_number':
+        product.partNumber = field.value;
+        break;
+      case '`condition`':
+        product.condition = field.value;
+        break;
+      case 'price_kobo':
+        product.priceKobo = field.value;
+        break;
+      case 'stock_qty':
+        product.stockQty = field.value;
+        break;
+      case 'location':
+        product.location = field.value;
+        break;
+      case 'status':
+        product.status = field.value;
+        break;
+      default:
+        break;
+    }
+  }
 
   return {
+    async createSellerProductsBulk(payload) {
+      const createdProducts = [];
+
+      for (const product of payload.products) {
+        createdProducts.push(await this.createSellerProduct({
+          sellerId: payload.sellerId,
+          sellerBusinessName: payload.sellerBusinessName || 'Seller Bulk Upload',
+          sellerRating: payload.sellerRating || 0,
+          ...product
+        }));
+      }
+
+      return createdProducts;
+    },
+
+    async createSellerProduct(payload) {
+      const now = new Date().toISOString();
+      const product = {
+        id: counters.productId,
+        sellerId: payload.sellerId,
+        title: payload.title,
+        description: payload.description,
+        categoryId: payload.categoryId,
+        categoryName: payload.categoryName,
+        categorySlug: payload.categorySlug,
+        partNumber: payload.partNumber,
+        condition: payload.condition,
+        priceKobo: payload.priceKobo,
+        stockQty: payload.stockQty,
+        location: payload.location,
+        sellerBusinessName: payload.sellerBusinessName,
+        sellerRating: payload.sellerRating,
+        status: payload.status,
+        createdAt: now,
+        updatedAt: now,
+        images: payload.photos.map((photo) => ({
+          id: counters.imageId++,
+          productId: counters.productId,
+          url: photo.filePath,
+          position: photo.position
+        })),
+        compatibility: payload.compatibility.map((entry) => ({
+          id: counters.compatibilityId++,
+          productId: counters.productId,
+          make: entry.make,
+          model: entry.model,
+          yearFrom: entry.yearFrom,
+          yearTo: entry.yearTo
+        }))
+      };
+
+      products.push(product);
+      counters.productId += 1;
+
+      return toRepositoryProduct(product);
+    },
+
+    async deactivateOwnedProduct(productId, sellerId) {
+      const product = products.find((entry) => (
+        entry.id === Number(productId) && entry.sellerId === Number(sellerId)
+      ));
+
+      if (!product) {
+        return null;
+      }
+
+      product.status = 'inactive';
+      product.updatedAt = new Date().toISOString();
+
+      return toRepositoryProduct(product);
+    },
+
+    async findCategoryById(categoryId) {
+      return clone(categories.find((entry) => entry.id === Number(categoryId)) || null);
+    },
+
+    async findCategoriesByIds(categoryIds) {
+      return clone(
+        categories.filter((entry) => categoryIds.map(Number).includes(entry.id))
+      );
+    },
+
+    async findOwnedProductById(productId, sellerId) {
+      const product = products.find((entry) => (
+        entry.id === Number(productId) && entry.sellerId === Number(sellerId)
+      ));
+
+      return product ? toRepositoryProduct(product) : null;
+    },
+
+    async findProductSnapshotById(productId) {
+      const product = findProductRecord(productId);
+
+      return product ? toRepositoryProduct(product) : null;
+    },
+
     async findProductById(productId) {
       const product = products.find((entry) => entry.id === Number(productId) && entry.status === 'active');
 
@@ -131,15 +296,15 @@ function createInMemoryProductsRepository() {
     },
 
     async findProductCompatibilityByProductId(productId) {
-      const product = products.find((entry) => entry.id === Number(productId));
+      const product = findProductRecord(productId);
 
-      return product ? product.compatibility.map((entry) => ({ ...entry })) : [];
+      return product ? clone(product.compatibility) : [];
     },
 
     async findProductImagesByProductId(productId) {
-      const product = products.find((entry) => entry.id === Number(productId));
+      const product = findProductRecord(productId);
 
-      return product ? product.images.map((entry) => ({ ...entry })) : [];
+      return product ? clone(product.images) : [];
     },
 
     async listProducts(filters) {
@@ -153,6 +318,99 @@ function createInMemoryProductsRepository() {
           .map(toRepositoryProduct),
         total: matchedProducts.length
       };
+    },
+
+    async listSellerProducts(filters) {
+      const matchedProducts = products
+        .filter((product) => {
+          if (product.sellerId !== Number(filters.sellerId)) {
+            return false;
+          }
+
+          if (filters.status && filters.status !== 'all' && product.status !== filters.status) {
+            return false;
+          }
+
+          if (filters.lowStockOnly && product.stockQty > Number(filters.lowStockThreshold)) {
+            return false;
+          }
+
+          return true;
+        })
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+
+      return {
+        products: matchedProducts
+          .slice(filters.offset, filters.offset + filters.limit)
+          .map(toRepositoryProduct),
+        total: matchedProducts.length
+      };
+    },
+
+    async summarizeSellerInventory(filters) {
+      const sellerProducts = products.filter((product) => product.sellerId === Number(filters.sellerId));
+
+      return {
+        totalListings: sellerProducts.length,
+        activeListings: sellerProducts.filter((product) => product.status === 'active').length,
+        inactiveListings: sellerProducts.filter((product) => product.status === 'inactive').length,
+        outOfStockListings: sellerProducts.filter((product) => product.stockQty === 0).length,
+        lowStockListings: sellerProducts.filter((product) => (
+          product.stockQty > 0 && product.stockQty <= Number(filters.lowStockThreshold)
+        )).length,
+        totalUnitsInStock: sellerProducts.reduce((sum, product) => sum + Number(product.stockQty), 0)
+      };
+    },
+
+    async decrementStockLevels(entries) {
+      for (const entry of entries) {
+        const product = products.find((item) => item.id === Number(entry.productId));
+
+        if (!product) {
+          continue;
+        }
+
+        product.stockQty = Math.max(0, product.stockQty - Number(entry.quantity));
+        product.updatedAt = new Date().toISOString();
+      }
+    },
+
+    async updateOwnedProduct(productId, sellerId, payload) {
+      const product = products.find((entry) => (
+        entry.id === Number(productId) && entry.sellerId === Number(sellerId)
+      ));
+
+      if (!product) {
+        return null;
+      }
+
+      for (const field of payload.fields || []) {
+        applyField(product, field);
+      }
+
+      if (payload.photos) {
+        product.images = payload.photos.map((photo) => ({
+          id: counters.imageId++,
+          productId: product.id,
+          url: photo.filePath,
+          position: photo.position
+        }));
+      }
+
+      if (payload.compatibility) {
+        product.compatibility = payload.compatibility.map((entry) => ({
+          id: counters.compatibilityId++,
+          productId: product.id,
+          make: entry.make,
+          model: entry.model,
+          yearFrom: entry.yearFrom,
+          yearTo: entry.yearTo
+        }));
+      }
+
+      product.updatedAt = new Date().toISOString();
+
+      return toRepositoryProduct(product);
     }
   };
 }

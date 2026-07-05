@@ -60,14 +60,15 @@ describe('Payments API integration', () => {
 
   beforeEach(() => {
     const commerceStore = createInMemoryCommerceStore();
+    const productsRepository = createInMemoryProductsRepository();
 
     app = createApp({
       usersRepository: createInMemoryUsersRepository(),
-      productsRepository: createInMemoryProductsRepository(),
+      productsRepository,
       buyerAddressesRepository: createInMemoryBuyerAddressesRepository({ store: commerceStore }),
-      cartsRepository: createInMemoryCartsRepository({ store: commerceStore }),
-      ordersRepository: createInMemoryOrdersRepository({ store: commerceStore }),
-      paymentsRepository: createInMemoryPaymentsRepository({ store: commerceStore }),
+      cartsRepository: createInMemoryCartsRepository({ productsRepository, store: commerceStore }),
+      ordersRepository: createInMemoryOrdersRepository({ productsRepository, store: commerceStore }),
+      paymentsRepository: createInMemoryPaymentsRepository({ productsRepository, store: commerceStore }),
       paystackClient: createFakePaystackClient()
     });
   });

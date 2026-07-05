@@ -44,7 +44,7 @@ function mapPayment(payment, order) {
   };
 }
 
-function createInMemoryPaymentsRepository({ store }) {
+function createInMemoryPaymentsRepository({ productsRepository, store }) {
   function appendOrderStatusHistory(orderId, status, note, timestamp) {
     store.orderStatusHistory.push({
       id: store.counters.orderStatusHistoryId,
@@ -147,6 +147,17 @@ function createInMemoryPaymentsRepository({ store }) {
           order.paymentStatus = 'paid';
 
           if (order.status === 'pending_payment') {
+            if (productsRepository && typeof productsRepository.decrementStockLevels === 'function') {
+              const stockEntries = store.orderItems
+                .filter((item) => item.orderId === order.id)
+                .map((item) => ({
+                  productId: item.productId,
+                  quantity: item.quantity
+                }));
+
+              await productsRepository.decrementStockLevels(stockEntries);
+            }
+
             order.status = 'confirmed';
             appendOrderStatusHistory(
               order.id,

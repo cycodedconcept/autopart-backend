@@ -22,7 +22,9 @@ const envSchema = Joi.object({
   BCRYPT_SALT_ROUNDS: Joi.number().integer().min(4).max(15).default(10),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: Joi.number().integer().min(5).max(1440).default(30),
   PAYSTACK_SECRET_KEY: Joi.string().allow('').required(),
-  PAYSTACK_PUBLIC_KEY: Joi.string().allow('').required()
+  PAYSTACK_PUBLIC_KEY: Joi.string().allow('').required(),
+  UPLOAD_DIR: Joi.string().default('./uploads'),
+  SELLER_AUTO_VERIFY: Joi.boolean().truthy('true').truthy('1').falsy('false').falsy('0').default(false)
 }).unknown(true);
 
 const { error, value } = envSchema.validate(process.env, {

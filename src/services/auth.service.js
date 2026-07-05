@@ -1,26 +1,10 @@
 const { ERROR_CODES, USER_ROLES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { isValidNigerianPhone, normalizeNigerianPhone } = require('../utils/phone');
+const { sanitizeUser } = require('../utils/user');
 
 function normalizeEmail(email) {
   return email ? email.trim().toLowerCase() : null;
-}
-
-function sanitizeUser(user) {
-  if (!user) {
-    return null;
-  }
-
-  return {
-    id: user.id,
-    role: user.role,
-    fullName: user.fullName,
-    email: user.email,
-    phone: user.phone,
-    isVerified: user.isVerified,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt
-  };
 }
 
 function resolveIdentifier(identifier) {

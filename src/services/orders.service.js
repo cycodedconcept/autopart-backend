@@ -1,5 +1,6 @@
 const {
   ERROR_CODES,
+  ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES
 } = require('../config/constants');
@@ -37,8 +38,8 @@ function mapCreatedOrderItem(item) {
     quantity: item.quantity,
     unitPriceKobo: item.unitPriceKobo,
     lineTotalKobo: item.lineTotalKobo,
+    itemStatus: ORDER_ITEM_STATUSES.PENDING,
     primaryImageUrl: item.product.primaryImageUrl || null,
-    // SELLER-STUB public seller info is projected from the product record for buyer reads.
     seller: {
       id: item.product.seller.id,
       businessName: item.product.seller.businessName,
@@ -80,8 +81,8 @@ function mapStoredOrderItem(item) {
     quantity: item.quantity,
     unitPriceKobo: item.unitPriceKobo,
     lineTotalKobo: item.lineTotalKobo,
+    itemStatus: item.itemStatus,
     primaryImageUrl: item.primaryImageUrl,
-    // SELLER-STUB public seller info is projected from the product record for buyer reads.
     seller: {
       id: item.sellerId,
       businessName: item.sellerBusinessName,
@@ -131,6 +132,60 @@ function mapOrderDetail(order, items, statusHistory) {
     createdAt: order.createdAt,
     updatedAt: order.updatedAt
   };
+}
+
+function mapSellerOrderSummary(order, items) {
+  return {
+    id: order.id,
+    status: order.status,
+    paymentMethod: order.paymentMethod,
+    paymentReference: order.paymentReference,
+    paymentStatus: order.paymentStatus,
+    subtotalKobo: order.subtotalKobo,
+    deliveryFeeKobo: order.deliveryFeeKobo,
+    totalKobo: order.totalKobo,
+    totalItems: order.totalItems,
+    sellerLineItems: order.sellerLineItems,
+    sellerTotalItems: order.sellerTotalItems,
+    sellerTotalKobo: order.sellerTotalKobo,
+    deliveryAddress: mapOrderAddressFromOrder(order),
+    items: items.map(mapStoredOrderItem),
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt
+  };
+}
+
+function mapSellerOrderItemState(item) {
+  return {
+    ...mapStoredOrderItem(item),
+    order: {
+      id: item.orderId,
+      status: item.orderStatus,
+      paymentMethod: item.paymentMethod,
+      paymentReference: item.paymentReference,
+      paymentStatus: item.paymentStatus
+    },
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
+function canTransitionSellerOrderItem(currentStatus, nextStatus) {
+  if (currentStatus === nextStatus) {
+    return false;
+  }
+
+  switch (currentStatus) {
+    case ORDER_ITEM_STATUSES.PENDING:
+      return (
+        nextStatus === ORDER_ITEM_STATUSES.READY_FOR_PICKUP
+        || nextStatus === ORDER_ITEM_STATUSES.CANCELLED
+      );
+    case ORDER_ITEM_STATUSES.READY_FOR_PICKUP:
+      return nextStatus === ORDER_ITEM_STATUSES.CANCELLED;
+    default:
+      return false;
+  }
 }
 
 function buildReceipt(detail) {
@@ -332,7 +387,12 @@ function buildOrderReceiptHtml(receipt) {
   `;
 }
 
-function createOrdersService({ buyerAddressesRepository, cartsRepository, ordersRepository }) {
+function createOrdersService({
+  buyerAddressesRepository,
+  cartsRepository,
+  ordersRepository,
+  sellersRepository
+}) {
   async function resolveDeliveryAddress(userId, payload) {
     if (payload.deliveryAddressId) {
       const savedAddress = await buyerAddressesRepository.findBuyerAddressByIdForUser(
@@ -388,6 +448,26 @@ function createOrdersService({ buyerAddressesRepository, cartsRepository, orders
     };
   }
 
+  async function ensureSellerProfile(userId) {
+    if (!sellersRepository) {
+      throw new AppError('Seller order operations are unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const sellerAccount = await sellersRepository.findByUserId(userId);
+
+    if (!sellerAccount) {
+      throw new AppError('Seller profile was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return sellerAccount;
+  }
+
   async function createOrder(payload) {
     const cart = await cartsRepository.getCartByUserId(payload.userId);
 
@@ -441,7 +521,8 @@ function createOrdersService({ buyerAddressesRepository, cartsRepository, orders
         sellerId: item.product.seller.id,
         quantity: item.quantity,
         unitPriceKobo: item.unitPriceKobo,
-        lineTotalKobo: calculateLineTotalKobo(item.quantity, item.unitPriceKobo)
+        lineTotalKobo: calculateLineTotalKobo(item.quantity, item.unitPriceKobo),
+        itemStatus: ORDER_ITEM_STATUSES.PENDING
       }))
     });
 
@@ -520,6 +601,100 @@ function createOrdersService({ buyerAddressesRepository, cartsRepository, orders
           total: result.total
         })
       };
+    },
+
+    async listSellerOrders(payload) {
+      const sellerAccount = await ensureSellerProfile(payload.userId);
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const result = await ordersRepository.listOrdersForSeller({
+        sellerId: sellerAccount.sellerProfile.id,
+        itemStatus: payload.query.itemStatus || null,
+        limit: pagination.limit,
+        offset: pagination.offset
+      });
+      const orderIds = result.orders.map((order) => order.id);
+      const orderItems = await ordersRepository.findOrderItemsByOrderIdsForSeller(
+        orderIds,
+        sellerAccount.sellerProfile.id
+      );
+      const filteredOrderItems = payload.query.itemStatus
+        ? orderItems.filter((item) => item.itemStatus === payload.query.itemStatus)
+        : orderItems;
+      const orderItemsById = filteredOrderItems.reduce((accumulator, item) => {
+        const existingItems = accumulator.get(item.orderId) || [];
+        existingItems.push(item);
+        accumulator.set(item.orderId, existingItems);
+        return accumulator;
+      }, new Map());
+
+      return {
+        orders: result.orders.map((order) => (
+          mapSellerOrderSummary(order, orderItemsById.get(order.id) || [])
+        )),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        })
+      };
+    },
+
+    async updateSellerOrderItemStatus(payload) {
+      const sellerAccount = await ensureSellerProfile(payload.userId);
+      const existingOrderItem = await ordersRepository.findSellerOrderItemById(
+        payload.orderItemId,
+        sellerAccount.sellerProfile.id
+      );
+
+      if (!existingOrderItem) {
+        throw new AppError('Seller order item was not found.', {
+          statusCode: 404,
+          code: ERROR_CODES.NOT_FOUND
+        });
+      }
+
+      if (existingOrderItem.paymentStatus !== PAYMENT_STATUSES.PAID) {
+        throw new AppError('Seller can only manage paid order items.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      if (
+        existingOrderItem.orderStatus === ORDER_STATUSES.CANCELLED
+        || existingOrderItem.orderStatus === ORDER_STATUSES.DELIVERED
+      ) {
+        throw new AppError('This order can no longer be updated by the seller.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      if (!canTransitionSellerOrderItem(existingOrderItem.itemStatus, payload.itemStatus)) {
+        throw new AppError('This seller order item status change is not allowed.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const updatedOrderItem = await ordersRepository.updateSellerOrderItemStatus({
+        orderItemId: payload.orderItemId,
+        sellerId: sellerAccount.sellerProfile.id,
+        itemStatus: payload.itemStatus
+      });
+
+      if (payload.itemStatus === ORDER_ITEM_STATUSES.READY_FOR_PICKUP) {
+        // LOGISTICS-STUB: pickup assignment and dispatch coordination land in the logistics module.
+      }
+
+      if (payload.itemStatus === ORDER_ITEM_STATUSES.CANCELLED) {
+        // LOGISTICS-STUB: seller-side cancellations will later fan out to delivery/refund workflows.
+      }
+
+      return mapSellerOrderItemState(updatedOrderItem);
     }
   };
 }

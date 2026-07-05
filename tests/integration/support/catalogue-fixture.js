@@ -167,6 +167,43 @@ function createCatalogueFixture() {
           yearTo: 2007
         }
       ]
+    },
+    {
+      id: 4005,
+      sellerId: 9005,
+      title: 'Fuel Pump Assembly for Toyota Hilux',
+      description: 'Clean used fuel pump assembly sourced for Toyota Hilux pickups and inspected before listing.',
+      categoryId: 1001,
+      categoryName: 'Engine & Transmission',
+      categorySlug: 'engine-transmission',
+      partNumber: 'FPA-HIL-1215',
+      condition: 'used',
+      priceKobo: 2750000,
+      stockQty: 6,
+      location: 'Kano',
+      sellerBusinessName: 'Northern Truck Parts',
+      sellerRating: 4.1,
+      status: 'active',
+      createdAt: '2026-06-26T08:00:00.000Z',
+      updatedAt: '2026-06-26T08:00:00.000Z',
+      images: [
+        {
+          id: 5008,
+          productId: 4005,
+          url: 'https://example.com/products/fuel-pump-hilux-1.jpg',
+          position: 1
+        }
+      ],
+      compatibility: [
+        {
+          id: 6006,
+          productId: 4005,
+          make: 'Toyota',
+          model: 'Hilux',
+          yearFrom: 2012,
+          yearTo: 2015
+        }
+      ]
     }
   ];
 }

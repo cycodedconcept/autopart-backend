@@ -46,6 +46,26 @@ async function insertOrderStatusHistoryWithConnection(connection, payload) {
   );
 }
 
+async function decrementProductStockForOrderWithConnection(connection, orderId) {
+  await connection.execute(
+    `
+      UPDATE products p
+      INNER JOIN (
+        SELECT
+          oi.product_id,
+          SUM(oi.quantity) AS total_quantity
+        FROM order_items oi
+        WHERE oi.order_id = ?
+        GROUP BY oi.product_id
+      ) order_stock ON order_stock.product_id = p.id
+      SET
+        p.stock_qty = p.stock_qty - order_stock.total_quantity,
+        p.updated_at = CURRENT_TIMESTAMP
+    `,
+    [orderId]
+  );
+}
+
 function mapPaymentRow(row) {
   if (!row) {
     return null;
@@ -283,6 +303,7 @@ function createPaymentsRepository({ db }) {
             );
 
             if (existingPayment.orderStatus === 'pending_payment') {
+              await decrementProductStockForOrderWithConnection(connection, existingPayment.orderId);
               await insertOrderStatusHistoryWithConnection(connection, {
                 orderId: existingPayment.orderId,
                 status: 'confirmed',

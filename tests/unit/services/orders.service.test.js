@@ -37,15 +37,31 @@ describe('orders service', () => {
         quantity: 2,
         unitPriceKobo: 1850000,
         lineTotalKobo: 3700000,
+        itemStatus: 'pending',
         title: 'Front Brake Pad Set for Toyota Camry',
         partNumber: 'FBP-CAM-07011',
         condition: 'new',
         location: 'Lagos',
         sellerBusinessName: 'Prime Auto Hub',
         sellerRating: 4.6,
-        primaryImageUrl: 'https://example.com/products/front-brake-pad-camry-1.jpg'
+        primaryImageUrl: 'https://example.com/products/front-brake-pad-camry-1.jpg',
+        createdAt: '2026-06-30T10:00:00.000Z',
+        updatedAt: '2026-06-30T10:30:00.000Z'
       }
     ];
+  }
+
+  function buildSellerAccount() {
+    return {
+      user: {
+        id: 44,
+        role: 'seller'
+      },
+      sellerProfile: {
+        id: 9001,
+        businessName: 'Prime Auto Hub'
+      }
+    };
   }
 
   function buildStatusHistory() {
@@ -68,6 +84,7 @@ describe('orders service', () => {
   let buyerAddressesRepository;
   let cartsRepository;
   let ordersRepository;
+  let sellersRepository;
   let ordersService;
 
   beforeEach(() => {
@@ -84,14 +101,23 @@ describe('orders service', () => {
       createOrder: jest.fn(),
       findOrderByIdForBuyer: jest.fn(),
       findOrderItemsByOrderId: jest.fn(),
+      findOrderItemsByOrderIdsForSeller: jest.fn(),
+      findSellerOrderItemById: jest.fn(),
       findOrderStatusHistoryByOrderId: jest.fn(),
-      listOrdersForBuyer: jest.fn()
+      listOrdersForBuyer: jest.fn(),
+      listOrdersForSeller: jest.fn(),
+      updateSellerOrderItemStatus: jest.fn()
+    };
+
+    sellersRepository = {
+      findByUserId: jest.fn()
     };
 
     ordersService = createOrdersService({
       buyerAddressesRepository,
       cartsRepository,
-      ordersRepository
+      ordersRepository,
+      sellersRepository
     });
   });
 
@@ -333,6 +359,7 @@ describe('orders service', () => {
           quantity: 2,
           unitPriceKobo: 1850000,
           lineTotalKobo: 3700000,
+          itemStatus: 'pending',
           primaryImageUrl: 'https://example.com/products/front-brake-pad-camry-1.jpg',
           seller: {
             id: 9001,
@@ -466,5 +493,172 @@ describe('orders service', () => {
     expect(result.html).toContain('AutoParts Marketplace Receipt');
     expect(result.html).toContain('Front Brake Pad Set for Toyota Camry');
     expect(result.html).toContain('RCPT-101');
+  });
+
+  it('lists seller-scoped orders with only the seller items attached', async () => {
+    sellersRepository.findByUserId.mockResolvedValue(buildSellerAccount());
+    ordersRepository.listOrdersForSeller.mockResolvedValue({
+      orders: [
+        {
+          ...buildOrderRecord(),
+          sellerLineItems: 1,
+          sellerTotalItems: 2,
+          sellerTotalKobo: 3700000
+        }
+      ],
+      total: 1
+    });
+    ordersRepository.findOrderItemsByOrderIdsForSeller.mockResolvedValue(buildOrderItems());
+
+    const result = await ordersService.listSellerOrders({
+      userId: 44,
+      query: {
+        itemStatus: 'pending',
+        page: 1,
+        limit: 10
+      }
+    });
+
+    expect(sellersRepository.findByUserId).toHaveBeenCalledWith(44);
+    expect(ordersRepository.listOrdersForSeller).toHaveBeenCalledWith({
+      sellerId: 9001,
+      itemStatus: 'pending',
+      limit: 10,
+      offset: 0
+    });
+    expect(ordersRepository.findOrderItemsByOrderIdsForSeller).toHaveBeenCalledWith([101], 9001);
+    expect(result).toEqual({
+      orders: [
+        {
+          id: 101,
+          status: 'confirmed',
+          paymentMethod: 'paystack',
+          paymentReference: 'APT-101-REF',
+          paymentStatus: 'paid',
+          subtotalKobo: 3700000,
+          deliveryFeeKobo: 0,
+          totalKobo: 3700000,
+          totalItems: 2,
+          sellerLineItems: 1,
+          sellerTotalItems: 2,
+          sellerTotalKobo: 3700000,
+          deliveryAddress: {
+            id: 31,
+            label: 'Workshop',
+            street: '12 Adeola Odeku Street',
+            city: 'Ikeja',
+            state: 'Lagos',
+            phone: '+2348012345678'
+          },
+          items: [
+            {
+              id: 501,
+              productId: 4001,
+              title: 'Front Brake Pad Set for Toyota Camry',
+              partNumber: 'FBP-CAM-07011',
+              condition: 'new',
+              location: 'Lagos',
+              quantity: 2,
+              unitPriceKobo: 1850000,
+              lineTotalKobo: 3700000,
+              itemStatus: 'pending',
+              primaryImageUrl: 'https://example.com/products/front-brake-pad-camry-1.jpg',
+              seller: {
+                id: 9001,
+                businessName: 'Prime Auto Hub',
+                rating: 4.6
+              }
+            }
+          ],
+          createdAt: '2026-06-30T10:00:00.000Z',
+          updatedAt: '2026-06-30T10:30:00.000Z'
+        }
+      ],
+      pagination: {
+        page: 1,
+        limit: 10,
+        total: 1,
+        totalPages: 1
+      }
+    });
+  });
+
+  it('updates a seller-owned order item to ready_for_pickup', async () => {
+    sellersRepository.findByUserId.mockResolvedValue(buildSellerAccount());
+    ordersRepository.findSellerOrderItemById.mockResolvedValue({
+      ...buildOrderItems()[0],
+      orderStatus: 'confirmed',
+      paymentMethod: 'paystack',
+      paymentReference: 'APT-101-REF',
+      paymentStatus: 'paid'
+    });
+    ordersRepository.updateSellerOrderItemStatus.mockResolvedValue({
+      ...buildOrderItems()[0],
+      itemStatus: 'ready_for_pickup',
+      orderStatus: 'confirmed',
+      paymentMethod: 'paystack',
+      paymentReference: 'APT-101-REF',
+      paymentStatus: 'paid'
+    });
+
+    const result = await ordersService.updateSellerOrderItemStatus({
+      userId: 44,
+      orderItemId: 501,
+      itemStatus: 'ready_for_pickup'
+    });
+
+    expect(ordersRepository.findSellerOrderItemById).toHaveBeenCalledWith(501, 9001);
+    expect(ordersRepository.updateSellerOrderItemStatus).toHaveBeenCalledWith({
+      orderItemId: 501,
+      sellerId: 9001,
+      itemStatus: 'ready_for_pickup'
+    });
+    expect(result).toEqual({
+      id: 501,
+      productId: 4001,
+      title: 'Front Brake Pad Set for Toyota Camry',
+      partNumber: 'FBP-CAM-07011',
+      condition: 'new',
+      location: 'Lagos',
+      quantity: 2,
+      unitPriceKobo: 1850000,
+      lineTotalKobo: 3700000,
+      itemStatus: 'ready_for_pickup',
+      primaryImageUrl: 'https://example.com/products/front-brake-pad-camry-1.jpg',
+      seller: {
+        id: 9001,
+        businessName: 'Prime Auto Hub',
+        rating: 4.6
+      },
+      order: {
+        id: 101,
+        status: 'confirmed',
+        paymentMethod: 'paystack',
+        paymentReference: 'APT-101-REF',
+        paymentStatus: 'paid'
+      },
+      createdAt: '2026-06-30T10:00:00.000Z',
+      updatedAt: '2026-06-30T10:30:00.000Z'
+    });
+  });
+
+  it('rejects seller updates on unpaid order items', async () => {
+    sellersRepository.findByUserId.mockResolvedValue(buildSellerAccount());
+    ordersRepository.findSellerOrderItemById.mockResolvedValue({
+      ...buildOrderItems()[0],
+      orderStatus: 'pending_payment',
+      paymentMethod: 'paystack',
+      paymentReference: null,
+      paymentStatus: 'pending'
+    });
+
+    await expect(ordersService.updateSellerOrderItemStatus({
+      userId: 44,
+      orderItemId: 501,
+      itemStatus: 'ready_for_pickup'
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'CONFLICT'
+    });
   });
 });

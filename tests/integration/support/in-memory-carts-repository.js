@@ -1,18 +1,26 @@
 const { createCatalogueFixture } = require('./catalogue-fixture');
 
-function createInMemoryCartsRepository({ store }) {
-  const products = createCatalogueFixture();
+function createInMemoryCartsRepository({ productsRepository, store }) {
+  const fallbackProducts = createCatalogueFixture();
 
   function cloneCart(cart) {
     return cart ? { ...cart } : null;
   }
 
-  function getProductById(productId) {
-    return products.find((product) => product.id === Number(productId)) || null;
+  async function resolveProduct(productId) {
+    if (productsRepository && typeof productsRepository.findProductSnapshotById === 'function') {
+      const product = await productsRepository.findProductSnapshotById(productId);
+
+      if (product) {
+        return product;
+      }
+    }
+
+    return fallbackProducts.find((product) => product.id === Number(productId)) || null;
   }
 
-  function mapDetailedCartItem(cartItem) {
-    const product = getProductById(cartItem.productId);
+  async function mapDetailedCartItem(cartItem) {
+    const product = await resolveProduct(cartItem.productId);
 
     return {
       id: cartItem.id,
@@ -29,7 +37,7 @@ function createInMemoryCartsRepository({ store }) {
         location: product.location,
         stockQty: product.stockQty,
         status: product.status,
-        primaryImageUrl: product.images[0] ? product.images[0].url : null,
+        primaryImageUrl: product.primaryImageUrl || (product.images[0] ? product.images[0].url : null),
         seller: {
           id: product.sellerId,
           businessName: product.sellerBusinessName,
@@ -39,12 +47,12 @@ function createInMemoryCartsRepository({ store }) {
     };
   }
 
-  function mapLookupCartItem(cartItem) {
+  async function mapLookupCartItem(cartItem) {
     if (!cartItem) {
       return null;
     }
 
-    const product = getProductById(cartItem.productId);
+    const product = await resolveProduct(cartItem.productId);
 
     return {
       id: cartItem.id,
@@ -132,10 +140,12 @@ function createInMemoryCartsRepository({ store }) {
 
     async getCartByUserId(userId) {
       const cart = await this.ensureCartForUserId(userId);
-      const items = store.cartItems
-        .filter((item) => item.cartId === cart.id)
-        .sort((left, right) => left.id - right.id)
-        .map(mapDetailedCartItem);
+      const items = await Promise.all(
+        store.cartItems
+          .filter((item) => item.cartId === cart.id)
+          .sort((left, right) => left.id - right.id)
+          .map(mapDetailedCartItem)
+      );
 
       return {
         ...cart,

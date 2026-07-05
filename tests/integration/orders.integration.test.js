@@ -89,20 +89,25 @@ function appendStatusHistory(store, orderId, status, note, createdAt) {
   store.counters.orderStatusHistoryId += 1;
 }
 
+function minutesFromNow(minutes) {
+  return new Date(Date.now() + (minutes * 60 * 1000)).toISOString();
+}
+
 describe('Orders API integration', () => {
   let app;
   let commerceStore;
 
   beforeEach(() => {
     commerceStore = createInMemoryCommerceStore();
+    const productsRepository = createInMemoryProductsRepository();
 
     app = createApp({
       usersRepository: createInMemoryUsersRepository(),
-      productsRepository: createInMemoryProductsRepository(),
+      productsRepository,
       buyerAddressesRepository: createInMemoryBuyerAddressesRepository({ store: commerceStore }),
-      cartsRepository: createInMemoryCartsRepository({ store: commerceStore }),
-      ordersRepository: createInMemoryOrdersRepository({ store: commerceStore }),
-      paymentsRepository: createInMemoryPaymentsRepository({ store: commerceStore }),
+      cartsRepository: createInMemoryCartsRepository({ productsRepository, store: commerceStore }),
+      ordersRepository: createInMemoryOrdersRepository({ productsRepository, store: commerceStore }),
+      paymentsRepository: createInMemoryPaymentsRepository({ productsRepository, store: commerceStore }),
       paystackClient: createFakePaystackClient()
     });
   });
@@ -203,14 +208,14 @@ describe('Orders API integration', () => {
       orderId,
       'picked_up',
       'Package collected from seller.',
-      '2026-07-01T10:30:00.000Z'
+      minutesFromNow(30)
     );
     appendStatusHistory(
       commerceStore,
       orderId,
       'in_transit',
       'Package is on the way.',
-      '2026-07-01T11:15:00.000Z'
+      minutesFromNow(75)
     );
 
     const response = await request(app)

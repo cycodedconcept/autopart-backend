@@ -51,7 +51,7 @@ function mapDetailedCartItemRow(row) {
       seller: {
         id: row.seller_id,
         businessName: row.seller_business_name,
-        rating: Number(row.seller_rating)
+        rating: row.seller_rating === null ? null : Number(row.seller_rating)
       }
     }
   };
@@ -200,8 +200,8 @@ function createCartsRepository({ db }) {
             p.stock_qty AS product_stock_qty,
             p.status AS product_status,
             p.seller_id,
-            p.seller_business_name,
-            p.seller_rating,
+            sp.business_name AS seller_business_name,
+            sp.rating AS seller_rating,
             (
               SELECT pi.url
               FROM product_images pi
@@ -211,6 +211,7 @@ function createCartsRepository({ db }) {
             ) AS primary_image_url
           FROM cart_items ci
           INNER JOIN products p ON p.id = ci.product_id
+          INNER JOIN seller_profiles sp ON sp.id = p.seller_id
           WHERE ci.cart_id = ?
           ORDER BY ci.created_at ASC, ci.id ASC
         `,

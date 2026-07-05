@@ -8,23 +8,33 @@ const { createBuyerAddressesRepository } = require('./repositories/buyer-address
 const { createCartsRepository } = require('./repositories/carts.repository');
 const { createOrdersRepository } = require('./repositories/orders.repository');
 const { createPaymentsRepository } = require('./repositories/payments.repository');
+const { createSellersRepository } = require('./repositories/sellers.repository');
 const { createAuthService } = require('./services/auth.service');
 const { createCartService } = require('./services/cart.service');
 const { createOrdersService } = require('./services/orders.service');
 const { createPaymentsService } = require('./services/payments.service');
 const { createProductsService } = require('./services/products.service');
+const { createSellersService } = require('./services/sellers.service');
 const { createAuthController } = require('./controllers/auth.controller');
 const { createCartController } = require('./controllers/cart.controller');
 const { createMeController } = require('./controllers/me.controller');
 const { createOrdersController } = require('./controllers/orders.controller');
 const { createPaymentsController } = require('./controllers/payments.controller');
 const { createProductsController } = require('./controllers/products.controller');
+const { createSellerController } = require('./controllers/seller.controller');
+const { createSellerInventoryController } = require('./controllers/seller-inventory.controller');
+const { createSellerOrdersController } = require('./controllers/seller-orders.controller');
+const { createSellerProductsController } = require('./controllers/seller-products.controller');
 const { createAuthRouter } = require('./routes/auth.routes');
 const { createCartRouter } = require('./routes/cart.routes');
 const { createMeRouter } = require('./routes/me.routes');
 const { createOrdersRouter } = require('./routes/orders.routes');
 const { createPaymentsRouter } = require('./routes/payments.routes');
 const { createProductsRouter } = require('./routes/products.routes');
+const { createSellerInventoryRouter } = require('./routes/seller-inventory.routes');
+const { createSellerOrdersRouter } = require('./routes/seller-orders.routes');
+const { createSellerRouter } = require('./routes/seller.routes');
+const { createSellerProductsRouter } = require('./routes/seller-products.routes');
 const { createAuthMiddleware } = require('./middleware/auth.middleware');
 const { createErrorMiddleware } = require('./middleware/error.middleware');
 const env = require('./config/env');
@@ -61,6 +71,9 @@ function createDependencies(overrides = {}) {
   const paymentsRepository = overrides.paymentsRepository || createPaymentsRepository({
     db: resolveDb()
   });
+  const sellersRepository = overrides.sellersRepository || createSellersRepository({
+    db: resolveDb()
+  });
   const appEnv = overrides.env || env;
   const paystackClient = overrides.paystackClient || createPaystackClient({
     secretKey: appEnv.PAYSTACK_SECRET_KEY,
@@ -80,14 +93,23 @@ function createDependencies(overrides = {}) {
   const ordersService = overrides.ordersService || createOrdersService({
     buyerAddressesRepository,
     cartsRepository,
-    ordersRepository
+    ordersRepository,
+    sellersRepository
   });
   const productsService = overrides.productsService || createProductsService({
-    productsRepository
+    productsRepository,
+    sellersRepository
   });
   const paymentsService = overrides.paymentsService || createPaymentsService({
     paymentsRepository,
     paystackClient
+  });
+  const sellersService = overrides.sellersService || createSellersService({
+    usersRepository,
+    sellersRepository,
+    jwtUtils: overrides.jwtUtils || jwtUtils,
+    passwordUtils: overrides.passwordUtils || passwordUtils,
+    env: appEnv
   });
 
   return {
@@ -97,8 +119,16 @@ function createDependencies(overrides = {}) {
     ordersController: overrides.ordersController || createOrdersController({ ordersService }),
     paymentsController: overrides.paymentsController || createPaymentsController({ paymentsService }),
     productsController: overrides.productsController || createProductsController({ productsService }),
+    sellerController: overrides.sellerController || createSellerController({ sellersService }),
+    sellerInventoryController: overrides.sellerInventoryController
+      || createSellerInventoryController({ productsService }),
+    sellerOrdersController: overrides.sellerOrdersController
+      || createSellerOrdersController({ ordersService }),
+    sellerProductsController: overrides.sellerProductsController
+      || createSellerProductsController({ productsService }),
     authMiddleware: overrides.authMiddleware || createAuthMiddleware({ authService }),
     errorMiddleware: overrides.errorMiddleware || createErrorMiddleware({ logger: appLogger }),
+    env: appEnv,
     logger: appLogger
   };
 }
@@ -151,6 +181,28 @@ function createApp(overrides = {}) {
   app.use('/api/v1/payments', createPaymentsRouter({
     authMiddleware: dependencies.authMiddleware,
     paymentsController: dependencies.paymentsController
+  }));
+
+  app.use('/api/v1/seller/products', createSellerProductsRouter({
+    authMiddleware: dependencies.authMiddleware,
+    env: dependencies.env,
+    sellerProductsController: dependencies.sellerProductsController
+  }));
+
+  app.use('/api/v1/seller/inventory', createSellerInventoryRouter({
+    authMiddleware: dependencies.authMiddleware,
+    sellerInventoryController: dependencies.sellerInventoryController
+  }));
+
+  app.use('/api/v1/seller/orders', createSellerOrdersRouter({
+    authMiddleware: dependencies.authMiddleware,
+    sellerOrdersController: dependencies.sellerOrdersController
+  }));
+
+  app.use('/api/v1/seller', createSellerRouter({
+    authMiddleware: dependencies.authMiddleware,
+    env: dependencies.env,
+    sellerController: dependencies.sellerController
   }));
 
   app.use((req, res) => {

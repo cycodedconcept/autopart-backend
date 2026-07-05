@@ -1,5 +1,22 @@
 const USER_ROLES = {
-  BUYER: 'buyer'
+  BUYER: 'buyer',
+  SELLER: 'seller'
+};
+
+const PRODUCT_STATUSES = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive'
+};
+
+const SELLER_DOCUMENT_TYPES = {
+  CAC: 'cac',
+  PROOF_OF_ADDRESS: 'proof_of_address'
+};
+
+const SELLER_VERIFICATION_STATUSES = {
+  PENDING: 'pending',
+  VERIFIED: 'verified',
+  REJECTED: 'rejected'
 };
 
 const ORDER_STATUSES = {
@@ -10,6 +27,14 @@ const ORDER_STATUSES = {
   IN_TRANSIT: 'in_transit',
   PENDING_PAYMENT: 'pending_payment',
   PICKED_UP: 'picked_up'
+};
+
+const ORDER_ITEM_STATUSES = {
+  CANCELLED: 'cancelled',
+  DELIVERED: 'delivered',
+  PENDING: 'pending',
+  PICKED_UP: 'picked_up',
+  READY_FOR_PICKUP: 'ready_for_pickup'
 };
 
 const PAYMENT_METHODS = {
@@ -43,9 +68,13 @@ const ERROR_CODES = {
 };
 
 module.exports = {
+  ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
+  PRODUCT_STATUSES,
+  SELLER_DOCUMENT_TYPES,
+  SELLER_VERIFICATION_STATUSES,
   USER_ROLES,
   ERROR_CODES
 };

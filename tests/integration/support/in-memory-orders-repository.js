@@ -31,8 +31,8 @@ function mapOrder(order, totalItems) {
   };
 }
 
-function createInMemoryOrdersRepository({ store }) {
-  const products = createCatalogueFixture();
+function createInMemoryOrdersRepository({ productsRepository, store }) {
+  const fallbackProducts = createCatalogueFixture();
 
   function getOrderTotalItems(orderId) {
     return store.orderItems
@@ -40,8 +40,20 @@ function createInMemoryOrdersRepository({ store }) {
       .reduce((sum, item) => sum + Number(item.quantity), 0);
   }
 
-  function mapOrderItem(orderItem) {
-    const product = products.find((entry) => entry.id === Number(orderItem.productId));
+  async function resolveProduct(productId) {
+    if (productsRepository && typeof productsRepository.findProductSnapshotById === 'function') {
+      const product = await productsRepository.findProductSnapshotById(productId);
+
+      if (product) {
+        return product;
+      }
+    }
+
+    return fallbackProducts.find((entry) => entry.id === Number(productId)) || null;
+  }
+
+  async function mapOrderItem(orderItem) {
+    const product = await resolveProduct(orderItem.productId);
 
     return {
       id: orderItem.id,
@@ -51,13 +63,16 @@ function createInMemoryOrdersRepository({ store }) {
       quantity: Number(orderItem.quantity),
       unitPriceKobo: Number(orderItem.unitPriceKobo),
       lineTotalKobo: Number(orderItem.lineTotalKobo),
+      itemStatus: orderItem.itemStatus,
       title: product ? product.title : null,
       partNumber: product ? product.partNumber : null,
       condition: product ? product.condition : null,
       location: product ? product.location : null,
       sellerBusinessName: product ? product.sellerBusinessName : null,
       sellerRating: product ? product.sellerRating : null,
-      primaryImageUrl: product && product.images[0] ? product.images[0].url : null,
+      primaryImageUrl: product
+        ? (product.primaryImageUrl || (product.images && product.images[0] ? product.images[0].url : null))
+        : null,
       createdAt: orderItem.createdAt,
       updatedAt: orderItem.updatedAt
     };
@@ -108,6 +123,7 @@ function createInMemoryOrdersRepository({ store }) {
           quantity: item.quantity,
           unitPriceKobo: item.unitPriceKobo,
           lineTotalKobo: item.lineTotalKobo,
+          itemStatus: item.itemStatus,
           createdAt: now,
           updatedAt: now
         });
@@ -145,6 +161,40 @@ function createInMemoryOrdersRepository({ store }) {
       };
     },
 
+    async listOrdersForSeller(filters) {
+      const matchedOrders = store.orders
+        .filter((order) => {
+          const sellerItems = store.orderItems.filter((item) => (
+            item.orderId === order.id
+            && item.sellerId === Number(filters.sellerId)
+            && (!filters.itemStatus || item.itemStatus === filters.itemStatus)
+          ));
+
+          return sellerItems.length > 0;
+        })
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+
+      return {
+        orders: matchedOrders
+          .slice(filters.offset, filters.offset + filters.limit)
+          .map((order) => {
+            const sellerItems = store.orderItems.filter((item) => (
+              item.orderId === order.id
+              && item.sellerId === Number(filters.sellerId)
+              && (!filters.itemStatus || item.itemStatus === filters.itemStatus)
+            ));
+
+            return {
+              ...mapOrder(order, getOrderTotalItems(order.id)),
+              sellerLineItems: sellerItems.length,
+              sellerTotalItems: sellerItems.reduce((sum, item) => sum + Number(item.quantity), 0),
+              sellerTotalKobo: sellerItems.reduce((sum, item) => sum + Number(item.lineTotalKobo), 0)
+            };
+          }),
+        total: matchedOrders.length
+      };
+    },
+
     async findOrderByIdForBuyer(orderId, buyerId) {
       const order = store.orders.find((entry) => (
         entry.id === Number(orderId) && entry.buyerId === Number(buyerId)
@@ -162,9 +212,49 @@ function createInMemoryOrdersRepository({ store }) {
         return [];
       }
 
-      return store.orderItems
-        .filter((item) => item.orderId === order.id)
-        .map(mapOrderItem);
+      return Promise.all(
+        store.orderItems
+          .filter((item) => item.orderId === order.id)
+          .map(mapOrderItem)
+      );
+    },
+
+    async findOrderItemsByOrderIdsForSeller(orderIds, sellerId) {
+      return Promise.all(
+        store.orderItems
+          .filter((item) => (
+            orderIds.includes(item.orderId) && item.sellerId === Number(sellerId)
+          ))
+          .sort((left, right) => {
+            if (left.orderId !== right.orderId) {
+              return right.orderId - left.orderId;
+            }
+
+            return left.id - right.id;
+          })
+          .map(mapOrderItem)
+      );
+    },
+
+    async findSellerOrderItemById(orderItemId, sellerId) {
+      const orderItem = store.orderItems.find((item) => (
+        item.id === Number(orderItemId) && item.sellerId === Number(sellerId)
+      ));
+
+      if (!orderItem) {
+        return null;
+      }
+
+      const order = store.orders.find((entry) => entry.id === orderItem.orderId);
+      const mappedItem = await mapOrderItem(orderItem);
+
+      return {
+        ...mappedItem,
+        orderStatus: order ? order.status : null,
+        paymentMethod: order ? order.paymentMethod : null,
+        paymentReference: order ? order.paymentReference : null,
+        paymentStatus: order ? order.paymentStatus : null
+      };
     },
 
     async findOrderStatusHistoryByOrderId(orderId, buyerId) {
@@ -182,6 +272,21 @@ function createInMemoryOrdersRepository({ store }) {
           .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))
           .map(mapStatusHistoryEntry)
       );
+    },
+
+    async updateSellerOrderItemStatus(payload) {
+      const orderItem = store.orderItems.find((item) => (
+        item.id === Number(payload.orderItemId) && item.sellerId === Number(payload.sellerId)
+      ));
+
+      if (!orderItem) {
+        return null;
+      }
+
+      orderItem.itemStatus = payload.itemStatus;
+      orderItem.updatedAt = new Date().toISOString();
+
+      return this.findSellerOrderItemById(orderItem.id, orderItem.sellerId);
     }
   };
 }

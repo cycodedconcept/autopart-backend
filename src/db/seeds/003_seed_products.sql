@@ -9,8 +9,6 @@ INSERT INTO products (
   price_kobo,
   stock_qty,
   location,
-  seller_business_name,
-  seller_rating,
   status
 )
 VALUES
@@ -25,8 +23,6 @@ VALUES
     1850000,
     18,
     'Lagos',
-    'Prime Auto Hub',
-    4.6,
     'active'
   ),
   (
@@ -40,8 +36,6 @@ VALUES
     4200000,
     9,
     'Abuja',
-    'Savannah Parts Depot',
-    4.2,
     'active'
   ),
   (
@@ -55,8 +49,6 @@ VALUES
     650000,
     32,
     'Port Harcourt',
-    'Naija OEM Spares',
-    4.8,
     'active'
   ),
   (
@@ -70,8 +62,6 @@ VALUES
     3800000,
     4,
     'Lagos',
-    'Elite Mobility Parts',
-    4.9,
     'active'
   ),
   (
@@ -85,8 +75,6 @@ VALUES
     2750000,
     6,
     'Kano',
-    'Northern Truck Parts',
-    4.1,
     'active'
   )
 ON DUPLICATE KEY UPDATE
@@ -99,7 +87,5 @@ ON DUPLICATE KEY UPDATE
   price_kobo = VALUES(price_kobo),
   stock_qty = VALUES(stock_qty),
   location = VALUES(location),
-  seller_business_name = VALUES(seller_business_name),
-  seller_rating = VALUES(seller_rating),
   status = VALUES(status),
   updated_at = CURRENT_TIMESTAMP;
