@@ -1,4 +1,5 @@
 const USER_ROLES = {
+  ADMIN: 'admin',
   BUYER: 'buyer',
   SELLER: 'seller'
 };
@@ -50,6 +51,13 @@ const PAYMENT_STATUSES = {
   PENDING: 'pending'
 };
 
+const PAYOUT_STATUSES = {
+  APPROVED: 'approved',
+  PAID: 'paid',
+  REQUESTED: 'requested',
+  REJECTED: 'rejected'
+};
+
 const ERROR_CODES = {
   AUTH_REQUIRED: 'AUTH_REQUIRED',
   CART_EMPTY: 'CART_EMPTY',
@@ -72,6 +80,7 @@ module.exports = {
   ORDER_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
+  PAYOUT_STATUSES,
   PRODUCT_STATUSES,
   SELLER_DOCUMENT_TYPES,
   SELLER_VERIFICATION_STATUSES,

@@ -2,35 +2,43 @@ const express = require('express');
 const morgan = require('morgan');
 const { getPool } = require('./config/database');
 const logger = require('./utils/logger');
+const { createAdminRepository } = require('./repositories/admin.repository');
 const { createUsersRepository } = require('./repositories/users.repository');
 const { createProductsRepository } = require('./repositories/products.repository');
 const { createBuyerAddressesRepository } = require('./repositories/buyer-addresses.repository');
 const { createCartsRepository } = require('./repositories/carts.repository');
 const { createOrdersRepository } = require('./repositories/orders.repository');
 const { createPaymentsRepository } = require('./repositories/payments.repository');
+const { createSellerFinanceRepository } = require('./repositories/seller-finance.repository');
 const { createSellersRepository } = require('./repositories/sellers.repository');
+const { createAdminService } = require('./services/admin.service');
 const { createAuthService } = require('./services/auth.service');
 const { createCartService } = require('./services/cart.service');
 const { createOrdersService } = require('./services/orders.service');
 const { createPaymentsService } = require('./services/payments.service');
 const { createProductsService } = require('./services/products.service');
+const { createSellerFinanceService } = require('./services/seller-finance.service');
 const { createSellersService } = require('./services/sellers.service');
+const { createAdminController } = require('./controllers/admin.controller');
 const { createAuthController } = require('./controllers/auth.controller');
 const { createCartController } = require('./controllers/cart.controller');
 const { createMeController } = require('./controllers/me.controller');
 const { createOrdersController } = require('./controllers/orders.controller');
 const { createPaymentsController } = require('./controllers/payments.controller');
 const { createProductsController } = require('./controllers/products.controller');
+const { createSellerFinanceController } = require('./controllers/seller-finance.controller');
 const { createSellerController } = require('./controllers/seller.controller');
 const { createSellerInventoryController } = require('./controllers/seller-inventory.controller');
 const { createSellerOrdersController } = require('./controllers/seller-orders.controller');
 const { createSellerProductsController } = require('./controllers/seller-products.controller');
+const { createAdminRouter } = require('./routes/admin.routes');
 const { createAuthRouter } = require('./routes/auth.routes');
 const { createCartRouter } = require('./routes/cart.routes');
 const { createMeRouter } = require('./routes/me.routes');
 const { createOrdersRouter } = require('./routes/orders.routes');
 const { createPaymentsRouter } = require('./routes/payments.routes');
 const { createProductsRouter } = require('./routes/products.routes');
+const { createSellerFinanceRouter } = require('./routes/seller-finance.routes');
 const { createSellerInventoryRouter } = require('./routes/seller-inventory.routes');
 const { createSellerOrdersRouter } = require('./routes/seller-orders.routes');
 const { createSellerRouter } = require('./routes/seller.routes');
@@ -56,6 +64,9 @@ function createDependencies(overrides = {}) {
   const usersRepository = overrides.usersRepository || createUsersRepository({
     db: resolveDb()
   });
+  const adminRepository = overrides.adminRepository || createAdminRepository({
+    db: resolveDb()
+  });
   const productsRepository = overrides.productsRepository || createProductsRepository({
     db: resolveDb()
   });
@@ -69,6 +80,9 @@ function createDependencies(overrides = {}) {
     db: resolveDb()
   });
   const paymentsRepository = overrides.paymentsRepository || createPaymentsRepository({
+    db: resolveDb()
+  });
+  const sellerFinanceRepository = overrides.sellerFinanceRepository || createSellerFinanceRepository({
     db: resolveDb()
   });
   const sellersRepository = overrides.sellersRepository || createSellersRepository({
@@ -85,6 +99,9 @@ function createDependencies(overrides = {}) {
     passwordUtils: overrides.passwordUtils || passwordUtils,
     passwordResetUtils: overrides.passwordResetUtils || passwordResetUtils,
     env: appEnv
+  });
+  const adminService = overrides.adminService || createAdminService({
+    adminRepository
   });
   const cartService = overrides.cartService || createCartService({
     cartsRepository,
@@ -111,8 +128,14 @@ function createDependencies(overrides = {}) {
     passwordUtils: overrides.passwordUtils || passwordUtils,
     env: appEnv
   });
+  const sellerFinanceService = overrides.sellerFinanceService || createSellerFinanceService({
+    env: appEnv,
+    sellerFinanceRepository,
+    sellersRepository
+  });
 
   return {
+    adminController: overrides.adminController || createAdminController({ adminService }),
     authController: overrides.authController || createAuthController({ authService }),
     cartController: overrides.cartController || createCartController({ cartService }),
     meController: overrides.meController || createMeController(),
@@ -120,6 +143,8 @@ function createDependencies(overrides = {}) {
     paymentsController: overrides.paymentsController || createPaymentsController({ paymentsService }),
     productsController: overrides.productsController || createProductsController({ productsService }),
     sellerController: overrides.sellerController || createSellerController({ sellersService }),
+    sellerFinanceController: overrides.sellerFinanceController
+      || createSellerFinanceController({ sellerFinanceService }),
     sellerInventoryController: overrides.sellerInventoryController
       || createSellerInventoryController({ productsService }),
     sellerOrdersController: overrides.sellerOrdersController
@@ -156,6 +181,11 @@ function createApp(overrides = {}) {
 
   app.use('/api/v1/auth', createAuthRouter({
     authController: dependencies.authController,
+    authMiddleware: dependencies.authMiddleware
+  }));
+
+  app.use('/api/v1/admin', createAdminRouter({
+    adminController: dependencies.adminController,
     authMiddleware: dependencies.authMiddleware
   }));
 
@@ -197,6 +227,11 @@ function createApp(overrides = {}) {
   app.use('/api/v1/seller/orders', createSellerOrdersRouter({
     authMiddleware: dependencies.authMiddleware,
     sellerOrdersController: dependencies.sellerOrdersController
+  }));
+
+  app.use('/api/v1/seller', createSellerFinanceRouter({
+    authMiddleware: dependencies.authMiddleware,
+    sellerFinanceController: dependencies.sellerFinanceController
   }));
 
   app.use('/api/v1/seller', createSellerRouter({

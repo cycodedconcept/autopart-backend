@@ -42,7 +42,9 @@ async function applyMigration(connection, migrationsDirectory, filename) {
 
 async function run() {
   const migrationsDirectory = path.resolve(__dirname, '../src/db/migrations');
-  const pool = createPool();
+  const pool = createPool({
+    multipleStatements: true
+  });
   const connection = await pool.getConnection();
 
   try {

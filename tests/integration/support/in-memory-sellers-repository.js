@@ -108,6 +108,17 @@ function createInMemorySellersRepository({ usersRepository }) {
         .map(cloneDocument);
     },
 
+    async listSellerAccountsForReview({ status }) {
+      const matchingProfiles = sellerProfiles
+        .filter((profile) => (
+          !status || profile.verificationStatus === status
+        ))
+        .filter((profile) => sellerDocuments.some((document) => document.sellerId === profile.id))
+        .sort((left, right) => new Date(left.updatedAt) - new Date(right.updatedAt));
+
+      return Promise.all(matchingProfiles.map((profile) => buildSellerAccount(profile)));
+    },
+
     async replaceDocuments({ sellerId, documents, verificationStatus, rejectionReason }) {
       const profile = sellerProfiles.find((entry) => entry.id === sellerId);
 

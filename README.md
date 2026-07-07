@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow plus Seller Flow Milestones `S-A`, `S-B`, `S-C`, and `S-D`. This repository currently implements `AGENTS.md` Milestones A, B, C, D, E, S-A, S-B, S-C, and S-D: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus verification onboarding, seller-owned listing management, seller-side order management, and the seller inventory dashboard.
+Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and the first Admin foundation milestone. This repository currently implements `AGENTS.md` Milestones A, B, C, D, E, S-A, S-B, S-C, S-D, S-E, and Admin Milestone 1: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and admin seller verification review.
 
 ## Implemented Milestone
 
@@ -26,11 +26,15 @@ Backend API for the AutoParts Marketplace buyer flow plus Seller Flow Milestones
 - Seller inventory dashboard with seller-scoped stock levels, low-stock flags, and summary counts
 - Automatic stock decrement when a buyer payment confirms an order for the first time
 - Seller CSV bulk upload for creating multiple listings in one request
+- Seller sales and revenue summary by date range with platform commission deduction
+- Seller pending payout calculation plus payout request history
+- `// ADMIN-STUB` handoff for commission ownership and payout approval lifecycle
+- Admin-protected seller verification review queue with approve and reject actions
 - Buyer order detail now includes per-item `itemStatus` alongside the existing order-level status history
 - Buyer catalogue, cart, and order reads now project seller business metadata from real seller profiles instead of the old product-level seller stub
 - Joi request validation, auth rate limiting, central error handling
-- MySQL migration and seed scaffolding for buyer-flow tables plus seller onboarding/order-management tables
-- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, and seller inventory
+- MySQL migration and seed scaffolding for buyer-flow tables plus seller onboarding, payout, and admin-role tables
+- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, and admin seller verification
 
 ## Project Structure
 
@@ -64,6 +68,11 @@ Seller onboarding uses:
 
 - `UPLOAD_DIR` for local document storage in development
 - `SELLER_AUTO_VERIFY` to auto-verify sellers after both required documents are uploaded in non-admin flows
+- `PLATFORM_COMMISSION_RATE_PERCENT` to control seller payout commission deductions in development and test
+
+Local admin review uses:
+
+- `npm run seed` to provision the dev admin account `admin@autoparts.local` with password `Password123`
 
 ## Commands
 
@@ -128,6 +137,14 @@ npm run lint
 - `POST /api/v1/seller/inventory/bulk`
 - `GET /api/v1/seller/orders`
 - `PATCH /api/v1/seller/orders/:id/status`
+- `GET /api/v1/seller/sales`
+- `POST /api/v1/seller/payouts`
+- `GET /api/v1/seller/payouts`
+
+### Admin
+
+- `GET /api/v1/admin/sellers`
+- `PATCH /api/v1/admin/sellers/:id/verification`
 
 ### Sample Requests
 
@@ -157,6 +174,15 @@ Login:
 {
   "identifier": "amaka@example.com",
   "password": "Password123!"
+}
+```
+
+Login as the seeded dev admin:
+
+```json
+{
+  "identifier": "admin@autoparts.local",
+  "password": "Password123"
 }
 ```
 
@@ -328,6 +354,54 @@ Authorization: Bearer <token>
 file=<inventory.csv>
 ```
 
+List seller sales for a period:
+
+```text
+GET /api/v1/seller/sales?dateFrom=2026-07-01&dateTo=2026-07-07
+Authorization: Bearer <token>
+```
+
+Create a seller payout request:
+
+```text
+POST /api/v1/seller/payouts
+Authorization: Bearer <token>
+
+{"bankAccountRef":"BANK-0012345678"}
+```
+
+List seller payout history:
+
+```text
+GET /api/v1/seller/payouts?status=requested&page=1&limit=10
+Authorization: Bearer <token>
+```
+
+List the admin seller verification queue:
+
+```text
+GET /api/v1/admin/sellers?status=pending&page=1&limit=10
+Authorization: Bearer <admin-token>
+```
+
+Approve a seller verification:
+
+```text
+PATCH /api/v1/admin/sellers/:id/verification
+Authorization: Bearer <admin-token>
+
+{"verificationStatus":"verified"}
+```
+
+Reject a seller verification:
+
+```text
+PATCH /api/v1/admin/sellers/:id/verification
+Authorization: Bearer <admin-token>
+
+{"verificationStatus":"rejected","rejectionReason":"CAC document details could not be matched."}
+```
+
 Inventory CSV header:
 
 ```text
@@ -400,6 +474,7 @@ GET /api/v1/orders/1/receipt?format=html
 - Registration accepts either `email`, `phone`, or both.
 - In `development` and `test`, forgot-password returns the reset token in the response until email/SMS delivery is added.
 - Protected routes require `Authorization: Bearer <token>`.
+- Admin users are provisioned outside the public registration flow; local development gets a seeded admin account after `npm run seed`.
 - Catalogue list responses return `{ products, pagination }`.
 - Product price fields and price filters use kobo integers, for example `minPriceKobo=1000000`.
 - The `sellerRating` catalogue filter is treated as a minimum public seller rating threshold.
@@ -420,11 +495,17 @@ GET /api/v1/orders/1/receipt?format=html
 - `POST /api/v1/seller/inventory/bulk` currently treats each csv row as one listing with one compatibility entry; `imageUrls` should be pipe-separated when multiple image URLs are provided.
 - `GET /api/v1/seller/orders` returns only the authenticated seller's slice of each order and supports optional filtering by seller `itemStatus`.
 - `PATCH /api/v1/seller/orders/:id/status` operates on the seller-owned `order_items.id` and currently allows `ready_for_pickup` and `cancelled` after payment has been confirmed.
+- `GET /api/v1/seller/sales` returns `{ period, commissionRatePercent, sales, payouts }` and supports optional `dateFrom` plus `dateTo` filtering in `YYYY-MM-DD` format.
+- `POST /api/v1/seller/payouts` currently creates one payout request for all eligible paid, non-cancelled seller order items that are not already tied to an open payout record.
+- `GET /api/v1/seller/payouts` returns `{ payouts, pagination }` and supports optional payout `status` filtering.
+- Seller payout eligibility currently treats paid, non-cancelled seller order items as completed sales until the logistics delivery lifecycle is finalized.
+- `GET /api/v1/admin/sellers` returns `{ sellers, pagination, filters }` and supports `status=all|pending|verified|rejected`, defaulting to `pending`.
+- `PATCH /api/v1/admin/sellers/:id/verification` accepts `verified` or `rejected`; `rejectionReason` is required when rejecting.
 - The webhook endpoint expects the `x-paystack-signature` header and stores only sanitized Paystack references/status metadata. No card data is stored.
 
 ## Database
 
 - Money values are stored in kobo.
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
-- Run `npm run seed` to load the sample catalogue data for local browsing.
-- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, and seller order-item status tables needed through Milestone S-D.
+- Run `npm run seed` to load the sample catalogue data plus the dev admin user for local review flows.
+- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, seller order-item status, seller payout, and admin-role support needed through the first Admin milestone.

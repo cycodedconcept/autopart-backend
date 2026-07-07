@@ -15,7 +15,9 @@ async function run() {
   const seedFiles = (await fs.readdir(seedsDirectory))
     .filter((filename) => filename.endsWith('.sql'))
     .sort();
-  const pool = createPool();
+  const pool = createPool({
+    multipleStatements: true
+  });
   const connection = await pool.getConnection();
 
   try {

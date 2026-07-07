@@ -6,50 +6,11 @@ const {
 } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { isValidNigerianPhone, normalizeNigerianPhone } = require('../utils/phone');
+const { sanitizeSellerAccount } = require('../utils/seller');
 const { sanitizeUser } = require('../utils/user');
 
 function normalizeEmail(email) {
   return email ? email.trim().toLowerCase() : null;
-}
-
-function sanitizeSellerProfile(profile) {
-  if (!profile) {
-    return null;
-  }
-
-  return {
-    id: profile.id,
-    userId: profile.userId,
-    businessName: profile.businessName,
-    rating: profile.rating,
-    contactPhone: profile.contactPhone,
-    contactEmail: profile.contactEmail,
-    address: profile.address,
-    cacNumber: profile.cacNumber,
-    verificationStatus: profile.verificationStatus,
-    rejectionReason: profile.rejectionReason,
-    documents: (profile.documents || []).map((document) => ({
-      id: document.id,
-      type: document.type,
-      filePath: document.filePath,
-      uploadedAt: document.uploadedAt,
-      createdAt: document.createdAt,
-      updatedAt: document.updatedAt
-    })),
-    createdAt: profile.createdAt,
-    updatedAt: profile.updatedAt
-  };
-}
-
-function sanitizeSellerAccount(account) {
-  if (!account) {
-    return null;
-  }
-
-  return {
-    user: sanitizeUser(account.user),
-    sellerProfile: sanitizeSellerProfile(account.sellerProfile)
-  };
 }
 
 function resolveVerificationStatus({ autoVerifyEnabled, currentStatus }) {
@@ -165,7 +126,7 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
 
     return {
       token,
-      ...sanitizeSellerAccount(sellerAccount)
+      ...sanitizeSellerAccount(sellerAccount, sanitizeUser)
     };
   }
 
@@ -214,10 +175,10 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
     });
 
     if (autoVerifyEnabled && nextStatus === SELLER_VERIFICATION_STATUSES.VERIFIED) {
-      // ADMIN-STUB: Admin review will own the real pending -> verified/rejected transition later.
+      // ADMIN-STUB: local auto-verify remains for dev, while non-dev review now lives in admin verification routes.
     }
 
-    return sanitizeSellerAccount(updatedSellerAccount);
+    return sanitizeSellerAccount(updatedSellerAccount, sanitizeUser);
   }
 
   async function getSellerProfile(userId) {
@@ -230,7 +191,7 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
       });
     }
 
-    return sanitizeSellerAccount(sellerAccount);
+    return sanitizeSellerAccount(sellerAccount, sanitizeUser);
   }
 
   return {

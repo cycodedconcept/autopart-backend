@@ -12,3 +12,4 @@ process.env.PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 process.env.PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || '';
 process.env.UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads-test';
 process.env.SELLER_AUTO_VERIFY = process.env.SELLER_AUTO_VERIFY || 'true';
+process.env.PLATFORM_COMMISSION_RATE_PERCENT = process.env.PLATFORM_COMMISSION_RATE_PERCENT || '10';

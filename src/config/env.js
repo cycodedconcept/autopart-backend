@@ -24,7 +24,8 @@ const envSchema = Joi.object({
   PAYSTACK_SECRET_KEY: Joi.string().allow('').required(),
   PAYSTACK_PUBLIC_KEY: Joi.string().allow('').required(),
   UPLOAD_DIR: Joi.string().default('./uploads'),
-  SELLER_AUTO_VERIFY: Joi.boolean().truthy('true').truthy('1').falsy('false').falsy('0').default(false)
+  SELLER_AUTO_VERIFY: Joi.boolean().truthy('true').truthy('1').falsy('false').falsy('0').default(false),
+  PLATFORM_COMMISSION_RATE_PERCENT: Joi.number().integer().min(0).max(100).default(10)
 }).unknown(true);
 
 const { error, value } = envSchema.validate(process.env, {

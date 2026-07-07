@@ -3,7 +3,7 @@ const env = require('./env');
 
 let pool;
 
-function createPool() {
+function createPool(overrides = {}) {
   return mysql.createPool({
     host: env.DB_HOST,
     port: env.DB_PORT,
@@ -12,7 +12,8 @@ function createPool() {
     database: env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    ...overrides
   });
 }
 

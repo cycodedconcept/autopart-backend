@@ -6,7 +6,7 @@ This file tells Codex how to work in this repository. Read it fully before gener
 
 ## 0. Current Status & Next Task  ← READ THIS FIRST
 
-**Build order:** Buyer flow (done) -> **Seller flow (current)** -> Admin panel -> Logistics.
+**Build order:** Buyer flow (done) -> Seller flow (done) -> **Admin panel (current)** -> Logistics.
 
 **Completed**
 - [x] Project skeleton (Section 3 layout)
@@ -19,18 +19,20 @@ This file tells Codex how to work in this repository. Read it fully before gener
 - [x] Milestone S-B — Product listing management
 - [x] Milestone S-C — Order management
 - [x] Milestone S-D — Inventory dashboard
+- [x] Milestone S-E — Sales & revenue + payouts
+- [x] Admin Milestone 1 — Seller verification review queue + approve/reject action
 - [x] **Buyer flow complete**
+- [x] **Seller flow complete**
 
-**NEXT TASK → Seller Flow, Milestone S-E — Sales & revenue + payouts (Section 6B).**
+**NEXT TASK → Admin panel foundation, Milestone 2 — payout request review queue plus approve/reject action.**
 Build, in this order:
-1. Sales/revenue summary by period for each seller.
-2. Pending payout calculation from completed sales, minus platform commission.
-3. Payout request creation plus payout history.
-4. Mark admin-owned approval touchpoints `// ADMIN-STUB`.
+1. Payout request review queue plus approve/reject action.
+2. Keep the existing seller-side `// ADMIN-STUB` payout hooks and replace them with real admin-owned transitions.
+3. Stop before Logistics.
 
-Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after S-E so I can run migrations and review.**
+Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after the payout-review milestone for review.**
 
-**After this:** Admin, then Logistics.
+**After this:** Finish Admin, then Logistics.
 
 **Important dependency note:** Some seller actions need Admin (verification approval, payout approval) and Logistics (pickup/delivery status). Where seller code depends on those, build the minimum stub and mark it `// ADMIN-STUB` or `// LOGISTICS-STUB`. Do not build the full Admin or Logistics modules yet.
 
@@ -159,7 +161,7 @@ Ground every endpoint in PRD section 4.2 (Seller Features) and 5.2 (Seller Listi
 ### Milestone S-D — Inventory dashboard  [DONE]
 - Stock levels per listing; decrement stock on confirmed orders; low-stock alerts; CSV bulk upload of listings.
 
-### Milestone S-E — Sales & revenue + payouts  [NEXT]
+### Milestone S-E — Sales & revenue + payouts  [DONE]
 - Sales/revenue summary by period; pending payouts (sale total minus platform commission — commission rate is config, `// ADMIN-STUB` for now).
 - Payout request to bank account + payout history. Actual payout approval is an Admin action -> `// ADMIN-STUB`.
 
@@ -174,11 +176,11 @@ Money in kobo. Buyer-flow tables already exist. Seller flow adds/updates the fol
 **Existing (buyer flow):** `users`, `buyer_addresses`, `categories`, `vehicles_taxonomy`, `products`, `product_images`, `product_compatibility`, `carts`, `cart_items`, `orders`, `order_items`, `payments`, `order_status_history`.
 
 **Seller flow additions / changes:**
-- `users` — ensure `role` supports `seller`; sellers authenticate through the same users table.
+- `users` — ensure `role` supports `seller` and `admin`; sellers and admins authenticate through the same users table.
 - `seller_profiles` — id, user_id (FK, unique), business_name, contact_phone, contact_email, address, cac_number, verification_status (`pending`/`verified`/`rejected`), rejection_reason, timestamps
 - `seller_documents` — id, seller_id (FK), type (`cac`/`proof_of_address`), file_path, uploaded_at
 - `products` — now owned by a real seller: `seller_id` FK -> `seller_profiles` (remove SELLER-STUB); keep title, description, category_id, part_number, condition, price_kobo, stock_qty, location, status, timestamps
-- `payouts` — id, seller_id (FK), amount_kobo, status (`requested`/`approved`/`paid`/`rejected`), bank_account_ref, requested_at, settled_at
+- `payouts` — id, seller_id (FK), gross_amount_kobo, commission_amount_kobo, amount_kobo, status (`requested`/`approved`/`paid`/`rejected`), bank_account_ref, requested_at, settled_at
 - `seller_order_items` view/queries — seller reads their slice of `order_items` (filter by seller_id); add an `item_status` column to `order_items` (`pending`/`ready_for_pickup`/`picked_up`/`delivered`/`cancelled`) if not already present.
 
 ---
@@ -194,6 +196,9 @@ Money in kobo. Buyer-flow tables already exist. Seller flow adds/updates the fol
   - `GET  /api/v1/seller/orders` . `PATCH /api/v1/seller/orders/:id/status`
   - `GET  /api/v1/seller/inventory` . `POST /api/v1/seller/inventory/bulk` (CSV)
   - `GET  /api/v1/seller/sales` . `POST /api/v1/seller/payouts` . `GET /api/v1/seller/payouts`
+- Admin routes (current phase), all under admin auth + `admin` role guard:
+  - `GET /api/v1/admin/sellers`
+  - `PATCH /api/v1/admin/sellers/:id/verification`
 - Protected routes require `Authorization: Bearer <token>`; role-restricted routes also pass a role guard middleware.
 - Correct HTTP status codes (200, 201, 400, 401, 403, 404, 409, 422, 500).
 - Paginate all list endpoints; never return unbounded result sets.
@@ -243,6 +248,7 @@ PAYSTACK_SECRET_KEY=
 PAYSTACK_PUBLIC_KEY=
 UPLOAD_DIR=./uploads
 SELLER_AUTO_VERIFY=true   # dev only: auto-verify sellers until Admin approval is built
+PLATFORM_COMMISSION_RATE_PERCENT=10
 ```
 
 (XAMPP default MySQL: user `root`, empty password, port 3306 — adjust port to 3307 if XAMPP reports that.)
