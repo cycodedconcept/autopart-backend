@@ -8,6 +8,19 @@ const queueStatuses = [
   SELLER_VERIFICATION_STATUSES.REJECTED
 ];
 
+const adminLoginSchema = Joi.object({
+  body: Joi.object({
+    email: Joi.string().trim().lowercase().email({
+      tlds: {
+        allow: false
+      }
+    }).required(),
+    password: Joi.string().min(8).max(72).required()
+  }).required(),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
+});
+
 const listSellerVerificationQueueSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
@@ -41,6 +54,7 @@ const updateSellerVerificationStatusSchema = Joi.object({
 });
 
 module.exports = {
+  adminLoginSchema,
   listSellerVerificationQueueSchema,
   updateSellerVerificationStatusSchema
 };

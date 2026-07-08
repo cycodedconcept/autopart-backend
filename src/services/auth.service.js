@@ -1,4 +1,4 @@
-const { ERROR_CODES, USER_ROLES } = require('../config/constants');
+const { ERROR_CODES, TOKEN_SUBJECT_TYPES, USER_ROLES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { isValidNigerianPhone, normalizeNigerianPhone } = require('../utils/phone');
 const { sanitizeUser } = require('../utils/user');
@@ -38,6 +38,13 @@ function resolveIdentifier(identifier) {
 }
 
 function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordResetUtils, env }) {
+  function buildInvalidCredentialsError() {
+    return new AppError('Invalid email/phone or password.', {
+      statusCode: 401,
+      code: ERROR_CODES.INVALID_CREDENTIALS
+    });
+  }
+
   async function findUserByIdentifier(identifier) {
     const resolvedIdentifier = resolveIdentifier(identifier);
 
@@ -97,7 +104,8 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
 
     const token = jwtUtils.signAccessToken({
       sub: user.id,
-      role: user.role
+      role: user.role,
+      actorType: TOKEN_SUBJECT_TYPES.USER
     });
 
     return {
@@ -109,25 +117,20 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
   async function login(payload) {
     const user = await findUserByIdentifier(payload.identifier);
 
-    if (!user) {
-      throw new AppError('Invalid email/phone or password.', {
-        statusCode: 401,
-        code: ERROR_CODES.INVALID_CREDENTIALS
-      });
+    if (!user || user.role === USER_ROLES.ADMIN) {
+      throw buildInvalidCredentialsError();
     }
 
     const isPasswordValid = await passwordUtils.comparePassword(payload.password, user.passwordHash);
 
     if (!isPasswordValid) {
-      throw new AppError('Invalid email/phone or password.', {
-        statusCode: 401,
-        code: ERROR_CODES.INVALID_CREDENTIALS
-      });
+      throw buildInvalidCredentialsError();
     }
 
     const token = jwtUtils.signAccessToken({
       sub: user.id,
-      role: user.role
+      role: user.role,
+      actorType: TOKEN_SUBJECT_TYPES.USER
     });
 
     return {
@@ -247,9 +250,16 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
       });
     }
 
+    if (decodedToken.actorType && decodedToken.actorType !== TOKEN_SUBJECT_TYPES.USER) {
+      throw new AppError('Invalid or expired access token.', {
+        statusCode: 401,
+        code: ERROR_CODES.UNAUTHORIZED
+      });
+    }
+
     const user = await usersRepository.findById(decodedToken.sub);
 
-    if (!user) {
+    if (!user || user.role === USER_ROLES.ADMIN) {
       throw new AppError('Authenticated user was not found.', {
         statusCode: 401,
         code: ERROR_CODES.UNAUTHORIZED

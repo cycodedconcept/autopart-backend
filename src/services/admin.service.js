@@ -1,12 +1,18 @@
 const {
   ERROR_CODES,
   SELLER_DOCUMENT_TYPES,
-  SELLER_VERIFICATION_STATUSES
+  SELLER_VERIFICATION_STATUSES,
+  TOKEN_SUBJECT_TYPES
 } = require('../config/constants');
+const { sanitizeAdmin } = require('../utils/admin');
 const AppError = require('../utils/app-error');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
 const { sanitizeSellerAccount } = require('../utils/seller');
 const { sanitizeUser } = require('../utils/user');
+
+function normalizeEmail(email) {
+  return email ? email.trim().toLowerCase() : null;
+}
 
 function normalizeVerificationQueueStatus(status) {
   return status || SELLER_VERIFICATION_STATUSES.PENDING;
@@ -31,8 +37,79 @@ function sellerHasRequiredDocuments(sellerAccount) {
   );
 }
 
-function createAdminService({ adminRepository }) {
+function createAdminService({ adminRepository, jwtUtils, passwordUtils }) {
+  async function getAuthenticatedAdmin(token) {
+    let decodedToken;
+
+    try {
+      decodedToken = jwtUtils.verifyAccessToken(token);
+    } catch (_error) {
+      throw new AppError('Invalid or expired access token.', {
+        statusCode: 401,
+        code: ERROR_CODES.UNAUTHORIZED
+      });
+    }
+
+    if (decodedToken.actorType !== TOKEN_SUBJECT_TYPES.ADMIN) {
+      throw new AppError('Invalid or expired access token.', {
+        statusCode: 401,
+        code: ERROR_CODES.UNAUTHORIZED
+      });
+    }
+
+    const admin = await adminRepository.findAdminById(decodedToken.sub);
+
+    if (!admin || !admin.isActive) {
+      throw new AppError('Authenticated admin was not found.', {
+        statusCode: 401,
+        code: ERROR_CODES.UNAUTHORIZED
+      });
+    }
+
+    return sanitizeAdmin(admin);
+  }
+
+  async function login(payload) {
+    const email = normalizeEmail(payload.email);
+    const admin = await adminRepository.findAdminByEmail(email);
+
+    if (!admin) {
+      throw new AppError('Invalid email or password.', {
+        statusCode: 401,
+        code: ERROR_CODES.INVALID_CREDENTIALS
+      });
+    }
+
+    const isPasswordValid = await passwordUtils.comparePassword(payload.password, admin.passwordHash);
+
+    if (!isPasswordValid) {
+      throw new AppError('Invalid email or password.', {
+        statusCode: 401,
+        code: ERROR_CODES.INVALID_CREDENTIALS
+      });
+    }
+
+    if (!admin.isActive) {
+      throw new AppError('This admin account is inactive.', {
+        statusCode: 403,
+        code: ERROR_CODES.FORBIDDEN
+      });
+    }
+
+    const token = jwtUtils.signAccessToken({
+      sub: admin.id,
+      actorType: TOKEN_SUBJECT_TYPES.ADMIN
+    });
+
+    return {
+      token,
+      admin: sanitizeAdmin(admin)
+    };
+  }
+
   return {
+    getAuthenticatedAdmin,
+
     async listSellerVerificationQueue(payload) {
       const pagination = normalizePagination(payload.query, {
         defaultLimit: 10,
@@ -60,6 +137,8 @@ function createAdminService({ adminRepository }) {
         }
       };
     },
+
+    login,
 
     async updateSellerVerificationStatus(payload) {
       const sellerAccount = await adminRepository.findSellerAccountBySellerId(payload.sellerId);

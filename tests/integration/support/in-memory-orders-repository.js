@@ -1,3 +1,8 @@
+const {
+  ORDER_ITEM_STATUSES,
+  ORDER_STATUSES,
+  PAYMENT_STATUSES
+} = require('../../../src/config/constants');
 const { createCatalogueFixture } = require('./catalogue-fixture');
 
 function clone(value) {
@@ -31,7 +36,7 @@ function mapOrder(order, totalItems) {
   };
 }
 
-function createInMemoryOrdersRepository({ productsRepository, store }) {
+function createInMemoryOrdersRepository({ productsRepository, store, usersRepository }) {
   const fallbackProducts = createCatalogueFixture();
 
   function getOrderTotalItems(orderId) {
@@ -193,6 +198,158 @@ function createInMemoryOrdersRepository({ productsRepository, store }) {
           }),
         total: matchedOrders.length
       };
+    },
+
+    async summarizeSellerOrders({ sellerId }) {
+      const matchedItems = store.orderItems.filter((item) => item.sellerId === Number(sellerId));
+      const orderIds = new Set(matchedItems.map((item) => item.orderId));
+      const customerIds = new Set();
+      const paidOrderIds = new Set();
+      const unpaidOrderIds = new Set();
+      const pendingOrderIds = new Set();
+
+      for (const orderId of orderIds) {
+        const order = store.orders.find((entry) => entry.id === orderId);
+
+        if (!order) {
+          continue;
+        }
+
+        customerIds.add(order.buyerId);
+
+        if (order.paymentStatus === PAYMENT_STATUSES.PAID) {
+          paidOrderIds.add(orderId);
+        } else {
+          unpaidOrderIds.add(orderId);
+        }
+      }
+
+      for (const item of matchedItems) {
+        if (item.itemStatus === ORDER_ITEM_STATUSES.PENDING) {
+          pendingOrderIds.add(item.orderId);
+        }
+      }
+
+      return {
+        totalOrders: orderIds.size,
+        paidOrders: paidOrderIds.size,
+        unpaidOrders: unpaidOrderIds.size,
+        totalCustomers: customerIds.size,
+        pendingOrders: pendingOrderIds.size,
+        sellerLineItems: matchedItems.length,
+        totalItems: matchedItems.reduce((sum, item) => sum + Number(item.quantity), 0),
+        pendingLineItems: matchedItems.filter((item) => item.itemStatus === ORDER_ITEM_STATUSES.PENDING).length,
+        readyForPickupLineItems: matchedItems.filter((item) => (
+          item.itemStatus === ORDER_ITEM_STATUSES.READY_FOR_PICKUP
+        )).length,
+        pickedUpLineItems: matchedItems.filter((item) => item.itemStatus === ORDER_ITEM_STATUSES.PICKED_UP).length,
+        deliveredLineItems: matchedItems.filter((item) => item.itemStatus === ORDER_ITEM_STATUSES.DELIVERED).length,
+        cancelledLineItems: matchedItems.filter((item) => item.itemStatus === ORDER_ITEM_STATUSES.CANCELLED).length
+      };
+    },
+
+    async summarizeSellerOrderTrends(filters) {
+      const currentFromTime = Date.parse(`${filters.currentDateFrom}T00:00:00.000Z`);
+      const currentToTime = Date.parse(`${filters.currentDateTo}T23:59:59.999Z`);
+      const previousFromTime = Date.parse(`${filters.previousDateFrom}T00:00:00.000Z`);
+      const previousToTime = Date.parse(`${filters.previousDateTo}T23:59:59.999Z`);
+      const currentOrderIds = new Set();
+      const previousOrderIds = new Set();
+      const currentCustomerIds = new Set();
+      const previousCustomerIds = new Set();
+
+      for (const item of store.orderItems) {
+        if (item.sellerId !== Number(filters.sellerId)) {
+          continue;
+        }
+
+        const order = store.orders.find((entry) => entry.id === item.orderId);
+
+        if (!order) {
+          continue;
+        }
+
+        const createdAtTime = Date.parse(order.createdAt);
+
+        if (createdAtTime >= currentFromTime && createdAtTime <= currentToTime) {
+          currentOrderIds.add(order.id);
+          currentCustomerIds.add(order.buyerId);
+        }
+
+        if (createdAtTime >= previousFromTime && createdAtTime <= previousToTime) {
+          previousOrderIds.add(order.id);
+          previousCustomerIds.add(order.buyerId);
+        }
+      }
+
+      return {
+        currentPeriodOrders: currentOrderIds.size,
+        previousPeriodOrders: previousOrderIds.size,
+        currentPeriodCustomers: currentCustomerIds.size,
+        previousPeriodCustomers: previousCustomerIds.size
+      };
+    },
+
+    async listSellerTopCustomers({ limit, sellerId }) {
+      const paidSellerItems = store.orderItems.filter((item) => {
+        if (item.sellerId !== Number(sellerId) || item.itemStatus === ORDER_ITEM_STATUSES.CANCELLED) {
+          return false;
+        }
+
+        const order = store.orders.find((entry) => entry.id === item.orderId);
+
+        return order
+          && order.paymentStatus === PAYMENT_STATUSES.PAID
+          && order.status !== ORDER_STATUSES.CANCELLED;
+      });
+      const byBuyerId = new Map();
+
+      for (const item of paidSellerItems) {
+        const order = store.orders.find((entry) => entry.id === item.orderId);
+
+        if (!order) {
+          continue;
+        }
+
+        const customer = byBuyerId.get(order.buyerId) || {
+          buyerId: order.buyerId,
+          totalOrders: new Set(),
+          totalItems: 0,
+          totalSpentKobo: 0
+        };
+
+        customer.totalOrders.add(order.id);
+        customer.totalItems += Number(item.quantity);
+        customer.totalSpentKobo += Number(item.lineTotalKobo);
+        byBuyerId.set(order.buyerId, customer);
+      }
+
+      const customers = await Promise.all(
+        Array.from(byBuyerId.values())
+          .sort((left, right) => (
+            right.totalSpentKobo - left.totalSpentKobo
+            || right.totalOrders.size - left.totalOrders.size
+            || left.buyerId - right.buyerId
+          ))
+          .slice(0, limit)
+          .map(async (entry) => {
+            const user = usersRepository && typeof usersRepository.findById === 'function'
+              ? await usersRepository.findById(entry.buyerId)
+              : null;
+
+            return {
+              buyerId: entry.buyerId,
+              fullName: user ? user.fullName : `Customer #${entry.buyerId}`,
+              email: user ? user.email : null,
+              phone: user ? user.phone : null,
+              totalOrders: entry.totalOrders.size,
+              totalItems: entry.totalItems,
+              totalSpentKobo: entry.totalSpentKobo
+            };
+          })
+      );
+
+      return customers;
     },
 
     async findOrderByIdForBuyer(orderId, buyerId) {

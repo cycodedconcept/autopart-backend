@@ -67,6 +67,13 @@ function mapProductRow(row) {
   };
 }
 
+function mapSellerListingTrendRow(row) {
+  return {
+    currentPeriodListings: Number((row && row.current_period_listings) || 0),
+    previousPeriodListings: Number((row && row.previous_period_listings) || 0)
+  };
+}
+
 function buildPublicProductFilterQuery(filters) {
   const whereClauses = ['p.status = ?'];
   const params = ['active'];
@@ -573,6 +580,43 @@ function createProductsRepository({ db }) {
         lowStockListings: Number(rows[0].low_stock_listings || 0),
         totalUnitsInStock: Number(rows[0].total_units_in_stock || 0)
       };
+    },
+
+    async summarizeSellerListingTrend(filters) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN p.created_at >= ? AND p.created_at < DATE_ADD(?, INTERVAL 1 DAY) THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS current_period_listings,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN p.created_at >= ? AND p.created_at < DATE_ADD(?, INTERVAL 1 DAY) THEN 1
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS previous_period_listings
+          FROM products p
+          WHERE p.seller_id = ?
+        `,
+        [
+          filters.currentDateFrom,
+          filters.currentDateTo,
+          filters.previousDateFrom,
+          filters.previousDateTo,
+          filters.sellerId
+        ]
+      );
+
+      return mapSellerListingTrendRow(rows[0]);
     },
 
     async updateOwnedProduct(productId, sellerId, payload) {

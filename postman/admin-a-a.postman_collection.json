@@ -1,0 +1,250 @@
+{
+  "info": {
+    "_postman_id": "b357ca73-5af0-4d1d-9fe0-6c47de9f7b1f",
+    "name": "AutoParts Admin A-A",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Sample Postman collection for Admin Milestone A-A: admin login, profile lookup, seller verification queue, and seller approval."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api/v1"
+    },
+    {
+      "key": "adminEmail",
+      "value": "superadmin@autoparts.local"
+    },
+    {
+      "key": "adminPassword",
+      "value": "Password123"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "sellerId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Admin Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "login"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('login returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test('login returns token and admin profile', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.expect(json.data.token).to.be.a('string').and.not.empty;",
+              "  pm.expect(json.data.admin.email).to.eql(pm.collectionVariables.get('adminEmail'));",
+              "});",
+              "",
+              "pm.collectionVariables.set('adminToken', json.data.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Get Admin Me",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/me",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('admin me returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test('admin me includes roles and permissions', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.expect(json.data.roles).to.be.an('array');",
+              "  pm.expect(json.data.permissions).to.be.an('array');",
+              "  pm.expect(json.data.permissions).to.include('admins.read_self');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. List Pending Sellers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/sellers?status=pending&page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "sellers"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "pending"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('seller queue returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "const sellers = json.data && json.data.sellers ? json.data.sellers : [];",
+              "",
+              "pm.test('seller queue returns paginated sellers array', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.expect(sellers).to.be.an('array');",
+              "  pm.expect(json.data.pagination).to.be.an('object');",
+              "});",
+              "",
+              "if (sellers.length > 0) {",
+              "  pm.collectionVariables.set('sellerId', String(sellers[0].sellerProfile.id));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Approve Seller",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"verificationStatus\": \"verified\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/sellers/{{sellerId}}/verification",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "sellers",
+            "{{sellerId}}",
+            "verification"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.collectionVariables.get('sellerId')) {",
+              "  throw new Error('sellerId is empty. Run \"List Pending Sellers\" first or set sellerId manually.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('seller approval returns 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "",
+              "pm.test('seller status becomes verified', function () {",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.expect(json.data.sellerProfile.verificationStatus).to.eql('verified');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -25,6 +25,24 @@ function mapSalesSummaryRow(row) {
   };
 }
 
+function mapRevenueTrendRow(row) {
+  return {
+    currentGrossSalesKobo: toNumber(row && row.current_gross_sales_kobo),
+    previousGrossSalesKobo: toNumber(row && row.previous_gross_sales_kobo)
+  };
+}
+
+function mapRevenueTimelineRow(row) {
+  return {
+    monthNumber: toNumber(row && row.month_number),
+    totalOrders: toNumber(row && row.total_orders),
+    totalItems: toNumber(row && row.total_items),
+    grossSalesKobo: toNumber(row && row.gross_sales_kobo),
+    commissionKobo: toNumber(row && row.commission_kobo),
+    netSalesKobo: toNumber(row && row.net_sales_kobo)
+  };
+}
+
 function mapPayoutRow(row) {
   if (!row) {
     return null;
@@ -167,6 +185,115 @@ function createSellerFinanceRepository({ db }) {
       );
 
       return mapSalesSummaryRow(rows[0]);
+    },
+
+    async getSellerRevenueTrend({
+      currentDateFrom,
+      currentDateTo,
+      previousDateFrom,
+      previousDateTo,
+      sellerId
+    }) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN paid_payments.paid_at >= ?
+                    AND paid_payments.paid_at < DATE_ADD(?, INTERVAL 1 DAY)
+                  THEN oi.line_total_kobo
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS current_gross_sales_kobo,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN paid_payments.paid_at >= ?
+                    AND paid_payments.paid_at < DATE_ADD(?, INTERVAL 1 DAY)
+                  THEN oi.line_total_kobo
+                  ELSE 0
+                END
+              ),
+              0
+            ) AS previous_gross_sales_kobo
+          FROM order_items oi
+          INNER JOIN orders o ON o.id = oi.order_id
+          INNER JOIN (
+            SELECT
+              order_id,
+              MAX(updated_at) AS paid_at
+            FROM payments
+            WHERE status = ?
+            GROUP BY order_id
+          ) paid_payments ON paid_payments.order_id = o.id
+          WHERE oi.seller_id = ?
+            AND o.payment_status = ?
+            AND o.status <> ?
+            AND oi.item_status <> ?
+        `,
+        [
+          currentDateFrom,
+          currentDateTo,
+          previousDateFrom,
+          previousDateTo,
+          PAYMENT_STATUSES.PAID,
+          sellerId,
+          PAYMENT_STATUSES.PAID,
+          ORDER_STATUSES.CANCELLED,
+          ORDER_ITEM_STATUSES.CANCELLED
+        ]
+      );
+
+      return mapRevenueTrendRow(rows[0]);
+    },
+
+    async getSellerRevenueTimeline({ commissionRatePercent, sellerId, year }) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            MONTH(paid_payments.paid_at) AS month_number,
+            COUNT(DISTINCT o.id) AS total_orders,
+            COALESCE(SUM(oi.quantity), 0) AS total_items,
+            COALESCE(SUM(oi.line_total_kobo), 0) AS gross_sales_kobo,
+            COALESCE(SUM(ROUND((oi.line_total_kobo * ?) / 100, 0)), 0) AS commission_kobo,
+            COALESCE(
+              SUM(oi.line_total_kobo - ROUND((oi.line_total_kobo * ?) / 100, 0)),
+              0
+            ) AS net_sales_kobo
+          FROM order_items oi
+          INNER JOIN orders o ON o.id = oi.order_id
+          INNER JOIN (
+            SELECT
+              order_id,
+              MAX(updated_at) AS paid_at
+            FROM payments
+            WHERE status = ?
+            GROUP BY order_id
+          ) paid_payments ON paid_payments.order_id = o.id
+          WHERE oi.seller_id = ?
+            AND o.payment_status = ?
+            AND o.status <> ?
+            AND oi.item_status <> ?
+            AND YEAR(paid_payments.paid_at) = ?
+          GROUP BY MONTH(paid_payments.paid_at)
+          ORDER BY month_number ASC
+        `,
+        [
+          commissionRatePercent,
+          commissionRatePercent,
+          PAYMENT_STATUSES.PAID,
+          sellerId,
+          PAYMENT_STATUSES.PAID,
+          ORDER_STATUSES.CANCELLED,
+          ORDER_ITEM_STATUSES.CANCELLED,
+          year
+        ]
+      );
+
+      return rows.map(mapRevenueTimelineRow);
     },
 
     async summarizeSellerPayoutBalances({ commissionRatePercent, sellerId }) {

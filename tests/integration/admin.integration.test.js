@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const chai = require('chai');
 const request = require('supertest');
+const { ADMIN_ROLE_NAMES } = require('../../src/config/constants');
 const { createApp } = require('../../src/app');
 const { createInMemoryAdminRepository } = require('./support/in-memory-admin-repository');
 const { createInMemorySellersRepository } = require('./support/in-memory-sellers-repository');
@@ -13,12 +14,12 @@ const { createInMemoryUsersRepository } = require('./support/in-memory-users-rep
 
 const { expect } = chai;
 
-async function loginAdmin(app) {
+async function loginAdmin(app, credentials = {}) {
   const response = await request(app)
-    .post('/api/v1/auth/login')
+    .post('/api/v1/admin/login')
     .send({
-      identifier: 'admin@autoparts.local',
-      password: 'Password123'
+      email: credentials.email || 'superadmin@autoparts.local',
+      password: credentials.password || 'Password123'
     })
     .expect(200);
 
@@ -56,22 +57,28 @@ async function registerSeller(app, email, cacNumber) {
 }
 
 describe('Admin API integration', () => {
+  let adminRepository;
   let app;
-  let usersRepository;
   let uploadDirectory;
 
   beforeEach(async () => {
-    usersRepository = createInMemoryUsersRepository();
+    const usersRepository = createInMemoryUsersRepository();
     const sellersRepository = createInMemorySellersRepository({ usersRepository });
-    const adminRepository = createInMemoryAdminRepository({ sellersRepository });
 
-    await usersRepository.createUser({
-      role: 'admin',
-      fullName: 'Platform Admin',
-      email: 'admin@autoparts.local',
-      phone: '+2348012345699',
+    adminRepository = createInMemoryAdminRepository({ sellersRepository });
+
+    await adminRepository.createAdmin({
+      fullName: 'Super Admin',
+      email: 'superadmin@autoparts.local',
       passwordHash: await bcrypt.hash('Password123', 4),
-      isVerified: true
+      roleNames: [ADMIN_ROLE_NAMES.SUPER_ADMIN]
+    });
+
+    await adminRepository.createAdmin({
+      fullName: 'Operations Admin',
+      email: 'ops-admin@autoparts.local',
+      passwordHash: await bcrypt.hash('Password123', 4),
+      roleNames: []
     });
 
     uploadDirectory = path.join(os.tmpdir(), `autoparts-admin-${Date.now()}`);
@@ -93,8 +100,13 @@ describe('Admin API integration', () => {
         PAYSTACK_SECRET_KEY: '',
         PAYSTACK_PUBLIC_KEY: '',
         UPLOAD_DIR: uploadDirectory,
+        DOJAH_BASE_URL: 'https://api.dojah.io',
+        DOJAH_APP_ID: '',
+        DOJAH_API_KEY: '',
         SELLER_AUTO_VERIFY: false,
-        PLATFORM_COMMISSION_RATE_PERCENT: 10
+        PLATFORM_COMMISSION_RATE_PERCENT: 10,
+        SUPER_ADMIN_EMAIL: 'superadmin@autoparts.local',
+        SUPER_ADMIN_PASSWORD: 'Password123'
       }
     });
   });
@@ -106,7 +118,7 @@ describe('Admin API integration', () => {
     });
   });
 
-  it('lets an admin review the pending seller verification queue and approve a seller', async () => {
+  it('logs in a super admin, returns /admin/me, and allows seller verification actions', async () => {
     const seller = await registerSeller(app, 'seller-review@example.com', 'RC-777001');
 
     await request(app)
@@ -123,6 +135,16 @@ describe('Admin API integration', () => {
       .expect(200);
 
     const adminToken = await loginAdmin(app);
+    const meResponse = await request(app)
+      .get('/api/v1/admin/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(meResponse.body.data.email).to.equal('superadmin@autoparts.local');
+    expect(meResponse.body.data.roles).to.deep.equal(['super_admin']);
+    expect(meResponse.body.data.permissions).to.include('admins.read_self');
+    expect(meResponse.body.data.permissions).to.include('sellers.verify');
+
     const queueResponse = await request(app)
       .get('/api/v1/admin/sellers')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -154,43 +176,20 @@ describe('Admin API integration', () => {
     expect(sellerMeResponse.body.data.sellerProfile.verificationStatus).to.equal('verified');
   });
 
-  it('lets an admin reject a seller and persists the rejection reason', async () => {
-    const seller = await registerSeller(app, 'seller-reject@example.com', 'RC-777002');
+  it('returns 403 when an admin lacks the sellers.verify permission', async () => {
+    const adminToken = await loginAdmin(app, {
+      email: 'ops-admin@autoparts.local'
+    });
 
-    await request(app)
-      .post('/api/v1/seller/documents')
-      .set('Authorization', `Bearer ${seller.token}`)
-      .attach('cacDocument', Buffer.from('fake-cac-pdf'), {
-        filename: 'cac-document.pdf',
-        contentType: 'application/pdf'
-      })
-      .attach('proofOfAddressDocument', Buffer.from('fake-proof-pdf'), {
-        filename: 'proof-of-address.pdf',
-        contentType: 'application/pdf'
-      })
-      .expect(200);
-
-    const adminToken = await loginAdmin(app);
-    const rejectResponse = await request(app)
-      .patch(`/api/v1/admin/sellers/${seller.sellerId}/verification`)
+    const response = await request(app)
+      .get('/api/v1/admin/sellers')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        verificationStatus: 'rejected',
-        rejectionReason: 'CAC document details could not be matched.'
+      .query({
+        status: 'pending'
       })
-      .expect(200);
+      .expect(403);
 
-    expect(rejectResponse.body.data.sellerProfile.verificationStatus).to.equal('rejected');
-    expect(rejectResponse.body.data.sellerProfile.rejectionReason)
-      .to.equal('CAC document details could not be matched.');
-
-    const sellerMeResponse = await request(app)
-      .get('/api/v1/seller/me')
-      .set('Authorization', `Bearer ${seller.token}`)
-      .expect(200);
-
-    expect(sellerMeResponse.body.data.sellerProfile.verificationStatus).to.equal('rejected');
-    expect(sellerMeResponse.body.data.sellerProfile.rejectionReason)
-      .to.equal('CAC document details could not be matched.');
+    expect(response.body.success).to.equal(false);
+    expect(response.body.error.code).to.equal('FORBIDDEN');
   });
 });

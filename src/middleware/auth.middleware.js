@@ -2,7 +2,7 @@ const { ERROR_CODES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const asyncHandler = require('./async-handler');
 
-function createAuthMiddleware({ authService }) {
+function createBearerAuthMiddleware({ authenticate, requestProperty }) {
   return asyncHandler(async (req, res, next) => {
     const authorizationHeader = req.headers.authorization;
 
@@ -14,13 +14,28 @@ function createAuthMiddleware({ authService }) {
     }
 
     const token = authorizationHeader.replace('Bearer ', '').trim();
-    const user = await authService.getAuthenticatedUser(token);
+    const principal = await authenticate(token);
 
-    req.user = user;
+    req[requestProperty] = principal;
     next();
   });
 }
 
+function createAuthMiddleware({ authService }) {
+  return createBearerAuthMiddleware({
+    authenticate: (token) => authService.getAuthenticatedUser(token),
+    requestProperty: 'user'
+  });
+}
+
+function createAdminAuthMiddleware({ adminService }) {
+  return createBearerAuthMiddleware({
+    authenticate: (token) => adminService.getAuthenticatedAdmin(token),
+    requestProperty: 'admin'
+  });
+}
+
 module.exports = {
+  createAdminAuthMiddleware,
   createAuthMiddleware
 };

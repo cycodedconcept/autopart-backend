@@ -1,3 +1,9 @@
+const {
+  ORDER_ITEM_STATUSES,
+  ORDER_STATUSES,
+  PAYMENT_STATUSES
+} = require('../config/constants');
+
 function mapOrderRow(row) {
   if (!row) {
     return null;
@@ -45,6 +51,44 @@ function mapSellerOrderRow(row) {
     sellerTotalKobo: row.seller_total_kobo === undefined || row.seller_total_kobo === null
       ? 0
       : Number(row.seller_total_kobo)
+  };
+}
+
+function mapSellerOrderSummaryRow(row) {
+  return {
+    totalOrders: Number((row && row.total_orders) || 0),
+    paidOrders: Number((row && row.paid_orders) || 0),
+    unpaidOrders: Number((row && row.unpaid_orders) || 0),
+    totalCustomers: Number((row && row.total_customers) || 0),
+    pendingOrders: Number((row && row.pending_orders) || 0),
+    sellerLineItems: Number((row && row.seller_line_items) || 0),
+    totalItems: Number((row && row.total_items) || 0),
+    pendingLineItems: Number((row && row.pending_line_items) || 0),
+    readyForPickupLineItems: Number((row && row.ready_for_pickup_line_items) || 0),
+    pickedUpLineItems: Number((row && row.picked_up_line_items) || 0),
+    deliveredLineItems: Number((row && row.delivered_line_items) || 0),
+    cancelledLineItems: Number((row && row.cancelled_line_items) || 0)
+  };
+}
+
+function mapSellerOrderTrendRow(row) {
+  return {
+    currentPeriodOrders: Number((row && row.current_period_orders) || 0),
+    previousPeriodOrders: Number((row && row.previous_period_orders) || 0),
+    currentPeriodCustomers: Number((row && row.current_period_customers) || 0),
+    previousPeriodCustomers: Number((row && row.previous_period_customers) || 0)
+  };
+}
+
+function mapTopCustomerRow(row) {
+  return {
+    buyerId: row.buyer_id,
+    fullName: row.full_name,
+    email: row.email,
+    phone: row.phone,
+    totalOrders: Number((row && row.total_orders) || 0),
+    totalItems: Number((row && row.total_items) || 0),
+    totalSpentKobo: Number((row && row.total_spent_kobo) || 0)
   };
 }
 
@@ -391,6 +435,127 @@ function createOrdersRepository({ db }) {
         orders: rows.map(mapSellerOrderRow),
         total: Number(countRows[0].total)
       };
+    },
+
+    async summarizeSellerOrders({ sellerId }) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            COUNT(DISTINCT o.id) AS total_orders,
+            COUNT(DISTINCT CASE WHEN o.payment_status = ? THEN o.id END) AS paid_orders,
+            COUNT(DISTINCT CASE WHEN o.payment_status <> ? THEN o.id END) AS unpaid_orders,
+            COUNT(DISTINCT o.buyer_id) AS total_customers,
+            COUNT(DISTINCT CASE WHEN oi.item_status = ? THEN o.id END) AS pending_orders,
+            COUNT(oi.id) AS seller_line_items,
+            COALESCE(SUM(oi.quantity), 0) AS total_items,
+            COALESCE(SUM(CASE WHEN oi.item_status = ? THEN 1 ELSE 0 END), 0) AS pending_line_items,
+            COALESCE(
+              SUM(CASE WHEN oi.item_status = ? THEN 1 ELSE 0 END),
+              0
+            ) AS ready_for_pickup_line_items,
+            COALESCE(SUM(CASE WHEN oi.item_status = ? THEN 1 ELSE 0 END), 0) AS picked_up_line_items,
+            COALESCE(SUM(CASE WHEN oi.item_status = ? THEN 1 ELSE 0 END), 0) AS delivered_line_items,
+            COALESCE(SUM(CASE WHEN oi.item_status = ? THEN 1 ELSE 0 END), 0) AS cancelled_line_items
+          FROM orders o
+          INNER JOIN order_items oi ON oi.order_id = o.id
+          WHERE oi.seller_id = ?
+        `,
+        [
+          PAYMENT_STATUSES.PAID,
+          PAYMENT_STATUSES.PAID,
+          ORDER_ITEM_STATUSES.PENDING,
+          ORDER_ITEM_STATUSES.PENDING,
+          ORDER_ITEM_STATUSES.READY_FOR_PICKUP,
+          ORDER_ITEM_STATUSES.PICKED_UP,
+          ORDER_ITEM_STATUSES.DELIVERED,
+          ORDER_ITEM_STATUSES.CANCELLED,
+          sellerId
+        ]
+      );
+
+      return mapSellerOrderSummaryRow(rows[0]);
+    },
+
+    async summarizeSellerOrderTrends(filters) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            COUNT(
+              DISTINCT CASE
+                WHEN o.created_at >= ? AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY) THEN o.id
+                ELSE NULL
+              END
+            ) AS current_period_orders,
+            COUNT(
+              DISTINCT CASE
+                WHEN o.created_at >= ? AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY) THEN o.id
+                ELSE NULL
+              END
+            ) AS previous_period_orders,
+            COUNT(
+              DISTINCT CASE
+                WHEN o.created_at >= ? AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY) THEN o.buyer_id
+                ELSE NULL
+              END
+            ) AS current_period_customers,
+            COUNT(
+              DISTINCT CASE
+                WHEN o.created_at >= ? AND o.created_at < DATE_ADD(?, INTERVAL 1 DAY) THEN o.buyer_id
+                ELSE NULL
+              END
+            ) AS previous_period_customers
+          FROM orders o
+          INNER JOIN order_items oi ON oi.order_id = o.id
+          WHERE oi.seller_id = ?
+        `,
+        [
+          filters.currentDateFrom,
+          filters.currentDateTo,
+          filters.previousDateFrom,
+          filters.previousDateTo,
+          filters.currentDateFrom,
+          filters.currentDateTo,
+          filters.previousDateFrom,
+          filters.previousDateTo,
+          filters.sellerId
+        ]
+      );
+
+      return mapSellerOrderTrendRow(rows[0]);
+    },
+
+    async listSellerTopCustomers({ limit, sellerId }) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            o.buyer_id,
+            u.full_name,
+            u.email,
+            u.phone,
+            COUNT(DISTINCT o.id) AS total_orders,
+            COALESCE(SUM(oi.quantity), 0) AS total_items,
+            COALESCE(SUM(oi.line_total_kobo), 0) AS total_spent_kobo
+          FROM orders o
+          INNER JOIN order_items oi ON oi.order_id = o.id
+          INNER JOIN users u ON u.id = o.buyer_id
+          WHERE oi.seller_id = ?
+            AND o.payment_status = ?
+            AND o.status <> ?
+            AND oi.item_status <> ?
+          GROUP BY o.buyer_id, u.full_name, u.email, u.phone
+          ORDER BY total_spent_kobo DESC, total_orders DESC, o.buyer_id ASC
+          LIMIT ?
+        `,
+        [
+          sellerId,
+          PAYMENT_STATUSES.PAID,
+          ORDER_STATUSES.CANCELLED,
+          ORDER_ITEM_STATUSES.CANCELLED,
+          limit
+        ]
+      );
+
+      return rows.map(mapTopCustomerRow);
     },
 
     async findOrderByIdForBuyer(orderId, buyerId) {

@@ -6,35 +6,29 @@ This file tells Codex how to work in this repository. Read it fully before gener
 
 ## 0. Current Status & Next Task  ← READ THIS FIRST
 
-**Build order:** Buyer flow (done) -> Seller flow (done) -> **Admin panel (current)** -> Logistics.
+**Build order:** Buyer (done) -> Seller (done) -> **Admin (current)** -> Logistics.
 
 **Completed**
 - [x] Project skeleton (Section 3 layout)
-- [x] Milestone A — Auth & accounts: buyer signup, login (JWT), forgot/reset password, `GET /me`, auth middleware
-- [x] Milestone B — Catalogue browsing: products list (search/filter/pagination), product detail
-- [x] Milestone C — Cart & checkout
-- [x] Milestone D — Payment (Paystack)
-- [x] Milestone E — Order tracking & history
-- [x] Milestone S-A — Seller registration & verification
-- [x] Milestone S-B — Product listing management
-- [x] Milestone S-C — Order management
-- [x] Milestone S-D — Inventory dashboard
-- [x] Milestone S-E — Sales & revenue + payouts
-- [x] Admin Milestone 1 — Seller verification review queue + approve/reject action
-- [x] **Buyer flow complete**
-- [x] **Seller flow complete**
+- [x] **Buyer flow** — auth, catalogue browsing, cart & checkout, Paystack payment, order tracking & history
+- [x] **Seller flow** — registration & CAC verification (Dojah), listing management, order management, inventory, sales & payouts
+- [x] **Admin Milestone A-A** — dedicated admin auth, RBAC, seeded `super_admin`, scoped `verification_admin`, `GET /api/v1/admin/me`
 
-**NEXT TASK → Admin panel foundation, Milestone 2 — payout request review queue plus approve/reject action.**
+**NEXT TASK → Admin Panel, Milestone A-B — Seller verification management (Section 6C).**
 Build, in this order:
-1. Payout request review queue plus approve/reject action.
-2. Keep the existing seller-side `// ADMIN-STUB` payout hooks and replace them with real admin-owned transitions.
-3. Stop before Logistics.
+1. List pending sellers; view a seller's profile + uploaded CAC/documents + the stored Dojah response.
+2. Approve or reject with a reason; on approve, set the seller `verified`.
+3. Replace the `SELLER_AUTO_VERIFY` flag and the current seller-verification admin stub path.
+4. Re-run the affected seller and admin tests.
 
-Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after the payout-review milestone for review.**
+Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after A-B so I can run migrations and review.**
 
-**After this:** Finish Admin, then Logistics.
+**After this:** A-C (category & catalogue management) -> A-D (user & order oversight) -> A-E (payout approval + platform config) -> A-F (disputes + audit log). Then Logistics.
 
-**Important dependency note:** Some seller actions need Admin (verification approval, payout approval) and Logistics (pickup/delivery status). Where seller code depends on those, build the minimum stub and mark it `// ADMIN-STUB` or `// LOGISTICS-STUB`. Do not build the full Admin or Logistics modules yet.
+**This module resolves earlier stubs.** As you build, replace the matching markers and re-run the affected tests:
+- `SELLER_AUTO_VERIFY` dev flag + `// ADMIN-STUB` on seller verification -> replaced in A-B.
+- Seeded categories / `// ADMIN-STUB` on category ownership -> replaced in A-C.
+- `// ADMIN-STUB` on payout approval and commission config -> replaced in A-E.
 
 ---
 
@@ -44,7 +38,7 @@ AutoParts Marketplace is a Nigerian B2B & B2C ecommerce platform for auto spare 
 
 This repository is the **backend API only** (no frontend). It is consumed by a responsive web client.
 
-Where a module you are not currently building is unavoidable (e.g. a seller feature that needs admin approval), build only the minimum surface needed and mark it `// ADMIN-STUB` / `// LOGISTICS-STUB` / `// SELLER-STUB` as appropriate.
+Where a module you are not currently building is unavoidable, build only the minimum surface needed and mark it `// LOGISTICS-STUB`. Do not build the full Logistics module yet.
 
 ---
 
@@ -57,7 +51,8 @@ Where a module you are not currently building is unavoidable (e.g. a seller feat
 - **Query layer:** `mysql2` with **parameterised queries**, or Knex query builder if a builder is needed. Do NOT introduce a heavy ORM (no Sequelize/TypeORM) unless explicitly requested.
 - **Auth:** JWT (`jsonwebtoken`); password hashing with `bcrypt`
 - **Validation:** `joi` (stay consistent)
-- **File upload:** `multer` for document/image upload (CAC docs, product images). Store files locally under `/uploads` in dev; keep the storage layer swappable for S3 later.
+- **File upload:** `multer` (CAC docs, product images). Local `/uploads` in dev; keep storage swappable for S3.
+- **External verification:** Dojah CAC lookup (`https://api.dojah.io/api/v1/kyc/cac/basic`, headers `AppId` + `Authorization`) behind a swappable `cacVerificationService`.
 - **Config:** `dotenv`
 - **Testing:** `jest` (unit) and `mocha` + `chai` + `supertest` (integration)
 - **Logging:** `morgan` for HTTP; a small app logger wrapper otherwise
@@ -74,9 +69,9 @@ Where a module you are not currently building is unavoidable (e.g. a seller feat
   /controllers   -> request handlers; thin, call services
   /services      -> business logic; no req/res here
   /repositories  -> all SQL lives here (parameterised queries only)
-  /middleware    -> auth, role guard, validation, error handler, rate limiter, upload
+  /middleware    -> auth, role guard, RBAC/permission guard, validation, error handler, rate limiter, upload
   /validators    -> joi schemas per resource
-  /utils         -> helpers (jwt, password, money, responses, pagination)
+  /utils         -> helpers (jwt, password, money, responses, pagination, audit)
   /db
     /migrations  -> ordered SQL migrations (001_xxx.sql, 002_xxx.sql)
     /seeds       -> seed data for local dev/testing
@@ -99,14 +94,14 @@ README.md
 ## 4. Coding Standards
 
 - Clean, efficient, readable code. Small single-purpose functions, clear names, no dead code.
-- **Reusable components:** factor shared logic into `/utils`, `/middleware`, `/services`. No copy-paste across controllers. Centralise: the response envelope, JWT sign/verify, password hashing, money conversion (naira<->kobo), pagination, file upload handling.
+- **Reusable components:** factor shared logic into `/utils`, `/middleware`, `/services`. No copy-paste across controllers. Centralise: the response envelope, JWT sign/verify, password hashing, money conversion (naira<->kobo), pagination, file upload, and the audit-log writer.
 - ONE consistent response envelope:
   ```json
   { "success": true, "data": { }, "message": "..." }
   { "success": false, "error": { "code": "STRING_CODE", "message": "..." } }
   ```
 - `async/await` everywhere; wrap async handlers so errors reach the central error middleware (`asyncHandler`).
-- One central error-handling middleware. Controllers throw typed errors; middleware maps them to status + envelope. Never leak stack traces or SQL errors to the client.
+- One central error-handling middleware. Controllers throw typed errors; middleware maps them to status + envelope. Never leak stack traces, SQL, or third-party errors to the client.
 - Validate every body, query, and param with a joi schema before the controller runs.
 - No secrets in code — everything sensitive from `.env`. Keep `.env.example` in sync (no real values).
 - Parameterised queries for ALL database access. String-concatenated SQL is forbidden.
@@ -117,7 +112,7 @@ README.md
 ## 5. Database Conventions
 
 - MySQL 8, InnoDB, `utf8mb4`.
-- Table names: plural snake_case (`products`, `order_items`).
+- Table names: plural snake_case (`admins`, `audit_logs`).
 - Primary keys: `id` BIGINT UNSIGNED AUTO_INCREMENT.
 - Every table has `created_at` and `updated_at` (TIMESTAMP, default CURRENT_TIMESTAMP).
 - Money columns: BIGINT (kobo), clearly named (`price_kobo`, `total_kobo`).
@@ -126,62 +121,68 @@ README.md
 
 ---
 
-## 6. Buyer Flow Milestones  [ALL DONE]
+## 6. Buyer & Seller Flows  [ALL DONE]
 
-Delivered per PRD 4.1 and 5.1:
-- A. Auth & accounts (signup, login, forgot/reset password, `GET /me`)
-- B. Catalogue browsing (products list with search/filter/pagination, product detail)
-- C. Cart & checkout
-- D. Payment (Paystack; no card data stored)
-- E. Order tracking & history
+- **Buyer** (PRD 4.1 / 5.1): auth, catalogue browsing, cart & checkout, Paystack payment, order tracking & history.
+- **Seller** (PRD 4.2 / 5.2): registration & CAC verification, listing management, order management, inventory, sales & payouts.
 
-The buyer flow currently reads product/seller data that was seeded as `// SELLER-STUB`. The seller flow (Section 6B) replaces those stubs with real seller-owned data. Keep buyer endpoints working as you do this.
+These flows currently depend on stubbed admin behaviour (auto-verify flag, seeded categories, stubbed payout/commission approval). The Admin flow (Section 6C) replaces those stubs. Keep buyer and seller endpoints working and their tests green as you do so.
 
 ---
 
-## 6B. Seller Flow Milestones (build in this order, P0 first)
+## 6C. Admin Flow Milestones (build in this order, P0 first)
 
-Ground every endpoint in PRD section 4.2 (Seller Features) and 5.2 (Seller Listing & Fulfilment Flow).
+Ground every endpoint in PRD section 4.4 (Admin Panel Features), 4.5 (Super Admin Features), and the RBAC note. Goal for this phase: **operational control of the platform that's already built.**
 
-### Milestone S-A — Seller registration & verification  [DONE]
-- Seller role + seller profile (business name, contact, address).
-- Document upload: CAC document + proof of address (multer).
-- Verification states: `pending -> verified` / `rejected (reason)`. Real approval is an Admin action -> `// ADMIN-STUB`; provide a dev-only auto-verify env flag.
-- Seller login + read own profile and verification status.
+### Milestone A-A — Admin auth & RBAC  [NEXT]
+- `admins` table, admin login (JWT), `GET /admin/me`.
+- RBAC: `roles`, `permissions`, `role_permissions`, `admin_roles`; a permission-guard middleware.
+- Seed a `super_admin` (all permissions) and a scoped role. Every admin route is permission-gated.
 
-### Milestone S-B — Product listing management  [DONE]
-- Seller CRUD on their own listings: create, edit, delete, with photos (multer), price_kobo, stock_qty, part_number, category, condition, compatibility.
-- This REPLACES the `// SELLER-STUB` product tables with real seller-owned records. Update the buyer catalogue endpoints to read the real data (a seller only manages their own listings; buyers still read all active listings).
-- Enforce ownership: a seller can only edit/delete their own products (role guard + ownership check).
+### Milestone A-B — Seller verification management
+- List pending sellers; view a seller's profile + uploaded CAC/documents + the stored Dojah response.
+- Approve or reject with a reason; on approve, set the seller `verified`.
+- REPLACES the `SELLER_AUTO_VERIFY` flag and the `// ADMIN-STUB` on seller verification. Re-run seller tests.
 
-### Milestone S-C — Order management  [DONE]
-- Seller views incoming orders for their products, confirms availability, marks order item as `ready_for_pickup`, handles cancellations.
-- Connects to the `orders`/`order_items` buyers already create. Where fulfilment needs pickup/delivery, mark `// LOGISTICS-STUB`.
+### Milestone A-C — Category & catalogue management
+- Admin CRUD on the category tree (`categories`, parent/child) and the vehicle taxonomy.
+- Sellers still only SELECT categories; admin owns creation. Optional: a "seller category request -> admin approves" queue (P1).
+- REPLACES seeded-category ownership / `// ADMIN-STUB`. Confirm seller listing + buyer catalogue still pass.
 
-### Milestone S-D — Inventory dashboard  [DONE]
-- Stock levels per listing; decrement stock on confirmed orders; low-stock alerts; CSV bulk upload of listings.
+### Milestone A-D — User & order oversight
+- List/search all buyers, sellers, and orders (paginated). Suspend or ban any user; override where needed.
+- Read-only order oversight across the whole platform, with the ability to intervene on status.
 
-### Milestone S-E — Sales & revenue + payouts  [DONE]
-- Sales/revenue summary by period; pending payouts (sale total minus platform commission — commission rate is config, `// ADMIN-STUB` for now).
-- Payout request to bank account + payout history. Actual payout approval is an Admin action -> `// ADMIN-STUB`.
+### Milestone A-E — Payout approval + platform config
+- Review seller payout requests; approve / reject / mark paid. Move `payouts` through its states.
+- Manage global config: commission rate(s) per category/tier, and any platform settings.
+- REPLACES the `// ADMIN-STUB` on payout approval and commission config.
 
-**Out of scope until seller flow is done:** full Admin panel, full Logistics module, promotions/discounts (P1), seller storefront page (P1), returns management (P1), subscription tiers (P2), buyer-behaviour analytics (P2).
+### Milestone A-F — Disputes + audit log
+- Dispute queue: view buyer/seller disputes, take a decision, resolve. Where a refund is needed, connect to the existing payment records (Paystack refund reference).
+- Audit log: every sensitive admin action (approvals, rejections, bans, payout decisions, config/commission changes) writes an `audit_logs` row with actor, action, target, and timestamp. Expose a read endpoint.
+
+**Out of scope until Admin is done:** the full Logistics module (delivery jobs, rider apps, live tracking), promotions/subscription tiers (P1/P2), advanced analytics (P2). Keep logistics touchpoints as `// LOGISTICS-STUB`.
 
 ---
 
 ## 7. Data Model
 
-Money in kobo. Buyer-flow tables already exist. Seller flow adds/updates the following.
+Money in kobo. Buyer + seller tables already exist. Admin flow adds the following.
 
-**Existing (buyer flow):** `users`, `buyer_addresses`, `categories`, `vehicles_taxonomy`, `products`, `product_images`, `product_compatibility`, `carts`, `cart_items`, `orders`, `order_items`, `payments`, `order_status_history`.
+**Existing:** `users`, `buyer_addresses`, `categories`, `vehicles_taxonomy`, `products`, `product_images`, `product_compatibility`, `carts`, `cart_items`, `orders`, `order_items`, `payments`, `order_status_history`, `seller_profiles`, `seller_documents`, `payouts`.
 
-**Seller flow additions / changes:**
-- `users` — ensure `role` supports `seller` and `admin`; sellers and admins authenticate through the same users table.
-- `seller_profiles` — id, user_id (FK, unique), business_name, contact_phone, contact_email, address, cac_number, verification_status (`pending`/`verified`/`rejected`), rejection_reason, timestamps
-- `seller_documents` — id, seller_id (FK), type (`cac`/`proof_of_address`), file_path, uploaded_at
-- `products` — now owned by a real seller: `seller_id` FK -> `seller_profiles` (remove SELLER-STUB); keep title, description, category_id, part_number, condition, price_kobo, stock_qty, location, status, timestamps
-- `payouts` — id, seller_id (FK), gross_amount_kobo, commission_amount_kobo, amount_kobo, status (`requested`/`approved`/`paid`/`rejected`), bank_account_ref, requested_at, settled_at
-- `seller_order_items` view/queries — seller reads their slice of `order_items` (filter by seller_id); add an `item_status` column to `order_items` (`pending`/`ready_for_pickup`/`picked_up`/`delivered`/`cancelled`) if not already present.
+**Admin flow additions:**
+- `admins` — id, full_name, email (unique), password_hash, is_active, timestamps
+- `roles` — id, name (unique, e.g. `super_admin`, `verification_admin`), description
+- `permissions` — id, key (unique, e.g. `sellers.verify`, `payouts.approve`, `categories.manage`, `users.ban`, `config.manage`, `disputes.resolve`), description
+- `role_permissions` — role_id (FK), permission_id (FK)
+- `admin_roles` — admin_id (FK), role_id (FK)
+- `audit_logs` — id, admin_id (FK), action (string key), target_type, target_id, detail (JSON), created_at
+- `platform_config` — id, key (unique, e.g. `commission_rate_default`), value (JSON or string), updated_at
+- `disputes` — id, order_id (FK), raised_by (`buyer`/`seller`), reason, status (`open`/`resolved`/`rejected`), resolution_note, resolved_by (admin FK), timestamps
+- Extend `seller_profiles`: ensure `verification_status`, `rejection_reason`, `verified_by` (admin FK), `verified_at`.
+- Extend `payouts`: ensure `approved_by` (admin FK), `approved_at`, and status flow `requested -> approved -> paid` / `rejected`.
 
 ---
 
@@ -189,30 +190,28 @@ Money in kobo. Buyer-flow tables already exist. Seller flow adds/updates the fol
 
 - Base path: `/api/v1`.
 - Buyer routes (built): `auth/*`, `me`, `products`, `products/:id`, `cart/*`, `orders`, `orders/:id`, `payments/*`.
-- Seller routes (this phase), all under seller auth + `seller` role guard:
-  - `POST /api/v1/seller/register` . `POST /api/v1/seller/documents`
-  - `GET  /api/v1/seller/me` (profile + verification status)
-  - `POST /api/v1/seller/products` . `PATCH /api/v1/seller/products/:id` . `DELETE /api/v1/seller/products/:id` . `GET /api/v1/seller/products`
-  - `GET  /api/v1/seller/orders` . `PATCH /api/v1/seller/orders/:id/status`
-  - `GET  /api/v1/seller/inventory` . `POST /api/v1/seller/inventory/bulk` (CSV)
-  - `GET  /api/v1/seller/sales` . `POST /api/v1/seller/payouts` . `GET /api/v1/seller/payouts`
-- Admin routes (current phase), all under admin auth + `admin` role guard:
-  - `GET /api/v1/admin/sellers`
-  - `PATCH /api/v1/admin/sellers/:id/verification`
-- Protected routes require `Authorization: Bearer <token>`; role-restricted routes also pass a role guard middleware.
-- Correct HTTP status codes (200, 201, 400, 401, 403, 404, 409, 422, 500).
+- Seller routes (built): `seller/*`.
+- Admin routes (this phase), all under admin auth + permission guard:
+  - `POST /api/v1/admin/login` . `GET /api/v1/admin/me`
+  - `GET  /api/v1/admin/sellers?status=pending` . `GET /api/v1/admin/sellers/:id` . `PATCH /api/v1/admin/sellers/:id/verification`
+  - `GET/POST/PATCH/DELETE /api/v1/admin/categories` (+ `/categories/:id`) . `GET /api/v1/admin/category-requests` (P1)
+  - `GET /api/v1/admin/users` . `PATCH /api/v1/admin/users/:id/status` . `GET /api/v1/admin/orders` . `PATCH /api/v1/admin/orders/:id/status`
+  - `GET /api/v1/admin/payouts` . `PATCH /api/v1/admin/payouts/:id` . `GET/PATCH /api/v1/admin/config`
+  - `GET /api/v1/admin/disputes` . `PATCH /api/v1/admin/disputes/:id` . `GET /api/v1/admin/audit-logs`
+- Protected routes require `Authorization: Bearer <token>`; admin routes also pass the permission-guard middleware for the specific permission key.
+- Correct HTTP status codes (200, 201, 400, 401, 403, 404, 409, 422, 500). Use 403 when an admin lacks the required permission.
 - Paginate all list endpoints; never return unbounded result sets.
 
 ---
 
 ## 9. Testing (required)
 
-- **jest** unit tests: services, utils. Mock the repository layer.
-- **mocha + chai + supertest** integration tests against a test database. Grow the happy path: buyer path already covered; add the seller path (register -> upload docs -> verify (dev flag) -> create listing -> receive order -> mark ready).
+- **jest** unit tests: services, utils, the permission-guard logic. Mock the repository layer.
+- **mocha + chai + supertest** integration tests against a test database. Grow the happy path: add the admin path (super_admin login -> approve a pending seller -> create a category -> approve a payout), and add negative tests (an admin WITHOUT a permission gets 403).
 - Every new service function gets a unit test; every new endpoint gets at least one integration test.
-- No external network calls in tests — mock Paystack and any file storage.
+- No external network calls in tests — mock Paystack, Dojah, and file storage.
 - npm scripts: `test`, `test:unit`, `test:integration`.
-- A feature is not "done" until its tests pass.
+- A feature is not "done" until its tests pass, including the buyer/seller tests affected when a stub is replaced.
 
 ---
 
@@ -222,7 +221,7 @@ Money in kobo. Buyer-flow tables already exist. Seller flow adds/updates the fol
 npm run dev               # nodemon
 npm start                 # start server
 npm run migrate           # run pending SQL migrations
-npm run seed              # seed dev data
+npm run seed              # seed dev data (incl. super_admin + roles/permissions)
 npm test                  # all tests
 npm run test:unit         # jest
 npm run test:integration  # mocha
@@ -247,8 +246,12 @@ BCRYPT_SALT_ROUNDS=10
 PAYSTACK_SECRET_KEY=
 PAYSTACK_PUBLIC_KEY=
 UPLOAD_DIR=./uploads
-SELLER_AUTO_VERIFY=true   # dev only: auto-verify sellers until Admin approval is built
-PLATFORM_COMMISSION_RATE_PERCENT=10
+DOJAH_BASE_URL=https://api.dojah.io
+DOJAH_APP_ID=
+DOJAH_API_KEY=
+SELLER_AUTO_VERIFY=false   # now that Admin verification exists, default OFF; remove once A-B is confirmed
+SUPER_ADMIN_EMAIL=         # seeded super admin (dev)
+SUPER_ADMIN_PASSWORD=      # seeded super admin (dev)
 ```
 
 (XAMPP default MySQL: user `root`, empty password, port 3306 — adjust port to 3307 if XAMPP reports that.)
@@ -257,26 +260,27 @@ PLATFORM_COMMISSION_RATE_PERCENT=10
 
 ## 12. Security & Non-Functional Rules (PRD section 6)
 
-- HTTPS only in production; JWT auth on all protected routes; role guard on seller/admin routes.
+- HTTPS only in production; JWT auth on all protected routes; permission guard on every admin route.
+- **Least privilege:** admins only get the permissions their role needs; `super_admin` is the only all-access role.
 - **No card data stored** — Paystack handles payments; store only references/status.
-- Hash passwords with bcrypt; never log passwords, tokens, or full payment payloads.
-- Validate uploaded files: restrict type (pdf/jpg/png), cap size, never trust the original filename.
-- Rate-limit auth endpoints.
+- Hash passwords with bcrypt; never log passwords, tokens, or full payment/verification payloads.
+- **Audit everything sensitive:** approvals, rejections, bans, payout decisions, and config/commission changes must write an `audit_logs` row.
+- Validate uploaded files: restrict type, cap size, never trust the original filename.
+- Rate-limit auth (including admin login) endpoints.
 - Validate and sanitise all input.
 - Currency NGN; money in kobo (integers).
-- Enforce ownership on all seller resources (a seller only touches their own products/orders/payouts).
-- Index columns used in search/filter and in seller queries (seller_id, category_id, make/model/year, price).
+- Index columns used in admin queries (verification_status, order status, payout status, audit target).
 - Keep services stateless; use a DB connection pool.
 
 ---
 
 ## 13. How Codex Should Work Here
 
-- Before building, restate the task and which milestone (Section 0 / 6B) it belongs to.
-- Build one milestone at a time, in order. Do not jump ahead to Admin or Logistics.
+- Before building, restate the task and which milestone (Section 0 / 6C) it belongs to.
+- Build one milestone at a time, in order. Do not jump ahead to Logistics.
 - Build recipe per unit of work: migration (if needed) -> repository -> service -> validator -> controller -> route -> tests. Then confirm tests pass.
-- Reuse existing utils/middleware before writing new ones (esp. auth, response envelope, pagination, upload).
-- When replacing a `// SELLER-STUB`, update the buyer endpoints that read that data and re-run buyer tests to confirm nothing broke.
+- Reuse existing utils/middleware before writing new ones (esp. auth, response envelope, pagination, upload, and the audit writer once it exists).
+- When replacing a stub (`SELLER_AUTO_VERIFY`, seeded categories, payout/commission `// ADMIN-STUB`), update the dependent buyer/seller code and re-run their tests to confirm nothing broke.
 - After each milestone: update the README with new endpoints, run all tests, and update Section 0 (move the item to Completed, set the next task). Then stop for review.
 - If a requirement is ambiguous, make the smallest reasonable assumption, state it in your output, and continue — do not block.
 - Never add a new dependency without noting why; prefer the stack already listed here.

@@ -4,17 +4,173 @@ const { createAdminService } = require('../../../src/services/admin.service');
 
 describe('admin service', () => {
   let adminRepository;
+  let jwtUtils;
+  let passwordUtils;
   let adminService;
 
   beforeEach(() => {
     adminRepository = {
+      findAdminByEmail: jest.fn(),
+      findAdminById: jest.fn(),
       findSellerAccountBySellerId: jest.fn(),
       listSellerVerificationQueue: jest.fn(),
       updateSellerVerificationStatus: jest.fn()
     };
 
+    jwtUtils = {
+      signAccessToken: jest.fn(() => 'signed-admin-token'),
+      verifyAccessToken: jest.fn()
+    };
+
+    passwordUtils = {
+      comparePassword: jest.fn()
+    };
+
     adminService = createAdminService({
-      adminRepository
+      adminRepository,
+      jwtUtils,
+      passwordUtils
+    });
+  });
+
+  describe('login', () => {
+    it('logs in an active admin and returns sanitized permissions', async () => {
+      adminRepository.findAdminByEmail.mockResolvedValue({
+        id: 7,
+        fullName: 'Super Admin',
+        email: 'superadmin@example.com',
+        passwordHash: 'stored-hash',
+        isActive: true,
+        roles: [
+          {
+            id: 1,
+            name: 'super_admin',
+            description: 'Full access.'
+          }
+        ],
+        permissions: [
+          {
+            id: 1,
+            key: 'admins.read_self',
+            description: 'Read own profile.'
+          },
+          {
+            id: 2,
+            key: 'sellers.verify',
+            description: 'Verify sellers.'
+          }
+        ],
+        createdAt: '2026-07-07T09:00:00.000Z',
+        updatedAt: '2026-07-07T09:00:00.000Z'
+      });
+      passwordUtils.comparePassword.mockResolvedValue(true);
+
+      const result = await adminService.login({
+        email: 'SUPERADMIN@EXAMPLE.COM',
+        password: 'Password123'
+      });
+
+      expect(adminRepository.findAdminByEmail).toHaveBeenCalledWith('superadmin@example.com');
+      expect(passwordUtils.comparePassword).toHaveBeenCalledWith('Password123', 'stored-hash');
+      expect(jwtUtils.signAccessToken).toHaveBeenCalledWith({
+        sub: 7,
+        actorType: 'admin'
+      });
+      expect(result).toEqual({
+        token: 'signed-admin-token',
+        admin: {
+          id: 7,
+          fullName: 'Super Admin',
+          email: 'superadmin@example.com',
+          isActive: true,
+          roles: ['super_admin'],
+          permissions: ['admins.read_self', 'sellers.verify'],
+          createdAt: '2026-07-07T09:00:00.000Z',
+          updatedAt: '2026-07-07T09:00:00.000Z'
+        }
+      });
+    });
+
+    it('rejects inactive admins after credentials are verified', async () => {
+      adminRepository.findAdminByEmail.mockResolvedValue({
+        id: 8,
+        email: 'inactive@example.com',
+        passwordHash: 'stored-hash',
+        isActive: false,
+        roles: [],
+        permissions: []
+      });
+      passwordUtils.comparePassword.mockResolvedValue(true);
+
+      await expect(adminService.login({
+        email: 'inactive@example.com',
+        password: 'Password123'
+      })).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN'
+      });
+    });
+  });
+
+  describe('getAuthenticatedAdmin', () => {
+    it('returns a sanitized authenticated admin', async () => {
+      jwtUtils.verifyAccessToken.mockReturnValue({
+        sub: 5,
+        actorType: 'admin'
+      });
+      adminRepository.findAdminById.mockResolvedValue({
+        id: 5,
+        fullName: 'Verification Admin',
+        email: 'verify@example.com',
+        passwordHash: 'secret',
+        isActive: true,
+        roles: [
+          {
+            id: 2,
+            name: 'verification_admin',
+            description: 'Seller verification.'
+          }
+        ],
+        permissions: [
+          {
+            id: 1,
+            key: 'admins.read_self',
+            description: 'Read own profile.'
+          },
+          {
+            id: 2,
+            key: 'sellers.verify',
+            description: 'Verify sellers.'
+          }
+        ],
+        createdAt: '2026-07-07T09:00:00.000Z',
+        updatedAt: '2026-07-07T09:00:00.000Z'
+      });
+
+      const result = await adminService.getAuthenticatedAdmin('token');
+
+      expect(result).toEqual({
+        id: 5,
+        fullName: 'Verification Admin',
+        email: 'verify@example.com',
+        isActive: true,
+        roles: ['verification_admin'],
+        permissions: ['admins.read_self', 'sellers.verify'],
+        createdAt: '2026-07-07T09:00:00.000Z',
+        updatedAt: '2026-07-07T09:00:00.000Z'
+      });
+    });
+
+    it('rejects tokens that do not belong to admins', async () => {
+      jwtUtils.verifyAccessToken.mockReturnValue({
+        sub: 5,
+        actorType: 'user'
+      });
+
+      await expect(adminService.getAuthenticatedAdmin('token')).rejects.toMatchObject({
+        statusCode: 401,
+        code: 'UNAUTHORIZED'
+      });
     });
   });
 

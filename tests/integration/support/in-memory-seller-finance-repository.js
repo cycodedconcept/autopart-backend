@@ -127,6 +127,80 @@ function createInMemorySellerFinanceRepository({ store }) {
       };
     },
 
+    async getSellerRevenueTrend({
+      currentDateFrom,
+      currentDateTo,
+      previousDateFrom,
+      previousDateTo,
+      sellerId
+    }) {
+      const currentFromTime = parseDateBoundary(currentDateFrom);
+      const currentToTime = parseDateBoundary(currentDateTo, true);
+      const previousFromTime = parseDateBoundary(previousDateFrom);
+      const previousToTime = parseDateBoundary(previousDateTo, true);
+      const paidItems = buildPaidSellerItems(sellerId);
+
+      return {
+        currentGrossSalesKobo: paidItems
+          .filter((item) => {
+            const paidAtTime = Date.parse(item.paidAt);
+
+            return paidAtTime >= currentFromTime && paidAtTime <= currentToTime;
+          })
+          .reduce((sum, item) => sum + item.grossAmountKobo, 0),
+        previousGrossSalesKobo: paidItems
+          .filter((item) => {
+            const paidAtTime = Date.parse(item.paidAt);
+
+            return paidAtTime >= previousFromTime && paidAtTime <= previousToTime;
+          })
+          .reduce((sum, item) => sum + item.grossAmountKobo, 0)
+      };
+    },
+
+    async getSellerRevenueTimeline({ commissionRatePercent, sellerId, year }) {
+      const byMonth = new Map();
+
+      for (const item of buildPaidSellerItems(sellerId)) {
+        const paidAtDate = new Date(item.paidAt);
+
+        if (paidAtDate.getUTCFullYear() !== Number(year)) {
+          continue;
+        }
+
+        const monthNumber = paidAtDate.getUTCMonth() + 1;
+        const entry = byMonth.get(monthNumber) || {
+          monthNumber,
+          orderIds: new Set(),
+          totalItems: 0,
+          grossSalesKobo: 0,
+          commissionKobo: 0,
+          netSalesKobo: 0
+        };
+
+        entry.orderIds.add(item.orderId);
+        entry.totalItems += item.quantity;
+        entry.grossSalesKobo += item.grossAmountKobo;
+        entry.commissionKobo += calculateCommissionAmountKobo(
+          item.grossAmountKobo,
+          commissionRatePercent
+        );
+        entry.netSalesKobo += calculateNetAmountKobo(item.grossAmountKobo, commissionRatePercent);
+        byMonth.set(monthNumber, entry);
+      }
+
+      return Array.from(byMonth.values())
+        .sort((left, right) => left.monthNumber - right.monthNumber)
+        .map((entry) => ({
+          monthNumber: entry.monthNumber,
+          totalOrders: entry.orderIds.size,
+          totalItems: entry.totalItems,
+          grossSalesKobo: entry.grossSalesKobo,
+          commissionKobo: entry.commissionKobo,
+          netSalesKobo: entry.netSalesKobo
+        }));
+    },
+
     async summarizeSellerPayoutBalances({ commissionRatePercent, sellerId }) {
       const payouts = store.payouts.filter((entry) => entry.sellerId === Number(sellerId));
 

@@ -362,6 +362,27 @@ function createInMemoryProductsRepository() {
       };
     },
 
+    async summarizeSellerListingTrend(filters) {
+      const sellerProducts = products.filter((product) => product.sellerId === Number(filters.sellerId));
+      const currentFromTime = Date.parse(`${filters.currentDateFrom}T00:00:00.000Z`);
+      const currentToTime = Date.parse(`${filters.currentDateTo}T23:59:59.999Z`);
+      const previousFromTime = Date.parse(`${filters.previousDateFrom}T00:00:00.000Z`);
+      const previousToTime = Date.parse(`${filters.previousDateTo}T23:59:59.999Z`);
+
+      return {
+        currentPeriodListings: sellerProducts.filter((product) => {
+          const createdAtTime = Date.parse(product.createdAt);
+
+          return createdAtTime >= currentFromTime && createdAtTime <= currentToTime;
+        }).length,
+        previousPeriodListings: sellerProducts.filter((product) => {
+          const createdAtTime = Date.parse(product.createdAt);
+
+          return createdAtTime >= previousFromTime && createdAtTime <= previousToTime;
+        }).length
+      };
+    },
+
     async decrementStockLevels(entries) {
       for (const entry of entries) {
         const product = products.find((item) => item.id === Number(entry.productId));

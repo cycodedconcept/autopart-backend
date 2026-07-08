@@ -4,6 +4,83 @@ const USER_ROLES = {
   SELLER: 'seller'
 };
 
+const TOKEN_SUBJECT_TYPES = {
+  ADMIN: 'admin',
+  USER: 'user'
+};
+
+const ADMIN_ROLE_NAMES = {
+  SUPER_ADMIN: 'super_admin',
+  VERIFICATION_ADMIN: 'verification_admin'
+};
+
+const ADMIN_PERMISSION_KEYS = {
+  APPROVE_PAYOUTS: 'payouts.approve',
+  MANAGE_CATEGORIES: 'categories.manage',
+  MANAGE_CONFIG: 'config.manage',
+  MANAGE_ORDERS: 'orders.manage',
+  MANAGE_USERS: 'users.manage',
+  READ_AUDIT_LOGS: 'audit_logs.read',
+  READ_SELF: 'admins.read_self',
+  RESOLVE_DISPUTES: 'disputes.resolve',
+  VERIFY_SELLERS: 'sellers.verify'
+};
+
+const ADMIN_PERMISSION_DEFINITIONS = [
+  {
+    key: ADMIN_PERMISSION_KEYS.READ_SELF,
+    description: 'View the authenticated admin profile and assigned permissions.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.VERIFY_SELLERS,
+    description: 'Review and update seller verification decisions.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_CATEGORIES,
+    description: 'Create, update, and delete catalogue categories.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_USERS,
+    description: 'Review and update buyer or seller account access.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_ORDERS,
+    description: 'Review and intervene in platform-wide order workflows.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.APPROVE_PAYOUTS,
+    description: 'Review seller payout requests and advance payout states.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_CONFIG,
+    description: 'Update global platform configuration values.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES,
+    description: 'Review and resolve buyer or seller disputes.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.READ_AUDIT_LOGS,
+    description: 'Read sensitive admin audit log entries.'
+  }
+];
+
+const ADMIN_ROLE_DEFINITIONS = [
+  {
+    name: ADMIN_ROLE_NAMES.SUPER_ADMIN,
+    description: 'Full-access administrator for platform operations.',
+    permissionKeys: Object.values(ADMIN_PERMISSION_KEYS)
+  },
+  {
+    name: ADMIN_ROLE_NAMES.VERIFICATION_ADMIN,
+    description: 'Scoped administrator for seller verification reviews.',
+    permissionKeys: [
+      ADMIN_PERMISSION_KEYS.READ_SELF,
+      ADMIN_PERMISSION_KEYS.VERIFY_SELLERS
+    ]
+  }
+];
+
 const PRODUCT_STATUSES = {
   ACTIVE: 'active',
   INACTIVE: 'inactive'
@@ -76,6 +153,10 @@ const ERROR_CODES = {
 };
 
 module.exports = {
+  ADMIN_PERMISSION_DEFINITIONS,
+  ADMIN_PERMISSION_KEYS,
+  ADMIN_ROLE_DEFINITIONS,
+  ADMIN_ROLE_NAMES,
   ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_METHODS,
@@ -84,6 +165,7 @@ module.exports = {
   PRODUCT_STATUSES,
   SELLER_DOCUMENT_TYPES,
   SELLER_VERIFICATION_STATUSES,
+  TOKEN_SUBJECT_TYPES,
   USER_ROLES,
   ERROR_CODES
 };

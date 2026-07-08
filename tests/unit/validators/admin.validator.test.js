@@ -1,11 +1,26 @@
 require('../../setup/jest');
 
 const {
+  adminLoginSchema,
   listSellerVerificationQueueSchema,
   updateSellerVerificationStatusSchema
 } = require('../../../src/validators/admin.validator');
 
 describe('admin validator', () => {
+  it('accepts a valid admin login payload', () => {
+    const { error, value } = adminLoginSchema.validate({
+      body: {
+        email: 'SUPERADMIN@EXAMPLE.COM',
+        password: 'Password123'
+      },
+      params: {},
+      query: {}
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.body.email).toBe('superadmin@example.com');
+  });
+
   it('accepts a valid seller verification queue query', () => {
     const { error, value } = listSellerVerificationQueueSchema.validate({
       body: {},

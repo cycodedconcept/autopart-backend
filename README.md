@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and the first Admin foundation milestone. This repository currently implements `AGENTS.md` Milestones A, B, C, D, E, S-A, S-B, S-C, S-D, S-E, and Admin Milestone 1: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and admin seller verification review.
+Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and Admin Milestone `A-A`. This repository currently implements the buyer flow, seller flow, and the first admin foundation slice: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and dedicated admin auth plus RBAC.
 
 ## Implemented Milestone
 
@@ -29,7 +29,11 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Seller sales and revenue summary by date range with platform commission deduction
 - Seller pending payout calculation plus payout request history
 - `// ADMIN-STUB` handoff for commission ownership and payout approval lifecycle
-- Admin-protected seller verification review queue with approve and reject actions
+- Dedicated admin authentication via `admins` plus `/api/v1/admin/login`
+- Admin RBAC with `roles`, `permissions`, `role_permissions`, and `admin_roles`
+- Seeded `super_admin` access plus a scoped `verification_admin` role
+- Permission-gated `GET /api/v1/admin/me`
+- Admin-protected seller verification review queue with approve and reject actions behind `sellers.verify`
 - Buyer order detail now includes per-item `itemStatus` alongside the existing order-level status history
 - Buyer catalogue, cart, and order reads now project seller business metadata from real seller profiles instead of the old product-level seller stub
 - Joi request validation, auth rate limiting, central error handling
@@ -67,12 +71,13 @@ Copy `.env.example` to `.env` and fill in the required values.
 Seller onboarding uses:
 
 - `UPLOAD_DIR` for local document storage in development
-- `SELLER_AUTO_VERIFY` to auto-verify sellers after both required documents are uploaded in non-admin flows
+- `SELLER_AUTO_VERIFY=false` by default so seller verification can move to admin review
 - `PLATFORM_COMMISSION_RATE_PERCENT` to control seller payout commission deductions in development and test
 
 Local admin review uses:
 
-- `npm run seed` to provision the dev admin account `admin@autoparts.local` with password `Password123`
+- `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` for `npm run seed`
+- `npm run seed` to provision the seeded `super_admin` plus the scoped `verification_admin` role definitions
 
 ## Commands
 
@@ -137,12 +142,15 @@ npm run lint
 - `POST /api/v1/seller/inventory/bulk`
 - `GET /api/v1/seller/orders`
 - `PATCH /api/v1/seller/orders/:id/status`
+- `GET /api/v1/seller/dashboard`
 - `GET /api/v1/seller/sales`
 - `POST /api/v1/seller/payouts`
 - `GET /api/v1/seller/payouts`
 
 ### Admin
 
+- `POST /api/v1/admin/login`
+- `GET /api/v1/admin/me`
 - `GET /api/v1/admin/sellers`
 - `PATCH /api/v1/admin/sellers/:id/verification`
 
@@ -181,7 +189,7 @@ Login as the seeded dev admin:
 
 ```json
 {
-  "identifier": "admin@autoparts.local",
+  "email": "superadmin@autoparts.local",
   "password": "Password123"
 }
 ```
@@ -345,6 +353,13 @@ GET /api/v1/seller/inventory?status=all&lowStockOnly=false&page=1&limit=10
 Authorization: Bearer <token>
 ```
 
+Get seller dashboard summary:
+
+```text
+GET /api/v1/seller/dashboard?dateFrom=2026-07-01&dateTo=2026-07-07
+Authorization: Bearer <token>
+```
+
 Bulk upload seller inventory as multipart form-data:
 
 ```text
@@ -495,6 +510,7 @@ GET /api/v1/orders/1/receipt?format=html
 - `POST /api/v1/seller/inventory/bulk` currently treats each csv row as one listing with one compatibility entry; `imageUrls` should be pipe-separated when multiple image URLs are provided.
 - `GET /api/v1/seller/orders` returns only the authenticated seller's slice of each order and supports optional filtering by seller `itemStatus`.
 - `PATCH /api/v1/seller/orders/:id/status` operates on the seller-owned `order_items.id` and currently allows `ready_for_pickup` and `cancelled` after payment has been confirmed.
+- `GET /api/v1/seller/dashboard` returns seller profile basics plus UI-ready overview cards, monthly revenue chart data, product-status counts, featured products, customer leaderboard entries, and the existing seller-scoped inventory, order, sales, and payout summaries. It accepts the same optional `dateFrom` plus `dateTo` query pair as the seller sales endpoint.
 - `GET /api/v1/seller/sales` returns `{ period, commissionRatePercent, sales, payouts }` and supports optional `dateFrom` plus `dateTo` filtering in `YYYY-MM-DD` format.
 - `POST /api/v1/seller/payouts` currently creates one payout request for all eligible paid, non-cancelled seller order items that are not already tied to an open payout record.
 - `GET /api/v1/seller/payouts` returns `{ payouts, pagination }` and supports optional payout `status` filtering.
