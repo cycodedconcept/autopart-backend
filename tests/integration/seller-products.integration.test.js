@@ -79,8 +79,7 @@ describe('Seller products API integration', () => {
         PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
         PAYSTACK_SECRET_KEY: '',
         PAYSTACK_PUBLIC_KEY: '',
-        UPLOAD_DIR: uploadDirectory,
-        SELLER_AUTO_VERIFY: true
+        UPLOAD_DIR: uploadDirectory
       }
     });
   });

@@ -127,8 +127,9 @@ function createInMemoryAdminRepository({ sellersRepository }) {
       };
     },
 
-    async updateSellerVerificationStatus({ rejectionReason, sellerId, status }) {
+    async updateSellerVerificationStatus({ adminId, rejectionReason, sellerId, status }) {
       return sellersRepository.updateVerificationStatus({
+        approvedBy: status === 'verified' ? Number(adminId) : null,
         sellerId: Number(sellerId),
         status,
         rejectionReason

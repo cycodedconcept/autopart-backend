@@ -1,21 +1,9 @@
 const { createCatalogueFixture } = require('./catalogue-fixture');
+const { createCategoriesFixture } = require('./categories-fixture');
+const { createVehicleTaxonomyFixture } = require('./vehicle-taxonomy-fixture');
 
 function clone(value) {
   return value ? JSON.parse(JSON.stringify(value)) : null;
-}
-
-function buildCategories(products) {
-  return products.reduce((categories, product) => {
-    if (!categories.find((entry) => entry.id === product.categoryId)) {
-      categories.push({
-        id: product.categoryId,
-        name: product.categoryName,
-        slug: product.categorySlug
-      });
-    }
-
-    return categories;
-  }, []);
 }
 
 function matchesProductFilters(product, filters) {
@@ -140,17 +128,47 @@ function toRepositoryProduct(product) {
 
 function createInMemoryProductsRepository() {
   const products = clone(createCatalogueFixture());
-  const categories = buildCategories(products);
+  const now = '2026-07-09T09:00:00.000Z';
+  const categories = createCategoriesFixture().map((category) => ({
+    ...category,
+    createdAt: now,
+    updatedAt: now
+  }));
+  const vehicleTaxonomyEntries = createVehicleTaxonomyFixture().map((entry) => ({
+    ...entry,
+    createdAt: now,
+    updatedAt: now
+  }));
   const counters = {
-    productId: Math.max(...products.map((product) => product.id)) + 1,
-    imageId: Math.max(...products.flatMap((product) => product.images.map((image) => image.id))) + 1,
+    categoryId: Math.max(...categories.map((category) => category.id)) + 1,
     compatibilityId: Math.max(
       ...products.flatMap((product) => product.compatibility.map((entry) => entry.id))
-    ) + 1
+    ) + 1,
+    imageId: Math.max(...products.flatMap((product) => product.images.map((image) => image.id))) + 1,
+    productId: Math.max(...products.map((product) => product.id)) + 1,
+    vehicleTaxonomyId: Math.max(...vehicleTaxonomyEntries.map((entry) => entry.id)) + 1
   };
+
+  function findCategoryRecord(categoryId) {
+    return categories.find((entry) => entry.id === Number(categoryId)) || null;
+  }
 
   function findProductRecord(productId) {
     return products.find((entry) => entry.id === Number(productId)) || null;
+  }
+
+  function findVehicleTaxonomyRecord(vehicleTaxonomyId) {
+    return vehicleTaxonomyEntries.find((entry) => entry.id === Number(vehicleTaxonomyId)) || null;
+  }
+
+  function syncCategoryMetadataForProducts(category) {
+    for (const product of products) {
+      if (product.categoryId === category.id) {
+        product.categoryName = category.name;
+        product.categorySlug = category.slug;
+        product.updatedAt = new Date().toISOString();
+      }
+    }
   }
 
   function applyField(product, field) {
@@ -162,7 +180,7 @@ function createInMemoryProductsRepository() {
         product.description = field.value;
         break;
       case 'category_id': {
-        const category = categories.find((entry) => entry.id === field.value);
+        const category = findCategoryRecord(field.value);
 
         product.categoryId = field.value;
         product.categoryName = category ? category.name : product.categoryName;
@@ -192,7 +210,44 @@ function createInMemoryProductsRepository() {
     }
   }
 
+  for (const category of categories) {
+    syncCategoryMetadataForProducts(category);
+  }
+
   return {
+    async countChildCategories(categoryId) {
+      return categories.filter((category) => category.parentId === Number(categoryId)).length;
+    },
+
+    async countProductCompatibilityReferences(payload) {
+      return products.reduce((total, product) => total + product.compatibility.filter((entry) => (
+        entry.make === payload.make
+        && entry.model === payload.model
+        && entry.yearFrom === Number(payload.yearFrom)
+        && entry.yearTo === Number(payload.yearTo)
+      )).length, 0);
+    },
+
+    async countProductsByCategoryId(categoryId) {
+      return products.filter((product) => product.categoryId === Number(categoryId)).length;
+    },
+
+    async createCategory(payload) {
+      const createdCategory = {
+        id: counters.categoryId,
+        name: payload.name,
+        slug: payload.slug,
+        parentId: payload.parentId === undefined ? null : payload.parentId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      categories.push(createdCategory);
+      counters.categoryId += 1;
+
+      return clone(createdCategory);
+    },
+
     async createSellerProductsBulk(payload) {
       const createdProducts = [];
 
@@ -209,7 +264,7 @@ function createInMemoryProductsRepository() {
     },
 
     async createSellerProduct(payload) {
-      const now = new Date().toISOString();
+      const nowTimestamp = new Date().toISOString();
       const product = {
         id: counters.productId,
         sellerId: payload.sellerId,
@@ -226,8 +281,8 @@ function createInMemoryProductsRepository() {
         sellerBusinessName: payload.sellerBusinessName,
         sellerRating: payload.sellerRating,
         status: payload.status,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: nowTimestamp,
+        updatedAt: nowTimestamp,
         images: payload.photos.map((photo) => ({
           id: counters.imageId++,
           productId: counters.productId,
@@ -250,6 +305,23 @@ function createInMemoryProductsRepository() {
       return toRepositoryProduct(product);
     },
 
+    async createVehicleTaxonomy(payload) {
+      const createdEntry = {
+        id: counters.vehicleTaxonomyId,
+        make: payload.make,
+        model: payload.model,
+        yearFrom: payload.yearFrom,
+        yearTo: payload.yearTo,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      vehicleTaxonomyEntries.push(createdEntry);
+      counters.vehicleTaxonomyId += 1;
+
+      return clone(createdEntry);
+    },
+
     async deactivateOwnedProduct(productId, sellerId) {
       const product = products.find((entry) => (
         entry.id === Number(productId) && entry.sellerId === Number(sellerId)
@@ -265,8 +337,45 @@ function createInMemoryProductsRepository() {
       return toRepositoryProduct(product);
     },
 
-    async findCategoryById(categoryId) {
-      return clone(categories.find((entry) => entry.id === Number(categoryId)) || null);
+    async decrementStockLevels(entries) {
+      for (const entry of entries) {
+        const product = products.find((item) => item.id === Number(entry.productId));
+
+        if (!product) {
+          continue;
+        }
+
+        product.stockQty = Math.max(0, product.stockQty - Number(entry.quantity));
+        product.updatedAt = new Date().toISOString();
+      }
+    },
+
+    async deleteCategory(categoryId) {
+      const category = findCategoryRecord(categoryId);
+
+      if (!category) {
+        return null;
+      }
+
+      const index = categories.findIndex((entry) => entry.id === Number(categoryId));
+
+      categories.splice(index, 1);
+
+      return clone(category);
+    },
+
+    async deleteVehicleTaxonomy(vehicleTaxonomyId) {
+      const entry = findVehicleTaxonomyRecord(vehicleTaxonomyId);
+
+      if (!entry) {
+        return null;
+      }
+
+      const index = vehicleTaxonomyEntries.findIndex((item) => item.id === Number(vehicleTaxonomyId));
+
+      vehicleTaxonomyEntries.splice(index, 1);
+
+      return clone(entry);
     },
 
     async findCategoriesByIds(categoryIds) {
@@ -275,16 +384,18 @@ function createInMemoryProductsRepository() {
       );
     },
 
+    async findCategoryById(categoryId) {
+      return clone(findCategoryRecord(categoryId));
+    },
+
+    async findCategoryBySlug(slug) {
+      return clone(categories.find((entry) => entry.slug === slug) || null);
+    },
+
     async findOwnedProductById(productId, sellerId) {
       const product = products.find((entry) => (
         entry.id === Number(productId) && entry.sellerId === Number(sellerId)
       ));
-
-      return product ? toRepositoryProduct(product) : null;
-    },
-
-    async findProductSnapshotById(productId) {
-      const product = findProductRecord(productId);
 
       return product ? toRepositoryProduct(product) : null;
     },
@@ -305,6 +416,45 @@ function createInMemoryProductsRepository() {
       const product = findProductRecord(productId);
 
       return product ? clone(product.images) : [];
+    },
+
+    async findProductSnapshotById(productId) {
+      const product = findProductRecord(productId);
+
+      return product ? toRepositoryProduct(product) : null;
+    },
+
+    async findVehicleTaxonomyById(vehicleTaxonomyId) {
+      return clone(findVehicleTaxonomyRecord(vehicleTaxonomyId));
+    },
+
+    async findVehicleTaxonomyEntry(payload) {
+      return clone(vehicleTaxonomyEntries.find((entry) => (
+        entry.make === payload.make
+        && entry.model === payload.model
+        && entry.yearFrom === Number(payload.yearFrom)
+        && entry.yearTo === Number(payload.yearTo)
+      )) || null);
+    },
+
+    async listAllCategories() {
+      return clone(
+        [...categories].sort((left, right) => {
+          if (left.parentId === right.parentId) {
+            return left.name.localeCompare(right.name);
+          }
+
+          if (left.parentId === null) {
+            return -1;
+          }
+
+          if (right.parentId === null) {
+            return 1;
+          }
+
+          return left.parentId - right.parentId;
+        })
+      );
     },
 
     async listProducts(filters) {
@@ -347,6 +497,41 @@ function createInMemoryProductsRepository() {
       };
     },
 
+    async listVehicleTaxonomy(filters) {
+      const matchedEntries = vehicleTaxonomyEntries
+        .filter((entry) => {
+          if (filters.make && entry.make.toLowerCase() !== String(filters.make).toLowerCase()) {
+            return false;
+          }
+
+          if (filters.model && entry.model.toLowerCase() !== String(filters.model).toLowerCase()) {
+            return false;
+          }
+
+          return true;
+        })
+        .sort((left, right) => {
+          if (left.make !== right.make) {
+            return left.make.localeCompare(right.make);
+          }
+
+          if (left.model !== right.model) {
+            return left.model.localeCompare(right.model);
+          }
+
+          if (left.yearFrom !== right.yearFrom) {
+            return left.yearFrom - right.yearFrom;
+          }
+
+          return left.yearTo - right.yearTo;
+        });
+
+      return {
+        entries: clone(matchedEntries.slice(filters.offset, filters.offset + filters.limit)),
+        total: matchedEntries.length
+      };
+    },
+
     async summarizeSellerInventory(filters) {
       const sellerProducts = products.filter((product) => product.sellerId === Number(filters.sellerId));
 
@@ -383,17 +568,29 @@ function createInMemoryProductsRepository() {
       };
     },
 
-    async decrementStockLevels(entries) {
-      for (const entry of entries) {
-        const product = products.find((item) => item.id === Number(entry.productId));
+    async updateCategory(categoryId, payload) {
+      const category = findCategoryRecord(categoryId);
 
-        if (!product) {
-          continue;
-        }
-
-        product.stockQty = Math.max(0, product.stockQty - Number(entry.quantity));
-        product.updatedAt = new Date().toISOString();
+      if (!category) {
+        return null;
       }
+
+      if (payload.name !== undefined) {
+        category.name = payload.name;
+      }
+
+      if (payload.slug !== undefined) {
+        category.slug = payload.slug;
+      }
+
+      if (payload.parentId !== undefined) {
+        category.parentId = payload.parentId;
+      }
+
+      category.updatedAt = new Date().toISOString();
+      syncCategoryMetadataForProducts(category);
+
+      return clone(category);
     },
 
     async updateOwnedProduct(productId, sellerId, payload) {
@@ -432,6 +629,34 @@ function createInMemoryProductsRepository() {
       product.updatedAt = new Date().toISOString();
 
       return toRepositoryProduct(product);
+    },
+
+    async updateVehicleTaxonomy(vehicleTaxonomyId, payload) {
+      const entry = findVehicleTaxonomyRecord(vehicleTaxonomyId);
+
+      if (!entry) {
+        return null;
+      }
+
+      if (payload.make !== undefined) {
+        entry.make = payload.make;
+      }
+
+      if (payload.model !== undefined) {
+        entry.model = payload.model;
+      }
+
+      if (payload.yearFrom !== undefined) {
+        entry.yearFrom = payload.yearFrom;
+      }
+
+      if (payload.yearTo !== undefined) {
+        entry.yearTo = payload.yearTo;
+      }
+
+      entry.updatedAt = new Date().toISOString();
+
+      return clone(entry);
     }
   };
 }

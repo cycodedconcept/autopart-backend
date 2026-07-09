@@ -70,6 +70,25 @@ function createInMemorySellersRepository({ usersRepository }) {
         rating: profile.rating || 0,
         verificationStatus: profile.verificationStatus,
         rejectionReason: profile.rejectionReason,
+        cacVerification: profile.cacVerificationStatus || profile.cacVerificationResponse
+          || profile.cacVerificationCheckedAt
+          ? {
+            checkedAt: profile.cacVerificationCheckedAt,
+            error: profile.cacVerificationResponse && profile.cacVerificationResponse.error
+              ? profile.cacVerificationResponse.error
+              : null,
+            provider: profile.cacVerificationResponse && profile.cacVerificationResponse.provider
+              ? profile.cacVerificationResponse.provider
+              : null,
+            response: profile.cacVerificationResponse
+              && profile.cacVerificationResponse.response !== undefined
+              ? profile.cacVerificationResponse.response
+              : profile.cacVerificationResponse,
+            status: profile.cacVerificationStatus
+          }
+          : null,
+        verifiedAt: profile.verifiedAt || null,
+        verifiedBy: profile.verifiedBy || null,
         createdAt: now,
         updatedAt: now,
         documents: []
@@ -154,7 +173,40 @@ function createInMemorySellersRepository({ usersRepository }) {
       return buildSellerAccount(profile);
     },
 
-    async updateVerificationStatus({ sellerId, status, rejectionReason }) {
+    async updateCacVerificationResult({
+      sellerId,
+      cacVerificationStatus,
+      cacVerificationResponse,
+      cacVerificationCheckedAt
+    }) {
+      const profile = sellerProfiles.find((entry) => entry.id === sellerId);
+
+      if (!profile) {
+        return null;
+      }
+
+      profile.cacVerification = cacVerificationStatus || cacVerificationResponse || cacVerificationCheckedAt
+        ? {
+          checkedAt: cacVerificationCheckedAt,
+          error: cacVerificationResponse && cacVerificationResponse.error
+            ? cacVerificationResponse.error
+            : null,
+          provider: cacVerificationResponse && cacVerificationResponse.provider
+            ? cacVerificationResponse.provider
+            : null,
+          response: cacVerificationResponse
+            && cacVerificationResponse.response !== undefined
+            ? cacVerificationResponse.response
+            : cacVerificationResponse,
+          status: cacVerificationStatus
+        }
+        : null;
+      profile.updatedAt = new Date().toISOString();
+
+      return buildSellerAccount(profile);
+    },
+
+    async updateVerificationStatus({ approvedBy, sellerId, status, rejectionReason }) {
       const profile = sellerProfiles.find((entry) => entry.id === sellerId);
 
       if (!profile) {
@@ -163,7 +215,13 @@ function createInMemorySellersRepository({ usersRepository }) {
 
       profile.verificationStatus = status;
       profile.rejectionReason = rejectionReason;
+      profile.verifiedBy = status === 'verified' ? approvedBy : null;
+      profile.verifiedAt = status === 'verified' ? new Date().toISOString() : null;
       profile.updatedAt = new Date().toISOString();
+
+      if (usersRepository.updateVerificationStatus) {
+        await usersRepository.updateVerificationStatus(profile.userId, status === 'verified');
+      }
 
       return buildSellerAccount(profile);
     }

@@ -13,31 +13,45 @@ function normalizeEmail(email) {
   return email ? email.trim().toLowerCase() : null;
 }
 
-function resolveVerificationStatus({ autoVerifyEnabled, currentStatus }) {
-  if (autoVerifyEnabled) {
-    return SELLER_VERIFICATION_STATUSES.VERIFIED;
-  }
-
-  if (currentStatus === SELLER_VERIFICATION_STATUSES.VERIFIED) {
-    return SELLER_VERIFICATION_STATUSES.VERIFIED;
-  }
-
-  return SELLER_VERIFICATION_STATUSES.PENDING;
+function buildCacCustomerReference(cacNumber) {
+  return `seller-registration-${cacNumber.replace(/[^a-zA-Z0-9]/g, '-')}`;
 }
 
-function resolveRejectionReason({ autoVerifyEnabled, currentStatus, currentRejectionReason }) {
-  if (autoVerifyEnabled) {
-    return null;
-  }
-
-  if (currentStatus === SELLER_VERIFICATION_STATUSES.VERIFIED) {
-    return currentRejectionReason;
-  }
-
-  return null;
+function buildStoredCacVerificationMetadata(cacVerification) {
+  return {
+    cacVerificationCheckedAt: cacVerification.checkedAt || null,
+    cacVerificationResponse: cacVerification.response
+      ? {
+        error: cacVerification.error,
+        provider: 'dojah',
+        response: cacVerification.response
+      }
+      : null,
+    cacVerificationStatus: cacVerification.status
+  };
 }
 
-function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository, usersRepository }) {
+function resolveDocumentVerificationState(currentStatus) {
+  if (currentStatus === SELLER_VERIFICATION_STATUSES.VERIFIED) {
+    return {
+      rejectionReason: null,
+      verificationStatus: SELLER_VERIFICATION_STATUSES.VERIFIED
+    };
+  }
+
+  return {
+    rejectionReason: null,
+    verificationStatus: SELLER_VERIFICATION_STATUSES.PENDING
+  };
+}
+
+function createSellersService({
+  cacVerificationService,
+  jwtUtils,
+  passwordUtils,
+  sellersRepository,
+  usersRepository
+}) {
   async function registerSeller(payload) {
     const email = normalizeEmail(payload.email);
     const phone = payload.phone ? normalizeNigerianPhone(payload.phone) : null;
@@ -45,6 +59,10 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
     const contactPhone = payload.contactPhone
       ? normalizeNigerianPhone(payload.contactPhone)
       : phone;
+    const fullName = payload.fullName.trim();
+    const businessName = payload.businessName.trim();
+    const address = payload.address.trim();
+    const cacNumber = payload.cacNumber.trim();
 
     if (!email && !phone) {
       throw new AppError('Email or Nigerian phone number is required.', {
@@ -89,7 +107,7 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
       }
     }
 
-    const existingSellerAccount = await sellersRepository.findByCacNumber(payload.cacNumber.trim());
+    const existingSellerAccount = await sellersRepository.findByCacNumber(cacNumber);
 
     if (existingSellerAccount) {
       throw new AppError('A seller profile with this CAC number already exists.', {
@@ -98,22 +116,30 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
       });
     }
 
+    const cacVerification = await cacVerificationService.verifyBusiness({
+      businessName,
+      cacNumber,
+      customerReference: buildCacCustomerReference(cacNumber)
+    });
     const passwordHash = await passwordUtils.hashPassword(payload.password);
     const sellerAccount = await sellersRepository.createSellerAccount({
       user: {
         role: USER_ROLES.SELLER,
-        fullName: payload.fullName.trim(),
+        fullName,
         email,
         phone,
         passwordHash,
         isVerified: false
       },
       profile: {
-        businessName: payload.businessName.trim(),
+        businessName,
         contactPhone,
         contactEmail,
-        address: payload.address.trim(),
-        cacNumber: payload.cacNumber.trim(),
+        address,
+        cacNumber,
+        ...buildStoredCacVerificationMetadata(cacVerification),
+        verifiedAt: null,
+        verifiedBy: null,
         verificationStatus: SELLER_VERIFICATION_STATUSES.PENDING,
         rejectionReason: null
       }
@@ -147,16 +173,9 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
       });
     }
 
-    const autoVerifyEnabled = Boolean(env.SELLER_AUTO_VERIFY);
-    const nextStatus = resolveVerificationStatus({
-      autoVerifyEnabled,
-      currentStatus: sellerAccount.sellerProfile.verificationStatus
-    });
-    const nextRejectionReason = resolveRejectionReason({
-      autoVerifyEnabled,
-      currentStatus: sellerAccount.sellerProfile.verificationStatus,
-      currentRejectionReason: sellerAccount.sellerProfile.rejectionReason
-    });
+    const nextVerificationState = resolveDocumentVerificationState(
+      sellerAccount.sellerProfile.verificationStatus
+    );
 
     const updatedSellerAccount = await sellersRepository.replaceDocuments({
       sellerId: sellerAccount.sellerProfile.id,
@@ -170,12 +189,39 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
           filePath: documents.proofOfAddressDocument.filePath
         }
       ],
-      verificationStatus: nextStatus,
-      rejectionReason: nextRejectionReason
+      verificationStatus: nextVerificationState.verificationStatus,
+      rejectionReason: nextVerificationState.rejectionReason
     });
 
-    if (autoVerifyEnabled && nextStatus === SELLER_VERIFICATION_STATUSES.VERIFIED) {
-      // ADMIN-STUB: local auto-verify remains for dev, while non-dev review now lives in admin verification routes.
+    return sanitizeSellerAccount(updatedSellerAccount, sanitizeUser);
+  }
+
+  async function retryCacVerification(userId) {
+    const sellerAccount = await sellersRepository.findByUserId(userId);
+
+    if (!sellerAccount) {
+      throw new AppError('Seller profile was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    const cacVerification = await cacVerificationService.verifyBusiness({
+      businessName: sellerAccount.sellerProfile.businessName,
+      cacNumber: sellerAccount.sellerProfile.cacNumber,
+      customerReference: buildCacCustomerReference(sellerAccount.sellerProfile.cacNumber)
+    });
+
+    const updatedSellerAccount = await sellersRepository.updateCacVerificationResult({
+      sellerId: sellerAccount.sellerProfile.id,
+      ...buildStoredCacVerificationMetadata(cacVerification)
+    });
+
+    if (!updatedSellerAccount) {
+      throw new AppError('Seller profile was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
     }
 
     return sanitizeSellerAccount(updatedSellerAccount, sanitizeUser);
@@ -197,6 +243,7 @@ function createSellersService({ env, jwtUtils, passwordUtils, sellersRepository,
   return {
     getSellerProfile,
     registerSeller,
+    retryCacVerification,
     uploadDocuments
   };
 }

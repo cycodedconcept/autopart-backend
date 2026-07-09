@@ -42,7 +42,14 @@ const sellerDocumentsUploadSchema = Joi.object({
   query: Joi.object({}).default({})
 });
 
+const sellerCacVerificationRetrySchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
+});
+
 module.exports = {
+  sellerCacVerificationRetrySchema,
   sellerDocumentsUploadSchema,
   sellerRegisterSchema
 };

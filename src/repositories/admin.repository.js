@@ -73,6 +73,23 @@ function mapSellerProfileRow(row) {
     return null;
   }
 
+  const cacVerificationResponse = parseJsonColumn(row.cac_verification_response);
+  const normalizedCacVerificationResponse = cacVerificationResponse
+    && typeof cacVerificationResponse === 'object'
+    && cacVerificationResponse.response !== undefined
+    ? cacVerificationResponse.response
+    : cacVerificationResponse;
+  const normalizedCacVerificationError = cacVerificationResponse
+    && typeof cacVerificationResponse === 'object'
+    && cacVerificationResponse.error !== undefined
+    ? cacVerificationResponse.error
+    : null;
+  const normalizedCacVerificationProvider = cacVerificationResponse
+    && typeof cacVerificationResponse === 'object'
+    && cacVerificationResponse.provider !== undefined
+    ? cacVerificationResponse.provider
+    : null;
+
   return {
     id: row.seller_id,
     userId: row.user_id,
@@ -84,9 +101,38 @@ function mapSellerProfileRow(row) {
     cacNumber: row.cac_number,
     verificationStatus: row.verification_status,
     rejectionReason: row.rejection_reason,
+    cacVerification: row.cac_verification_status || cacVerificationResponse || row.cac_verification_checked_at
+      ? {
+        checkedAt: row.cac_verification_checked_at,
+        error: normalizedCacVerificationError,
+        provider: normalizedCacVerificationProvider,
+        response: normalizedCacVerificationResponse,
+        status: row.cac_verification_status
+      }
+      : null,
+    verifiedAt: row.verified_at,
+    verifiedBy: row.verified_by === null || row.verified_by === undefined
+      ? null
+      : Number(row.verified_by),
     createdAt: row.seller_created_at,
     updatedAt: row.seller_updated_at
   };
+}
+
+function parseJsonColumn(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return null;
+  }
 }
 
 function mapSellerDocumentRow(row) {
@@ -216,6 +262,11 @@ function createAdminRepository({ db }) {
           sp.cac_number,
           sp.verification_status,
           sp.rejection_reason,
+          sp.cac_verification_status,
+          sp.cac_verification_response,
+          sp.cac_verification_checked_at,
+          sp.verified_by,
+          sp.verified_at,
           sp.created_at AS seller_created_at,
           sp.updated_at AS seller_updated_at,
           u.role,
@@ -309,6 +360,11 @@ function createAdminRepository({ db }) {
             sp.cac_number,
             sp.verification_status,
             sp.rejection_reason,
+            sp.cac_verification_status,
+            sp.cac_verification_response,
+            sp.cac_verification_checked_at,
+            sp.verified_by,
+            sp.verified_at,
             sp.created_at AS seller_created_at,
             sp.updated_at AS seller_updated_at,
             u.role,
@@ -346,7 +402,7 @@ function createAdminRepository({ db }) {
       };
     },
 
-    async updateSellerVerificationStatus({ rejectionReason, sellerId, status }) {
+    async updateSellerVerificationStatus({ adminId, rejectionReason, sellerId, status }) {
       const connection = await db.getConnection();
 
       try {
@@ -354,10 +410,30 @@ function createAdminRepository({ db }) {
         await connection.execute(
           `
             UPDATE seller_profiles
-            SET verification_status = ?, rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
+            SET
+              verification_status = ?,
+              rejection_reason = ?,
+              verified_by = ?,
+              verified_at = ?,
+              updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `,
-          [status, rejectionReason, sellerId]
+          [
+            status,
+            rejectionReason,
+            status === 'verified' ? adminId : null,
+            status === 'verified' ? new Date() : null,
+            sellerId
+          ]
+        );
+        await connection.execute(
+          `
+            UPDATE users u
+            INNER JOIN seller_profiles sp ON sp.user_id = u.id
+            SET u.is_verified = ?, u.updated_at = CURRENT_TIMESTAMP
+            WHERE sp.id = ?
+          `,
+          [status === 'verified' ? 1 : 0, sellerId]
         );
 
         const sellerAccount = await findSellerAccountBySellerIdWithConnection(connection, sellerId);

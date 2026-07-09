@@ -29,6 +29,17 @@ function sanitizeSellerProfile(profile) {
     cacNumber: profile.cacNumber,
     verificationStatus: profile.verificationStatus,
     rejectionReason: profile.rejectionReason,
+    cacVerification: profile.cacVerification
+      ? {
+        checkedAt: profile.cacVerification.checkedAt,
+        error: profile.cacVerification.error || null,
+        provider: profile.cacVerification.provider || null,
+        response: profile.cacVerification.response,
+        status: profile.cacVerification.status
+      }
+      : null,
+    verifiedBy: profile.verifiedBy,
+    verifiedAt: profile.verifiedAt,
     documents: (profile.documents || []).map(sanitizeSellerDocument),
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt

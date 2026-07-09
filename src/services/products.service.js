@@ -195,6 +195,10 @@ function buildSellerProductFields(payload) {
 }
 
 function createProductsService({ productsRepository, sellersRepository }) {
+  function formatCompatibilityEntry(entry) {
+    return `${entry.make} ${entry.model} ${entry.yearFrom}-${entry.yearTo}`;
+  }
+
   async function ensureCategoryExists(categoryId) {
     const category = await productsRepository.findCategoryById(categoryId);
 
@@ -206,6 +210,26 @@ function createProductsService({ productsRepository, sellersRepository }) {
     }
 
     return category;
+  }
+
+  async function ensureCompatibilityEntriesExist(entries) {
+    const normalizedEntries = normalizeCompatibilityEntries(entries);
+
+    for (const entry of normalizedEntries) {
+      const vehicleTaxonomyEntry = await productsRepository.findVehicleTaxonomyEntry(entry);
+
+      if (!vehicleTaxonomyEntry) {
+        throw new AppError(
+          `Compatibility entry ${formatCompatibilityEntry(entry)} is not supported by the vehicle taxonomy.`,
+          {
+            statusCode: 404,
+            code: ERROR_CODES.NOT_FOUND
+          }
+        );
+      }
+    }
+
+    return normalizedEntries;
   }
 
   async function ensureSellerProfile(userId) {
@@ -350,6 +374,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
     }
 
     const category = await ensureCategoryExists(payload.categoryId);
+    const compatibility = await ensureCompatibilityEntriesExist(payload.compatibility);
 
     const product = await productsRepository.createSellerProduct({
       sellerId: sellerAccount.sellerProfile.id,
@@ -367,7 +392,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
       location: payload.location.trim(),
       status: payload.status || PRODUCT_STATUSES.ACTIVE,
       photos: payload.photos,
-      compatibility: normalizeCompatibilityEntries(payload.compatibility)
+      compatibility
     });
 
     return buildSellerProductDetail(product);
@@ -512,10 +537,13 @@ function createProductsService({ productsRepository, sellersRepository }) {
     const sellerAccount = await ensureSellerProfile(payload.userId);
     const rows = parseInventoryCsvRows(payload.csvUpload);
     const categoriesById = await resolveCategoriesForBulkRows(rows);
-    const products = rows.map((row) => {
-      const category = categoriesById.get(row.categoryId);
+    const products = [];
 
-      return {
+    for (const row of rows) {
+      const category = categoriesById.get(row.categoryId);
+      const compatibility = await ensureCompatibilityEntriesExist(row.compatibility);
+
+      products.push({
         title: row.title.trim(),
         description: row.description.trim(),
         categoryId: row.categoryId,
@@ -528,9 +556,10 @@ function createProductsService({ productsRepository, sellersRepository }) {
         location: row.location.trim(),
         status: row.status || PRODUCT_STATUSES.ACTIVE,
         photos: row.photos,
-        compatibility: normalizeCompatibilityEntries(row.compatibility)
-      };
-    });
+        compatibility
+      });
+    }
+
     const createdProducts = await productsRepository.createSellerProductsBulk({
       sellerId: sellerAccount.sellerProfile.id,
       sellerBusinessName: sellerAccount.sellerProfile.businessName,
@@ -573,6 +602,9 @@ function createProductsService({ productsRepository, sellersRepository }) {
     const fields = buildSellerProductFields(payload);
     const shouldReplacePhotos = Array.isArray(payload.photos) && payload.photos.length > 0;
     const shouldReplaceCompatibility = payload.compatibility !== undefined;
+    const compatibility = shouldReplaceCompatibility
+      ? await ensureCompatibilityEntriesExist(payload.compatibility)
+      : null;
 
     if (!fields.length && !shouldReplacePhotos && !shouldReplaceCompatibility) {
       throw new AppError('At least one product field, photo, or compatibility entry is required.', {
@@ -587,9 +619,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
       {
         fields,
         photos: shouldReplacePhotos ? payload.photos : null,
-        compatibility: shouldReplaceCompatibility
-          ? normalizeCompatibilityEntries(payload.compatibility)
-          : null
+        compatibility
       }
     );
 

@@ -6,6 +6,7 @@ const { createSellerDocumentsUploadMiddleware } = require('../middleware/upload.
 const { createAuthRateLimiter } = require('../middleware/rate-limit.middleware');
 const { validateRequest } = require('../middleware/validate.middleware');
 const {
+  sellerCacVerificationRetrySchema,
   sellerDocumentsUploadSchema,
   sellerRegisterSchema
 } = require('../validators/seller.validator');
@@ -29,6 +30,14 @@ function createSellerRouter({ authMiddleware, env, sellerController }) {
     uploadSellerDocuments,
     validateRequest(sellerDocumentsUploadSchema),
     asyncHandler(sellerController.uploadDocuments)
+  );
+
+  router.post(
+    '/cac-verification/retry',
+    authMiddleware,
+    authorizeRoles(USER_ROLES.SELLER),
+    validateRequest(sellerCacVerificationRetrySchema),
+    asyncHandler(sellerController.retryCacVerification)
   );
 
   router.get(

@@ -13,21 +13,23 @@ This file tells Codex how to work in this repository. Read it fully before gener
 - [x] **Buyer flow** — auth, catalogue browsing, cart & checkout, Paystack payment, order tracking & history
 - [x] **Seller flow** — registration & CAC verification (Dojah), listing management, order management, inventory, sales & payouts
 - [x] **Admin Milestone A-A** — dedicated admin auth, RBAC, seeded `super_admin`, scoped `verification_admin`, `GET /api/v1/admin/me`
+- [x] **Admin Milestone A-B** — seller verification queue, seller detail view with stored Dojah response, approve/reject flow, removed `SELLER_AUTO_VERIFY`, re-ran affected seller/admin tests
+- [x] **Admin Milestone A-C** — admin category tree CRUD, admin vehicle taxonomy CRUD, seller compatibility now validates against admin-managed taxonomy, re-ran affected buyer/seller/admin tests
 
-**NEXT TASK → Admin Panel, Milestone A-B — Seller verification management (Section 6C).**
+**NEXT TASK → Admin Panel, Milestone A-D — User & order oversight (Section 6C).**
 Build, in this order:
-1. List pending sellers; view a seller's profile + uploaded CAC/documents + the stored Dojah response.
-2. Approve or reject with a reason; on approve, set the seller `verified`.
-3. Replace the `SELLER_AUTO_VERIFY` flag and the current seller-verification admin stub path.
-4. Re-run the affected seller and admin tests.
+1. List and search buyers, sellers, and orders with pagination.
+2. Suspend or ban users with the right admin permission checks.
+3. Add admin order oversight with controlled status intervention.
+4. Re-run the affected buyer, seller, and admin tests.
 
-Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after A-B so I can run migrations and review.**
+Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after A-D so I can run migrations and review.**
 
-**After this:** A-C (category & catalogue management) -> A-D (user & order oversight) -> A-E (payout approval + platform config) -> A-F (disputes + audit log). Then Logistics.
+**After this:** A-D (user & order oversight) -> A-E (payout approval + platform config) -> A-F (disputes + audit log). Then Logistics.
 
 **This module resolves earlier stubs.** As you build, replace the matching markers and re-run the affected tests:
-- `SELLER_AUTO_VERIFY` dev flag + `// ADMIN-STUB` on seller verification -> replaced in A-B.
-- Seeded categories / `// ADMIN-STUB` on category ownership -> replaced in A-C.
+- Seller verification Dojah review flow + admin stub resolved in A-B.
+- Seeded categories / `// ADMIN-STUB` on category ownership resolved in A-C.
 - `// ADMIN-STUB` on payout approval and commission config -> replaced in A-E.
 
 ---
@@ -126,7 +128,7 @@ README.md
 - **Buyer** (PRD 4.1 / 5.1): auth, catalogue browsing, cart & checkout, Paystack payment, order tracking & history.
 - **Seller** (PRD 4.2 / 5.2): registration & CAC verification, listing management, order management, inventory, sales & payouts.
 
-These flows currently depend on stubbed admin behaviour (auto-verify flag, seeded categories, stubbed payout/commission approval). The Admin flow (Section 6C) replaces those stubs. Keep buyer and seller endpoints working and their tests green as you do so.
+These flows still depend on the remaining admin stub around payout approval and commission ownership. The Admin flow (Section 6C) replaces that stub. Keep buyer and seller endpoints working and their tests green as you do so.
 
 ---
 
@@ -134,22 +136,22 @@ These flows currently depend on stubbed admin behaviour (auto-verify flag, seede
 
 Ground every endpoint in PRD section 4.4 (Admin Panel Features), 4.5 (Super Admin Features), and the RBAC note. Goal for this phase: **operational control of the platform that's already built.**
 
-### Milestone A-A — Admin auth & RBAC  [NEXT]
+### Milestone A-A — Admin auth & RBAC  [DONE]
 - `admins` table, admin login (JWT), `GET /admin/me`.
 - RBAC: `roles`, `permissions`, `role_permissions`, `admin_roles`; a permission-guard middleware.
 - Seed a `super_admin` (all permissions) and a scoped role. Every admin route is permission-gated.
 
-### Milestone A-B — Seller verification management
+### Milestone A-B — Seller verification management  [DONE]
 - List pending sellers; view a seller's profile + uploaded CAC/documents + the stored Dojah response.
 - Approve or reject with a reason; on approve, set the seller `verified`.
 - REPLACES the `SELLER_AUTO_VERIFY` flag and the `// ADMIN-STUB` on seller verification. Re-run seller tests.
 
-### Milestone A-C — Category & catalogue management
+### Milestone A-C — Category & catalogue management  [DONE]
 - Admin CRUD on the category tree (`categories`, parent/child) and the vehicle taxonomy.
 - Sellers still only SELECT categories; admin owns creation. Optional: a "seller category request -> admin approves" queue (P1).
 - REPLACES seeded-category ownership / `// ADMIN-STUB`. Confirm seller listing + buyer catalogue still pass.
 
-### Milestone A-D — User & order oversight
+### Milestone A-D — User & order oversight  [NEXT]
 - List/search all buyers, sellers, and orders (paginated). Suspend or ban any user; override where needed.
 - Read-only order oversight across the whole platform, with the ability to intervene on status.
 
@@ -181,7 +183,7 @@ Money in kobo. Buyer + seller tables already exist. Admin flow adds the followin
 - `audit_logs` — id, admin_id (FK), action (string key), target_type, target_id, detail (JSON), created_at
 - `platform_config` — id, key (unique, e.g. `commission_rate_default`), value (JSON or string), updated_at
 - `disputes` — id, order_id (FK), raised_by (`buyer`/`seller`), reason, status (`open`/`resolved`/`rejected`), resolution_note, resolved_by (admin FK), timestamps
-- Extend `seller_profiles`: ensure `verification_status`, `rejection_reason`, `verified_by` (admin FK), `verified_at`.
+- Extend `seller_profiles`: ensure `verification_status`, `rejection_reason`, `cac_verification_status`, `cac_verification_response`, `cac_verification_checked_at`, `verified_by` (admin FK), `verified_at`.
 - Extend `payouts`: ensure `approved_by` (admin FK), `approved_at`, and status flow `requested -> approved -> paid` / `rejected`.
 
 ---
@@ -195,6 +197,7 @@ Money in kobo. Buyer + seller tables already exist. Admin flow adds the followin
   - `POST /api/v1/admin/login` . `GET /api/v1/admin/me`
   - `GET  /api/v1/admin/sellers?status=pending` . `GET /api/v1/admin/sellers/:id` . `PATCH /api/v1/admin/sellers/:id/verification`
   - `GET/POST/PATCH/DELETE /api/v1/admin/categories` (+ `/categories/:id`) . `GET /api/v1/admin/category-requests` (P1)
+  - `GET/POST/PATCH/DELETE /api/v1/admin/vehicle-taxonomy` (+ `/vehicle-taxonomy/:id`)
   - `GET /api/v1/admin/users` . `PATCH /api/v1/admin/users/:id/status` . `GET /api/v1/admin/orders` . `PATCH /api/v1/admin/orders/:id/status`
   - `GET /api/v1/admin/payouts` . `PATCH /api/v1/admin/payouts/:id` . `GET/PATCH /api/v1/admin/config`
   - `GET /api/v1/admin/disputes` . `PATCH /api/v1/admin/disputes/:id` . `GET /api/v1/admin/audit-logs`
@@ -249,7 +252,6 @@ UPLOAD_DIR=./uploads
 DOJAH_BASE_URL=https://api.dojah.io
 DOJAH_APP_ID=
 DOJAH_API_KEY=
-SELLER_AUTO_VERIFY=false   # now that Admin verification exists, default OFF; remove once A-B is confirmed
 SUPER_ADMIN_EMAIL=         # seeded super admin (dev)
 SUPER_ADMIN_PASSWORD=      # seeded super admin (dev)
 ```
@@ -280,7 +282,7 @@ SUPER_ADMIN_PASSWORD=      # seeded super admin (dev)
 - Build one milestone at a time, in order. Do not jump ahead to Logistics.
 - Build recipe per unit of work: migration (if needed) -> repository -> service -> validator -> controller -> route -> tests. Then confirm tests pass.
 - Reuse existing utils/middleware before writing new ones (esp. auth, response envelope, pagination, upload, and the audit writer once it exists).
-- When replacing a stub (`SELLER_AUTO_VERIFY`, seeded categories, payout/commission `// ADMIN-STUB`), update the dependent buyer/seller code and re-run their tests to confirm nothing broke.
+- When replacing a stub (seeded categories, payout/commission `// ADMIN-STUB`), update the dependent buyer/seller code and re-run their tests to confirm nothing broke.
 - After each milestone: update the README with new endpoints, run all tests, and update Section 0 (move the item to Completed, set the next task). Then stop for review.
 - If a requirement is ambiguous, make the smallest reasonable assumption, state it in your output, and continue — do not block.
 - Never add a new dependency without noting why; prefer the stack already listed here.

@@ -23,6 +23,23 @@ function mapSellerProfileRow(row) {
     return null;
   }
 
+  const cacVerificationResponse = parseJsonColumn(row.cac_verification_response);
+  const normalizedCacVerificationResponse = cacVerificationResponse
+    && typeof cacVerificationResponse === 'object'
+    && cacVerificationResponse.response !== undefined
+    ? cacVerificationResponse.response
+    : cacVerificationResponse;
+  const normalizedCacVerificationError = cacVerificationResponse
+    && typeof cacVerificationResponse === 'object'
+    && cacVerificationResponse.error !== undefined
+    ? cacVerificationResponse.error
+    : null;
+  const normalizedCacVerificationProvider = cacVerificationResponse
+    && typeof cacVerificationResponse === 'object'
+    && cacVerificationResponse.provider !== undefined
+    ? cacVerificationResponse.provider
+    : null;
+
   return {
     id: row.seller_id,
     userId: row.user_id,
@@ -34,9 +51,64 @@ function mapSellerProfileRow(row) {
     cacNumber: row.cac_number,
     verificationStatus: row.verification_status,
     rejectionReason: row.rejection_reason,
+    cacVerification: row.cac_verification_status || cacVerificationResponse || row.cac_verification_checked_at
+      ? {
+        checkedAt: row.cac_verification_checked_at,
+        error: normalizedCacVerificationError,
+        provider: normalizedCacVerificationProvider,
+        response: normalizedCacVerificationResponse,
+        status: row.cac_verification_status
+      }
+      : null,
+    verifiedAt: row.verified_at,
+    verifiedBy: row.verified_by === null || row.verified_by === undefined
+      ? null
+      : Number(row.verified_by),
     createdAt: row.seller_created_at,
     updatedAt: row.seller_updated_at
   };
+}
+
+function parseJsonColumn(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function normalizeSqlTimestamp(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
+
+    return value.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  if (typeof value === 'string') {
+    const parsedValue = new Date(value);
+
+    if (Number.isNaN(parsedValue.getTime())) {
+      return value;
+    }
+
+    return parsedValue.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  return value;
 }
 
 function mapSellerDocumentRow(row) {
@@ -88,9 +160,14 @@ function createSellersRepository({ db }) {
               address,
               cac_number,
               verification_status,
-              rejection_reason
+              rejection_reason,
+              cac_verification_status,
+              cac_verification_response,
+              cac_verification_checked_at,
+              verified_by,
+              verified_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
           [
             userResult.insertId,
@@ -100,7 +177,12 @@ function createSellersRepository({ db }) {
             profile.address,
             profile.cacNumber,
             profile.verificationStatus,
-            profile.rejectionReason
+            profile.rejectionReason,
+            profile.cacVerificationStatus,
+            profile.cacVerificationResponse ? JSON.stringify(profile.cacVerificationResponse) : null,
+            normalizeSqlTimestamp(profile.cacVerificationCheckedAt),
+            profile.verifiedBy,
+            normalizeSqlTimestamp(profile.verifiedAt)
           ]
         );
 
@@ -129,6 +211,11 @@ function createSellersRepository({ db }) {
             sp.cac_number,
             sp.verification_status,
             sp.rejection_reason,
+            sp.cac_verification_status,
+            sp.cac_verification_response,
+            sp.cac_verification_checked_at,
+            sp.verified_by,
+            sp.verified_at,
             sp.created_at AS seller_created_at,
             sp.updated_at AS seller_updated_at,
             u.role,
@@ -176,6 +263,11 @@ function createSellersRepository({ db }) {
             sp.cac_number,
             sp.verification_status,
             sp.rejection_reason,
+            sp.cac_verification_status,
+            sp.cac_verification_response,
+            sp.cac_verification_checked_at,
+            sp.verified_by,
+            sp.verified_at,
             sp.created_at AS seller_created_at,
             sp.updated_at AS seller_updated_at,
             u.role,
@@ -223,6 +315,11 @@ function createSellersRepository({ db }) {
             sp.cac_number,
             sp.verification_status,
             sp.rejection_reason,
+            sp.cac_verification_status,
+            sp.cac_verification_response,
+            sp.cac_verification_checked_at,
+            sp.verified_by,
+            sp.verified_at,
             sp.created_at AS seller_created_at,
             sp.updated_at AS seller_updated_at,
             u.role,
@@ -315,6 +412,37 @@ function createSellersRepository({ db }) {
       } finally {
         connection.release();
       }
+    },
+
+    async updateCacVerificationResult({
+      sellerId,
+      cacVerificationStatus,
+      cacVerificationResponse,
+      cacVerificationCheckedAt
+    }) {
+      const [result] = await db.execute(
+        `
+          UPDATE seller_profiles
+          SET
+            cac_verification_status = ?,
+            cac_verification_response = ?,
+            cac_verification_checked_at = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [
+          cacVerificationStatus,
+          cacVerificationResponse ? JSON.stringify(cacVerificationResponse) : null,
+          normalizeSqlTimestamp(cacVerificationCheckedAt),
+          sellerId
+        ]
+      );
+
+      if (!result.affectedRows) {
+        return null;
+      }
+
+      return this.findBySellerId(sellerId);
     },
 
     async updateVerificationStatus({ sellerId, status, rejectionReason }) {

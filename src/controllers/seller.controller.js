@@ -21,6 +21,15 @@ function createSellerController({ sellersService }) {
       });
     },
 
+    async retryCacVerification(req, res) {
+      const result = await sellersService.retryCacVerification(req.user.id);
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Seller CAC verification refreshed successfully.'
+      });
+    },
+
     async uploadDocuments(req, res) {
       const result = await sellersService.uploadDocuments({
         userId: req.user.id,

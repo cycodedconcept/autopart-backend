@@ -24,8 +24,14 @@ function createErrorMiddleware({ logger }) {
 
     if (normalizedError.statusCode >= 500) {
       logger.error(normalizedError.message, {
+        errorCode: error && error.code ? error.code : undefined,
+        errorMessage: error && error.message ? error.message : undefined,
+        errorName: error && error.name ? error.name : undefined,
         path: req.path,
-        method: req.method
+        method: req.method,
+        sqlMessage: error && error.sqlMessage ? error.sqlMessage : undefined,
+        sqlState: error && error.sqlState ? error.sqlState : undefined,
+        stack: error && error.stack ? error.stack : undefined
       });
     }
 

@@ -3,6 +3,7 @@ require('../../setup/jest');
 const { createSellersService } = require('../../../src/services/sellers.service');
 
 describe('sellers service', () => {
+  let cacVerificationService;
   let usersRepository;
   let sellersRepository;
   let jwtUtils;
@@ -19,11 +20,25 @@ describe('sellers service', () => {
       createSellerAccount: jest.fn(),
       findByCacNumber: jest.fn(),
       findByUserId: jest.fn(),
-      replaceDocuments: jest.fn()
+      replaceDocuments: jest.fn(),
+      updateCacVerificationResult: jest.fn()
     };
 
     jwtUtils = {
       signAccessToken: jest.fn(() => 'seller-token')
+    };
+
+    cacVerificationService = {
+      verifyBusiness: jest.fn(() => ({
+        checkedAt: '2026-07-09T09:30:00.000Z',
+        response: {
+          body: {
+            entityName: 'Prime Auto Hub'
+          },
+          httpStatusCode: 200
+        },
+        status: 'completed'
+      }))
     };
 
     passwordUtils = {
@@ -31,18 +46,16 @@ describe('sellers service', () => {
     };
 
     sellersService = createSellersService({
+      cacVerificationService,
       usersRepository,
       sellersRepository,
       jwtUtils,
-      passwordUtils,
-      env: {
-        SELLER_AUTO_VERIFY: true
-      }
+      passwordUtils
     });
   });
 
   describe('registerSeller', () => {
-    it('creates a seller account with pending verification and normalized contacts', async () => {
+    it('creates a seller account with stored CAC verification metadata and normalized contacts', async () => {
       usersRepository.findByEmail.mockResolvedValue(null);
       usersRepository.findByPhone.mockResolvedValue(null);
       sellersRepository.findByCacNumber.mockResolvedValue(null);
@@ -65,8 +78,20 @@ describe('sellers service', () => {
           contactEmail: 'contact@primeautohub.com',
           address: '12 Sapara Williams Close, Victoria Island, Lagos',
           cacNumber: 'RC-123456',
+          cacVerification: {
+            checkedAt: '2026-07-09T09:30:00.000Z',
+            response: {
+              body: {
+                entityName: 'Prime Auto Hub'
+              },
+              httpStatusCode: 200
+            },
+            status: 'completed'
+          },
           verificationStatus: 'pending',
           rejectionReason: null,
+          verifiedAt: null,
+          verifiedBy: null,
           documents: [],
           createdAt: '2026-07-02T10:00:00.000Z',
           updatedAt: '2026-07-02T10:00:00.000Z'
@@ -88,6 +113,11 @@ describe('sellers service', () => {
       expect(usersRepository.findByEmail).toHaveBeenCalledWith('seller@example.com');
       expect(usersRepository.findByPhone).toHaveBeenCalledWith('+2348012345678');
       expect(sellersRepository.findByCacNumber).toHaveBeenCalledWith('RC-123456');
+      expect(cacVerificationService.verifyBusiness).toHaveBeenCalledWith({
+        businessName: 'Prime Auto Hub',
+        cacNumber: 'RC-123456',
+        customerReference: 'seller-registration-RC-123456'
+      });
       expect(passwordUtils.hashPassword).toHaveBeenCalledWith('Password123');
       expect(sellersRepository.createSellerAccount).toHaveBeenCalledWith({
         user: {
@@ -104,13 +134,28 @@ describe('sellers service', () => {
           contactEmail: 'contact@primeautohub.com',
           address: '12 Sapara Williams Close, Victoria Island, Lagos',
           cacNumber: 'RC-123456',
+          cacVerificationCheckedAt: '2026-07-09T09:30:00.000Z',
+          cacVerificationResponse: {
+            provider: 'dojah',
+            response: {
+              body: {
+                entityName: 'Prime Auto Hub'
+              },
+              httpStatusCode: 200
+            },
+            error: undefined
+          },
+          cacVerificationStatus: 'completed',
           verificationStatus: 'pending',
-          rejectionReason: null
+          rejectionReason: null,
+          verifiedAt: null,
+          verifiedBy: null
         }
       });
       expect(result.token).toBe('seller-token');
       expect(result.user.role).toBe('seller');
       expect(result.sellerProfile.verificationStatus).toBe('pending');
+      expect(result.sellerProfile.cacVerification.status).toBe('completed');
     });
 
     it('rejects duplicate CAC numbers', async () => {
@@ -133,7 +178,7 @@ describe('sellers service', () => {
   });
 
   describe('uploadDocuments', () => {
-    it('uploads documents and auto-verifies the seller when enabled', async () => {
+    it('uploads documents and keeps the seller pending admin review', async () => {
       sellersRepository.findByUserId.mockResolvedValue({
         user: {
           id: 8,
@@ -155,6 +200,16 @@ describe('sellers service', () => {
           cacNumber: 'RC-300001',
           verificationStatus: 'pending',
           rejectionReason: null,
+          cacVerification: {
+            checkedAt: '2026-07-09T09:30:00.000Z',
+            response: {
+              body: {
+                entityName: 'Bello Motors'
+              },
+              httpStatusCode: 200
+            },
+            status: 'completed'
+          },
           documents: [],
           createdAt: '2026-07-02T10:00:00.000Z',
           updatedAt: '2026-07-02T10:00:00.000Z'
@@ -179,8 +234,18 @@ describe('sellers service', () => {
           contactEmail: 'sales@bellomotors.ng',
           address: '22 Allen Avenue, Ikeja, Lagos',
           cacNumber: 'RC-300001',
-          verificationStatus: 'verified',
+          verificationStatus: 'pending',
           rejectionReason: null,
+          cacVerification: {
+            checkedAt: '2026-07-09T09:30:00.000Z',
+            response: {
+              body: {
+                entityName: 'Bello Motors'
+              },
+              httpStatusCode: 200
+            },
+            status: 'completed'
+          },
           documents: [
             {
               id: 1,
@@ -228,11 +293,141 @@ describe('sellers service', () => {
             filePath: 'uploads/seller-documents/proof.pdf'
           }
         ],
-        verificationStatus: 'verified',
+        verificationStatus: 'pending',
         rejectionReason: null
       });
-      expect(result.sellerProfile.verificationStatus).toBe('verified');
+      expect(result.sellerProfile.verificationStatus).toBe('pending');
       expect(result.sellerProfile.documents).toHaveLength(2);
+    });
+  });
+
+  describe('retryCacVerification', () => {
+    it('refreshes the stored CAC verification metadata for an existing seller', async () => {
+      sellersRepository.findByUserId.mockResolvedValue({
+        user: {
+          id: 11,
+          role: 'seller',
+          fullName: 'Uche Okafor',
+          email: 'seller@example.com',
+          phone: '+2348012345678',
+          isVerified: false,
+          createdAt: '2026-07-02T10:00:00.000Z',
+          updatedAt: '2026-07-02T10:00:00.000Z'
+        },
+        sellerProfile: {
+          id: 101,
+          userId: 11,
+          businessName: 'Prime Auto Hub',
+          contactPhone: '+2348012345678',
+          contactEmail: 'sales@primeautohub.ng',
+          address: '12 Sapara Williams Close, Victoria Island, Lagos',
+          cacNumber: 'RC-123456',
+          verificationStatus: 'pending',
+          rejectionReason: null,
+          cacVerification: {
+            checkedAt: '2026-07-09T11:06:55.000Z',
+            error: {
+              message: 'Your Secret Key could not be Authorized'
+            },
+            provider: 'dojah',
+            response: {
+              body: {
+                error: 'Your Secret Key could not be Authorized'
+              },
+              httpStatusCode: 401
+            },
+            status: 'failed'
+          },
+          documents: [],
+          createdAt: '2026-07-02T10:00:00.000Z',
+          updatedAt: '2026-07-02T10:00:00.000Z'
+        }
+      });
+      cacVerificationService.verifyBusiness.mockResolvedValue({
+        checkedAt: '2026-07-09T12:20:00.000Z',
+        response: {
+          body: {
+            entity_name: 'Prime Auto Hub',
+            registration_number: 'RC-123456'
+          },
+          httpStatusCode: 200
+        },
+        status: 'completed'
+      });
+      sellersRepository.updateCacVerificationResult.mockResolvedValue({
+        user: {
+          id: 11,
+          role: 'seller',
+          fullName: 'Uche Okafor',
+          email: 'seller@example.com',
+          phone: '+2348012345678',
+          isVerified: false,
+          createdAt: '2026-07-02T10:00:00.000Z',
+          updatedAt: '2026-07-02T10:00:00.000Z'
+        },
+        sellerProfile: {
+          id: 101,
+          userId: 11,
+          businessName: 'Prime Auto Hub',
+          contactPhone: '+2348012345678',
+          contactEmail: 'sales@primeautohub.ng',
+          address: '12 Sapara Williams Close, Victoria Island, Lagos',
+          cacNumber: 'RC-123456',
+          verificationStatus: 'pending',
+          rejectionReason: null,
+          cacVerification: {
+            checkedAt: '2026-07-09T12:20:00.000Z',
+            error: null,
+            provider: 'dojah',
+            response: {
+              body: {
+                entity_name: 'Prime Auto Hub',
+                registration_number: 'RC-123456'
+              },
+              httpStatusCode: 200
+            },
+            status: 'completed'
+          },
+          documents: [],
+          createdAt: '2026-07-02T10:00:00.000Z',
+          updatedAt: '2026-07-09T12:20:00.000Z'
+        }
+      });
+
+      const result = await sellersService.retryCacVerification(11);
+
+      expect(cacVerificationService.verifyBusiness).toHaveBeenCalledWith({
+        businessName: 'Prime Auto Hub',
+        cacNumber: 'RC-123456',
+        customerReference: 'seller-registration-RC-123456'
+      });
+      expect(sellersRepository.updateCacVerificationResult).toHaveBeenCalledWith({
+        sellerId: 101,
+        cacVerificationCheckedAt: '2026-07-09T12:20:00.000Z',
+        cacVerificationResponse: {
+          provider: 'dojah',
+          response: {
+            body: {
+              entity_name: 'Prime Auto Hub',
+              registration_number: 'RC-123456'
+            },
+            httpStatusCode: 200
+          },
+          error: undefined
+        },
+        cacVerificationStatus: 'completed'
+      });
+      expect(result.sellerProfile.cacVerification.status).toBe('completed');
+      expect(result.sellerProfile.verificationStatus).toBe('pending');
+    });
+
+    it('returns not found when the seller profile does not exist', async () => {
+      sellersRepository.findByUserId.mockResolvedValue(null);
+
+      await expect(sellersService.retryCacVerification(9999)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'NOT_FOUND'
+      });
     });
   });
 

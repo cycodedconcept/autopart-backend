@@ -20,6 +20,7 @@ const { createProductsService } = require('./services/products.service');
 const { createSellerDashboardService } = require('./services/seller-dashboard.service');
 const { createSellerFinanceService } = require('./services/seller-finance.service');
 const { createSellersService } = require('./services/sellers.service');
+const { createCacVerificationService } = require('./services/cac-verification.service');
 const { createAdminController } = require('./controllers/admin.controller');
 const { createAuthController } = require('./controllers/auth.controller');
 const { createCartController } = require('./controllers/cart.controller');
@@ -96,6 +97,10 @@ function createDependencies(overrides = {}) {
     secretKey: appEnv.PAYSTACK_SECRET_KEY,
     logger: appLogger
   });
+  const cacVerificationService = overrides.cacVerificationService || createCacVerificationService({
+    env: appEnv,
+    logger: appLogger
+  });
   const authService = overrides.authService || createAuthService({
     usersRepository,
     jwtUtils: overrides.jwtUtils || jwtUtils,
@@ -105,6 +110,7 @@ function createDependencies(overrides = {}) {
   });
   const adminService = overrides.adminService || createAdminService({
     adminRepository,
+    productsRepository,
     jwtUtils: overrides.jwtUtils || jwtUtils,
     passwordUtils: overrides.passwordUtils || passwordUtils
   });
@@ -127,11 +133,11 @@ function createDependencies(overrides = {}) {
     paystackClient
   });
   const sellersService = overrides.sellersService || createSellersService({
+    cacVerificationService,
     usersRepository,
     sellersRepository,
     jwtUtils: overrides.jwtUtils || jwtUtils,
-    passwordUtils: overrides.passwordUtils || passwordUtils,
-    env: appEnv
+    passwordUtils: overrides.passwordUtils || passwordUtils
   });
   const sellerFinanceService = overrides.sellerFinanceService || createSellerFinanceService({
     env: appEnv,

@@ -90,6 +90,19 @@ function createInMemoryUsersRepository() {
       user.updatedAt = new Date().toISOString();
 
       return cloneUser(user);
+    },
+
+    async updateVerificationStatus(userId, isVerified) {
+      const user = users.find((entry) => entry.id === userId);
+
+      if (!user) {
+        return null;
+      }
+
+      user.isVerified = Boolean(isVerified);
+      user.updatedAt = new Date().toISOString();
+
+      return cloneUser(user);
     }
   };
 }

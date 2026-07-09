@@ -6,7 +6,26 @@ function mapCategoryRow(row) {
   return {
     id: row.id,
     name: row.name,
-    slug: row.slug
+    slug: row.slug,
+    parentId: row.parent_id === null || row.parent_id === undefined ? null : Number(row.parent_id),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapVehicleTaxonomyRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    make: row.make,
+    model: row.model,
+    yearFrom: Number(row.year_from),
+    yearTo: Number(row.year_to),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -384,7 +403,10 @@ function createProductsRepository({ db }) {
           SELECT
             id,
             name,
-            slug
+            slug,
+            parent_id,
+            created_at,
+            updated_at
           FROM categories
           WHERE id = ?
           LIMIT 1
@@ -406,7 +428,10 @@ function createProductsRepository({ db }) {
           SELECT
             id,
             name,
-            slug
+            slug,
+            parent_id,
+            created_at,
+            updated_at
           FROM categories
           WHERE id IN (${placeholders})
           ORDER BY id ASC
@@ -415,6 +440,311 @@ function createProductsRepository({ db }) {
       );
 
       return rows.map(mapCategoryRow);
+    },
+
+    async findCategoryBySlug(slug) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            id,
+            name,
+            slug,
+            parent_id,
+            created_at,
+            updated_at
+          FROM categories
+          WHERE slug = ?
+          LIMIT 1
+        `,
+        [slug]
+      );
+
+      return mapCategoryRow(rows[0]);
+    },
+
+    async listAllCategories() {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            id,
+            name,
+            slug,
+            parent_id,
+            created_at,
+            updated_at
+          FROM categories
+          ORDER BY parent_id ASC, name ASC, id ASC
+        `
+      );
+
+      return rows.map(mapCategoryRow);
+    },
+
+    async createCategory(payload) {
+      const [result] = await db.execute(
+        `
+          INSERT INTO categories (name, slug, parent_id)
+          VALUES (?, ?, ?)
+        `,
+        [payload.name, payload.slug, payload.parentId]
+      );
+
+      return this.findCategoryById(result.insertId);
+    },
+
+    async updateCategory(categoryId, payload) {
+      const fields = [];
+      const params = [];
+
+      if (payload.name !== undefined) {
+        fields.push('name = ?');
+        params.push(payload.name);
+      }
+
+      if (payload.slug !== undefined) {
+        fields.push('slug = ?');
+        params.push(payload.slug);
+      }
+
+      if (payload.parentId !== undefined) {
+        fields.push('parent_id = ?');
+        params.push(payload.parentId);
+      }
+
+      if (!fields.length) {
+        return this.findCategoryById(categoryId);
+      }
+
+      fields.push('updated_at = CURRENT_TIMESTAMP');
+
+      await db.execute(
+        `
+          UPDATE categories
+          SET ${fields.join(', ')}
+          WHERE id = ?
+        `,
+        [...params, categoryId]
+      );
+
+      return this.findCategoryById(categoryId);
+    },
+
+    async deleteCategory(categoryId) {
+      const category = await this.findCategoryById(categoryId);
+
+      if (!category) {
+        return null;
+      }
+
+      await db.execute(
+        `
+          DELETE FROM categories
+          WHERE id = ?
+        `,
+        [categoryId]
+      );
+
+      return category;
+    },
+
+    async countChildCategories(categoryId) {
+      const [rows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM categories
+          WHERE parent_id = ?
+        `,
+        [categoryId]
+      );
+
+      return Number(rows[0].total || 0);
+    },
+
+    async countProductsByCategoryId(categoryId) {
+      const [rows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM products
+          WHERE category_id = ?
+        `,
+        [categoryId]
+      );
+
+      return Number(rows[0].total || 0);
+    },
+
+    async findVehicleTaxonomyById(vehicleTaxonomyId) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            id,
+            make,
+            model,
+            year_from,
+            year_to,
+            created_at,
+            updated_at
+          FROM vehicles_taxonomy
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [vehicleTaxonomyId]
+      );
+
+      return mapVehicleTaxonomyRow(rows[0]);
+    },
+
+    async findVehicleTaxonomyEntry(payload) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            id,
+            make,
+            model,
+            year_from,
+            year_to,
+            created_at,
+            updated_at
+          FROM vehicles_taxonomy
+          WHERE make = ? AND model = ? AND year_from = ? AND year_to = ?
+          LIMIT 1
+        `,
+        [payload.make, payload.model, payload.yearFrom, payload.yearTo]
+      );
+
+      return mapVehicleTaxonomyRow(rows[0]);
+    },
+
+    async listVehicleTaxonomy(filters) {
+      const whereClauses = [];
+      const params = [];
+
+      if (filters.make) {
+        whereClauses.push('LOWER(make) = ?');
+        params.push(filters.make.trim().toLowerCase());
+      }
+
+      if (filters.model) {
+        whereClauses.push('LOWER(model) = ?');
+        params.push(filters.model.trim().toLowerCase());
+      }
+
+      const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+      const [countRows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM vehicles_taxonomy
+          ${whereSql}
+        `,
+        params
+      );
+      const [rows] = await db.execute(
+        `
+          SELECT
+            id,
+            make,
+            model,
+            year_from,
+            year_to,
+            created_at,
+            updated_at
+          FROM vehicles_taxonomy
+          ${whereSql}
+          ORDER BY make ASC, model ASC, year_from ASC, year_to ASC, id ASC
+          LIMIT ? OFFSET ?
+        `,
+        [...params, filters.limit, filters.offset]
+      );
+
+      return {
+        entries: rows.map(mapVehicleTaxonomyRow),
+        total: Number(countRows[0].total || 0)
+      };
+    },
+
+    async createVehicleTaxonomy(payload) {
+      const [result] = await db.execute(
+        `
+          INSERT INTO vehicles_taxonomy (make, model, year_from, year_to)
+          VALUES (?, ?, ?, ?)
+        `,
+        [payload.make, payload.model, payload.yearFrom, payload.yearTo]
+      );
+
+      return this.findVehicleTaxonomyById(result.insertId);
+    },
+
+    async updateVehicleTaxonomy(vehicleTaxonomyId, payload) {
+      const fields = [];
+      const params = [];
+
+      if (payload.make !== undefined) {
+        fields.push('make = ?');
+        params.push(payload.make);
+      }
+
+      if (payload.model !== undefined) {
+        fields.push('model = ?');
+        params.push(payload.model);
+      }
+
+      if (payload.yearFrom !== undefined) {
+        fields.push('year_from = ?');
+        params.push(payload.yearFrom);
+      }
+
+      if (payload.yearTo !== undefined) {
+        fields.push('year_to = ?');
+        params.push(payload.yearTo);
+      }
+
+      if (!fields.length) {
+        return this.findVehicleTaxonomyById(vehicleTaxonomyId);
+      }
+
+      fields.push('updated_at = CURRENT_TIMESTAMP');
+
+      await db.execute(
+        `
+          UPDATE vehicles_taxonomy
+          SET ${fields.join(', ')}
+          WHERE id = ?
+        `,
+        [...params, vehicleTaxonomyId]
+      );
+
+      return this.findVehicleTaxonomyById(vehicleTaxonomyId);
+    },
+
+    async deleteVehicleTaxonomy(vehicleTaxonomyId) {
+      const entry = await this.findVehicleTaxonomyById(vehicleTaxonomyId);
+
+      if (!entry) {
+        return null;
+      }
+
+      await db.execute(
+        `
+          DELETE FROM vehicles_taxonomy
+          WHERE id = ?
+        `,
+        [vehicleTaxonomyId]
+      );
+
+      return entry;
+    },
+
+    async countProductCompatibilityReferences(payload) {
+      const [rows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM product_compatibility
+          WHERE make = ? AND model = ? AND year_from = ? AND year_to = ?
+        `,
+        [payload.make, payload.model, payload.yearFrom, payload.yearTo]
+      );
+
+      return Number(rows[0].total || 0);
     },
 
     async findOwnedProductById(productId, sellerId) {

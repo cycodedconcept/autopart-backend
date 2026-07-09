@@ -177,7 +177,6 @@ describe('Seller dashboard API integration', () => {
         PAYSTACK_SECRET_KEY: '',
         PAYSTACK_PUBLIC_KEY: '',
         UPLOAD_DIR: uploadDirectory,
-        SELLER_AUTO_VERIFY: true,
         PLATFORM_COMMISSION_RATE_PERCENT: 10
       }
     });
@@ -256,7 +255,7 @@ describe('Seller dashboard API integration', () => {
       rating: 0,
       contactPhone: '+2348012345678',
       contactEmail: 'sales@primeautohub.ng',
-      verificationStatus: 'verified',
+      verificationStatus: 'pending',
       rejectionReason: null
     });
     expect(data.comparison).to.deep.equal({

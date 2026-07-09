@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and Admin Milestone `A-A`. This repository currently implements the buyer flow, seller flow, and the first admin foundation slice: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and dedicated admin auth plus RBAC.
+Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and Admin Milestones `A-A` through `A-C`. This repository currently implements the buyer flow, seller flow, and the current admin operations slice: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus CAC verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and dedicated admin auth with seller verification plus catalogue-management RBAC.
 
 ## Implemented Milestone
 
@@ -18,7 +18,9 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Order status-history persistence for `pending_payment` and `confirmed`, with buyer-readable lifecycle tracking
 - Seller registration with shared auth credentials plus seller business profile fields
 - Seller document upload for CAC and proof of address with `multer` local storage
-- Seller verification state tracking with a dev-only auto-verify flag and `// ADMIN-STUB` handoff for real approval
+- Seller registration-time CAC lookup through Dojah with the provider response stored for later admin review
+- Seller-triggered CAC verification retry to refresh stored Dojah metadata after fixing provider credentials or transient errors
+- Seller document upload for CAC and proof of address with pending admin review after upload
 - Seller-protected `GET /api/v1/seller/me` profile and verification-status response
 - Seller CRUD for owned product listings with multipart photo upload and compatibility records
 - Seller-scoped incoming order views with pagination and order-item ownership enforcement
@@ -33,12 +35,15 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Admin RBAC with `roles`, `permissions`, `role_permissions`, and `admin_roles`
 - Seeded `super_admin` access plus a scoped `verification_admin` role
 - Permission-gated `GET /api/v1/admin/me`
-- Admin-protected seller verification review queue with approve and reject actions behind `sellers.verify`
+- Admin-protected seller verification review queue, seller detail view, and approve or reject actions behind `sellers.verify`
+- Admin-protected category tree CRUD behind `categories.manage`
+- Admin-protected vehicle taxonomy CRUD behind `categories.manage`
+- Seller compatibility payloads now validate against admin-managed vehicle taxonomy entries
 - Buyer order detail now includes per-item `itemStatus` alongside the existing order-level status history
 - Buyer catalogue, cart, and order reads now project seller business metadata from real seller profiles instead of the old product-level seller stub
 - Joi request validation, auth rate limiting, central error handling
 - MySQL migration and seed scaffolding for buyer-flow tables plus seller onboarding, payout, and admin-role tables
-- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, and admin seller verification
+- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, admin seller verification, and admin catalogue management
 
 ## Project Structure
 
@@ -71,7 +76,7 @@ Copy `.env.example` to `.env` and fill in the required values.
 Seller onboarding uses:
 
 - `UPLOAD_DIR` for local document storage in development
-- `SELLER_AUTO_VERIFY=false` by default so seller verification can move to admin review
+- `DOJAH_BASE_URL`, `DOJAH_APP_ID`, and `DOJAH_API_KEY` for CAC lookups during seller registration
 - `PLATFORM_COMMISSION_RATE_PERCENT` to control seller payout commission deductions in development and test
 
 Local admin review uses:
@@ -133,6 +138,7 @@ npm run lint
 
 - `POST /api/v1/seller/register`
 - `POST /api/v1/seller/documents`
+- `POST /api/v1/seller/cac-verification/retry`
 - `GET /api/v1/seller/me`
 - `POST /api/v1/seller/products`
 - `GET /api/v1/seller/products`
@@ -152,7 +158,18 @@ npm run lint
 - `POST /api/v1/admin/login`
 - `GET /api/v1/admin/me`
 - `GET /api/v1/admin/sellers`
+- `GET /api/v1/admin/sellers/:id`
 - `PATCH /api/v1/admin/sellers/:id/verification`
+- `GET /api/v1/admin/categories`
+- `POST /api/v1/admin/categories`
+- `GET /api/v1/admin/categories/:id`
+- `PATCH /api/v1/admin/categories/:id`
+- `DELETE /api/v1/admin/categories/:id`
+- `GET /api/v1/admin/vehicle-taxonomy`
+- `POST /api/v1/admin/vehicle-taxonomy`
+- `GET /api/v1/admin/vehicle-taxonomy/:id`
+- `PATCH /api/v1/admin/vehicle-taxonomy/:id`
+- `DELETE /api/v1/admin/vehicle-taxonomy/:id`
 
 ### Sample Requests
 
@@ -399,6 +416,13 @@ GET /api/v1/admin/sellers?status=pending&page=1&limit=10
 Authorization: Bearer <admin-token>
 ```
 
+Fetch one seller verification profile, including documents and the stored Dojah response:
+
+```text
+GET /api/v1/admin/sellers/:id
+Authorization: Bearer <admin-token>
+```
+
 Approve a seller verification:
 
 ```text
@@ -406,6 +430,27 @@ PATCH /api/v1/admin/sellers/:id/verification
 Authorization: Bearer <admin-token>
 
 {"verificationStatus":"verified"}
+```
+
+Create an admin category:
+
+```json
+{
+  "name": "Cooling System",
+  "slug": "cooling-system"
+}
+```
+
+Create an admin vehicle taxonomy entry:
+
+```json
+{
+  "make": "Mazda",
+  "model": "CX-5",
+  "trim": "Signature",
+  "yearFrom": 2018,
+  "yearTo": 2021
+}
 ```
 
 Reject a seller verification:
@@ -516,6 +561,7 @@ GET /api/v1/orders/1/receipt?format=html
 - `GET /api/v1/seller/payouts` returns `{ payouts, pagination }` and supports optional payout `status` filtering.
 - Seller payout eligibility currently treats paid, non-cancelled seller order items as completed sales until the logistics delivery lifecycle is finalized.
 - `GET /api/v1/admin/sellers` returns `{ sellers, pagination, filters }` and supports `status=all|pending|verified|rejected`, defaulting to `pending`.
+- `GET /api/v1/admin/sellers/:id` returns the seller account, uploaded documents, and the stored CAC lookup response from Dojah.
 - `PATCH /api/v1/admin/sellers/:id/verification` accepts `verified` or `rejected`; `rejectionReason` is required when rejecting.
 - The webhook endpoint expects the `x-paystack-signature` header and stores only sanitized Paystack references/status metadata. No card data is stored.
 

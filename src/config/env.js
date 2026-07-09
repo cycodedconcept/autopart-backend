@@ -27,7 +27,6 @@ const envSchema = Joi.object({
   DOJAH_BASE_URL: Joi.string().uri().default('https://api.dojah.io'),
   DOJAH_APP_ID: Joi.string().allow('').default(''),
   DOJAH_API_KEY: Joi.string().allow('').default(''),
-  SELLER_AUTO_VERIFY: Joi.boolean().truthy('true').truthy('1').falsy('false').falsy('0').default(false),
   PLATFORM_COMMISSION_RATE_PERCENT: Joi.number().integer().min(0).max(100).default(10),
   SUPER_ADMIN_EMAIL: Joi.string().trim().allow('').email({
     tlds: {

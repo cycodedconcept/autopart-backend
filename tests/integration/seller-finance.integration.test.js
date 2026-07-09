@@ -168,7 +168,6 @@ describe('Seller finance API integration', () => {
         PAYSTACK_SECRET_KEY: '',
         PAYSTACK_PUBLIC_KEY: '',
         UPLOAD_DIR: uploadDirectory,
-        SELLER_AUTO_VERIFY: true,
         PLATFORM_COMMISSION_RATE_PERCENT: 10
       }
     });

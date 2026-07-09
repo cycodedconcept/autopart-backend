@@ -18,6 +18,7 @@ describe('products service', () => {
       findProductById: jest.fn(),
       findProductCompatibilityByProductId: jest.fn(),
       findProductImagesByProductId: jest.fn(),
+      findVehicleTaxonomyEntry: jest.fn(),
       listProducts: jest.fn(),
       listSellerProducts: jest.fn(),
       summarizeSellerInventory: jest.fn(),
@@ -27,6 +28,14 @@ describe('products service', () => {
     sellersRepository = {
       findByUserId: jest.fn()
     };
+
+    productsRepository.findVehicleTaxonomyEntry.mockResolvedValue({
+      id: 3001,
+      make: 'Toyota',
+      model: 'Camry',
+      yearFrom: 2007,
+      yearTo: 2011
+    });
 
     productsService = createProductsService({
       productsRepository,
@@ -316,6 +325,51 @@ describe('products service', () => {
       expect(result.status).toBe('active');
       expect(result.photos).toHaveLength(1);
       expect(result.compatibility).toHaveLength(1);
+    });
+
+    it('rejects compatibility entries that are missing from the vehicle taxonomy', async () => {
+      sellersRepository.findByUserId.mockResolvedValue({
+        sellerProfile: {
+          id: 77,
+          businessName: 'Prime Auto Hub',
+          rating: 4.6
+        }
+      });
+      productsRepository.findCategoryById.mockResolvedValue({
+        id: 1002,
+        name: 'Brake System',
+        slug: 'brake-system'
+      });
+      productsRepository.findVehicleTaxonomyEntry.mockResolvedValue(null);
+
+      await expect(productsService.createSellerProduct({
+        userId: 9,
+        title: 'Front Brake Disc',
+        description: 'Premium brake disc for Toyota Camry.',
+        categoryId: 1002,
+        partNumber: 'DISC-001',
+        condition: 'new',
+        priceKobo: 4500000,
+        stockQty: 12,
+        location: 'Lagos',
+        compatibility: [
+          {
+            make: 'Toyota',
+            model: 'Yaris',
+            yearFrom: 2017,
+            yearTo: 2020
+          }
+        ],
+        photos: [
+          {
+            filePath: 'uploads/product-images/disc-1.png',
+            position: 1
+          }
+        ]
+      })).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'NOT_FOUND'
+      });
     });
   });
 
