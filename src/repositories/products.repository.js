@@ -8,6 +8,7 @@ function mapCategoryRow(row) {
     name: row.name,
     slug: row.slug,
     parentId: row.parent_id === null || row.parent_id === undefined ? null : Number(row.parent_id),
+    status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -405,6 +406,7 @@ function createProductsRepository({ db }) {
             name,
             slug,
             parent_id,
+            status,
             created_at,
             updated_at
           FROM categories
@@ -430,6 +432,7 @@ function createProductsRepository({ db }) {
             name,
             slug,
             parent_id,
+            status,
             created_at,
             updated_at
           FROM categories
@@ -450,6 +453,7 @@ function createProductsRepository({ db }) {
             name,
             slug,
             parent_id,
+            status,
             created_at,
             updated_at
           FROM categories
@@ -462,7 +466,15 @@ function createProductsRepository({ db }) {
       return mapCategoryRow(rows[0]);
     },
 
-    async listAllCategories() {
+    async listAllCategories(filters = {}) {
+      const whereClauses = [];
+      const params = [];
+
+      if (filters.status && filters.status !== 'all') {
+        whereClauses.push('status = ?');
+        params.push(filters.status);
+      }
+
       const [rows] = await db.execute(
         `
           SELECT
@@ -470,11 +482,14 @@ function createProductsRepository({ db }) {
             name,
             slug,
             parent_id,
+            status,
             created_at,
             updated_at
           FROM categories
+          ${whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : ''}
           ORDER BY parent_id ASC, name ASC, id ASC
-        `
+        `,
+        params
       );
 
       return rows.map(mapCategoryRow);
@@ -483,10 +498,10 @@ function createProductsRepository({ db }) {
     async createCategory(payload) {
       const [result] = await db.execute(
         `
-          INSERT INTO categories (name, slug, parent_id)
-          VALUES (?, ?, ?)
+          INSERT INTO categories (name, slug, parent_id, status)
+          VALUES (?, ?, ?, ?)
         `,
-        [payload.name, payload.slug, payload.parentId]
+        [payload.name, payload.slug, payload.parentId, payload.status || 'active']
       );
 
       return this.findCategoryById(result.insertId);
@@ -511,6 +526,11 @@ function createProductsRepository({ db }) {
         params.push(payload.parentId);
       }
 
+      if (payload.status !== undefined) {
+        fields.push('status = ?');
+        params.push(payload.status);
+      }
+
       if (!fields.length) {
         return this.findCategoryById(categoryId);
       }
@@ -529,22 +549,23 @@ function createProductsRepository({ db }) {
       return this.findCategoryById(categoryId);
     },
 
-    async deleteCategory(categoryId) {
-      const category = await this.findCategoryById(categoryId);
-
-      if (!category) {
-        return null;
+    async updateCategoriesStatus(categoryIds, status) {
+      if (!categoryIds.length) {
+        return [];
       }
+
+      const placeholders = categoryIds.map(() => '?').join(', ');
 
       await db.execute(
         `
-          DELETE FROM categories
-          WHERE id = ?
+          UPDATE categories
+          SET status = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id IN (${placeholders})
         `,
-        [categoryId]
+        [status, ...categoryIds]
       );
 
-      return category;
+      return this.findCategoriesByIds(categoryIds);
     },
 
     async countChildCategories(categoryId) {

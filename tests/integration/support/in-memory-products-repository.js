@@ -238,6 +238,7 @@ function createInMemoryProductsRepository() {
         name: payload.name,
         slug: payload.slug,
         parentId: payload.parentId === undefined ? null : payload.parentId,
+        status: payload.status || 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -350,20 +351,6 @@ function createInMemoryProductsRepository() {
       }
     },
 
-    async deleteCategory(categoryId) {
-      const category = findCategoryRecord(categoryId);
-
-      if (!category) {
-        return null;
-      }
-
-      const index = categories.findIndex((entry) => entry.id === Number(categoryId));
-
-      categories.splice(index, 1);
-
-      return clone(category);
-    },
-
     async deleteVehicleTaxonomy(vehicleTaxonomyId) {
       const entry = findVehicleTaxonomyRecord(vehicleTaxonomyId);
 
@@ -437,9 +424,13 @@ function createInMemoryProductsRepository() {
       )) || null);
     },
 
-    async listAllCategories() {
+    async listAllCategories(filters = {}) {
+      const matchedCategories = categories.filter((category) => (
+        !filters.status || filters.status === 'all' || category.status === filters.status
+      ));
+
       return clone(
-        [...categories].sort((left, right) => {
+        [...matchedCategories].sort((left, right) => {
           if (left.parentId === right.parentId) {
             return left.name.localeCompare(right.name);
           }
@@ -587,10 +578,31 @@ function createInMemoryProductsRepository() {
         category.parentId = payload.parentId;
       }
 
+      if (payload.status !== undefined) {
+        category.status = payload.status;
+      }
+
       category.updatedAt = new Date().toISOString();
       syncCategoryMetadataForProducts(category);
 
       return clone(category);
+    },
+
+    async updateCategoriesStatus(categoryIds, status) {
+      const normalizedIds = categoryIds.map(Number);
+      const updatedCategories = [];
+
+      for (const category of categories) {
+        if (!normalizedIds.includes(category.id)) {
+          continue;
+        }
+
+        category.status = status;
+        category.updatedAt = new Date().toISOString();
+        updatedCategories.push(clone(category));
+      }
+
+      return updatedCategories;
     },
 
     async updateOwnedProduct(productId, sellerId, payload) {

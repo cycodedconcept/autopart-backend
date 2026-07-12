@@ -54,6 +54,24 @@ function mapSellerOrderRow(row) {
   };
 }
 
+function mapAdminOrderRow(row) {
+  const order = mapOrderRow(row);
+
+  if (!order) {
+    return null;
+  }
+
+  return {
+    ...order,
+    buyerFullName: row.buyer_full_name,
+    buyerEmail: row.buyer_email,
+    buyerPhone: row.buyer_phone,
+    sellerCount: row.seller_count === undefined || row.seller_count === null
+      ? 0
+      : Number(row.seller_count)
+  };
+}
+
 function mapSellerOrderSummaryRow(row) {
   return {
     totalOrders: Number((row && row.total_orders) || 0),
@@ -197,6 +215,65 @@ async function findOrderByIdForBuyerWithConnection(connection, orderId, buyerId)
   );
 
   return mapOrderRow(rows[0]);
+}
+
+async function findOrderByIdForAdminWithConnection(connection, orderId) {
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        o.id,
+        o.buyer_id,
+        o.status,
+        o.payment_method,
+        o.subtotal_kobo,
+        o.delivery_fee_kobo,
+        o.total_kobo,
+        o.delivery_address_id,
+        o.delivery_label,
+        o.delivery_street,
+        o.delivery_city,
+        o.delivery_state,
+        o.delivery_phone,
+        o.payment_reference,
+        o.payment_status,
+        COALESCE(SUM(oi.quantity), 0) AS total_items,
+        COUNT(DISTINCT oi.seller_id) AS seller_count,
+        u.full_name AS buyer_full_name,
+        u.email AS buyer_email,
+        u.phone AS buyer_phone,
+        o.created_at,
+        o.updated_at
+      FROM orders o
+      INNER JOIN users u ON u.id = o.buyer_id
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.id = ?
+      GROUP BY
+        o.id,
+        o.buyer_id,
+        o.status,
+        o.payment_method,
+        o.subtotal_kobo,
+        o.delivery_fee_kobo,
+        o.total_kobo,
+        o.delivery_address_id,
+        o.delivery_label,
+        o.delivery_street,
+        o.delivery_city,
+        o.delivery_state,
+        o.delivery_phone,
+        o.payment_reference,
+        o.payment_status,
+        u.full_name,
+        u.email,
+        u.phone,
+        o.created_at,
+        o.updated_at
+      LIMIT 1
+    `,
+    [orderId]
+  );
+
+  return mapAdminOrderRow(rows[0]);
 }
 
 function createOrdersRepository({ db }) {
@@ -437,6 +514,115 @@ function createOrdersRepository({ db }) {
       };
     },
 
+    async listOrdersForAdmin(filters) {
+      const whereClauses = [];
+      const params = [];
+
+      if (filters.status && filters.status !== 'all') {
+        whereClauses.push('o.status = ?');
+        params.push(filters.status);
+      }
+
+      if (filters.paymentStatus && filters.paymentStatus !== 'all') {
+        whereClauses.push('o.payment_status = ?');
+        params.push(filters.paymentStatus);
+      }
+
+      if (filters.search) {
+        const normalizedSearch = `%${filters.search.trim().toLowerCase()}%`;
+
+        whereClauses.push(`
+          (
+            CAST(o.id AS CHAR) LIKE ?
+            OR LOWER(COALESCE(o.payment_reference, '')) LIKE ?
+            OR LOWER(COALESCE(u.full_name, '')) LIKE ?
+            OR LOWER(COALESCE(u.email, '')) LIKE ?
+            OR LOWER(COALESCE(u.phone, '')) LIKE ?
+          )
+        `);
+        params.push(
+          normalizedSearch,
+          normalizedSearch,
+          normalizedSearch,
+          normalizedSearch,
+          normalizedSearch
+        );
+      }
+
+      const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+      const [countRows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM orders o
+          INNER JOIN users u ON u.id = o.buyer_id
+          ${whereSql}
+        `,
+        params
+      );
+
+      const [rows] = await db.execute(
+        `
+          SELECT
+            o.id,
+            o.buyer_id,
+            o.status,
+            o.payment_method,
+            o.subtotal_kobo,
+            o.delivery_fee_kobo,
+            o.total_kobo,
+            o.delivery_address_id,
+            o.delivery_label,
+            o.delivery_street,
+            o.delivery_city,
+            o.delivery_state,
+            o.delivery_phone,
+            o.payment_reference,
+            o.payment_status,
+            COALESCE(SUM(oi.quantity), 0) AS total_items,
+            COUNT(DISTINCT oi.seller_id) AS seller_count,
+            u.full_name AS buyer_full_name,
+            u.email AS buyer_email,
+            u.phone AS buyer_phone,
+            o.created_at,
+            o.updated_at
+          FROM orders o
+          INNER JOIN users u ON u.id = o.buyer_id
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+          ${whereSql}
+          GROUP BY
+            o.id,
+            o.buyer_id,
+            o.status,
+            o.payment_method,
+            o.subtotal_kobo,
+            o.delivery_fee_kobo,
+            o.total_kobo,
+            o.delivery_address_id,
+            o.delivery_label,
+            o.delivery_street,
+            o.delivery_city,
+            o.delivery_state,
+            o.delivery_phone,
+            o.payment_reference,
+            o.payment_status,
+            u.full_name,
+            u.email,
+            u.phone,
+            o.created_at,
+            o.updated_at
+          ORDER BY o.created_at DESC, o.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [...params, filters.limit, filters.offset]
+      );
+
+      return {
+        orders: rows.map(mapAdminOrderRow),
+        total: Number(countRows[0].total || 0)
+      };
+    },
+
     async summarizeSellerOrders({ sellerId }) {
       const [rows] = await db.execute(
         `
@@ -563,6 +749,16 @@ function createOrdersRepository({ db }) {
 
       try {
         return await findOrderByIdForBuyerWithConnection(connection, orderId, buyerId);
+      } finally {
+        connection.release();
+      }
+    },
+
+    async findOrderByIdForAdmin(orderId) {
+      const connection = await db.getConnection();
+
+      try {
+        return findOrderByIdForAdminWithConnection(connection, orderId);
       } finally {
         connection.release();
       }
@@ -717,6 +913,26 @@ function createOrdersRepository({ db }) {
       return rows.map(mapOrderStatusHistoryRow);
     },
 
+    async findOrderStatusHistoryByOrderIdForAdmin(orderId) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            osh.id,
+            osh.order_id,
+            osh.status,
+            osh.note,
+            osh.created_at,
+            osh.updated_at
+          FROM order_status_history osh
+          WHERE osh.order_id = ?
+          ORDER BY osh.created_at ASC, osh.id ASC
+        `,
+        [orderId]
+      );
+
+      return rows.map(mapOrderStatusHistoryRow);
+    },
+
     async updateSellerOrderItemStatus(payload) {
       await db.execute(
         `
@@ -728,6 +944,39 @@ function createOrdersRepository({ db }) {
       );
 
       return this.findSellerOrderItemById(payload.orderItemId, payload.sellerId);
+    },
+
+    async updateOrderStatusForAdmin(payload) {
+      const connection = await db.getConnection();
+
+      try {
+        await connection.beginTransaction();
+
+        await connection.execute(
+          `
+            UPDATE orders
+            SET status = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+          [payload.status, payload.orderId]
+        );
+
+        await insertOrderStatusHistoryWithConnection(connection, {
+          orderId: payload.orderId,
+          status: payload.status,
+          note: payload.note || null
+        });
+
+        const order = await findOrderByIdForAdminWithConnection(connection, payload.orderId);
+        await connection.commit();
+
+        return order;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
     }
   };
 }

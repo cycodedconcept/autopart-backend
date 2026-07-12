@@ -13,6 +13,7 @@ function mapUserRow(row) {
     passwordResetTokenHash: row.password_reset_token_hash,
     passwordResetExpiresAt: row.password_reset_expires_at,
     isVerified: Boolean(row.is_verified),
+    accountStatus: row.account_status,
     createdAt: row.user_created_at,
     updatedAt: row.user_updated_at
   };
@@ -137,8 +138,8 @@ function createSellersRepository({ db }) {
 
         const [userResult] = await connection.execute(
           `
-            INSERT INTO users (role, full_name, email, phone, password_hash, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (role, full_name, email, phone, password_hash, is_verified, account_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
           `,
           [
             user.role,
@@ -146,7 +147,8 @@ function createSellersRepository({ db }) {
             user.email,
             user.phone,
             user.passwordHash,
-            user.isVerified ? 1 : 0
+            user.isVerified ? 1 : 0,
+            user.accountStatus || 'active'
           ]
         );
 
@@ -226,6 +228,7 @@ function createSellersRepository({ db }) {
             u.password_reset_token_hash,
             u.password_reset_expires_at,
             u.is_verified,
+            u.account_status,
             u.created_at AS user_created_at,
             u.updated_at AS user_updated_at
           FROM seller_profiles sp
@@ -278,6 +281,7 @@ function createSellersRepository({ db }) {
             u.password_reset_token_hash,
             u.password_reset_expires_at,
             u.is_verified,
+            u.account_status,
             u.created_at AS user_created_at,
             u.updated_at AS user_updated_at
           FROM seller_profiles sp
@@ -330,6 +334,7 @@ function createSellersRepository({ db }) {
             u.password_reset_token_hash,
             u.password_reset_expires_at,
             u.is_verified,
+            u.account_status,
             u.created_at AS user_created_at,
             u.updated_at AS user_updated_at
           FROM seller_profiles sp

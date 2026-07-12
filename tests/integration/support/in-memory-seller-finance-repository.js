@@ -34,17 +34,44 @@ function mapPayout(store, payout) {
   };
 }
 
+function mapAdminPayoutItem(store, payoutItem) {
+  const orderItem = store.orderItems.find((entry) => entry.id === payoutItem.orderItemId);
+  const order = orderItem
+    ? store.orders.find((entry) => entry.id === orderItem.orderId)
+    : null;
+
+  return {
+    id: payoutItem.id,
+    payoutId: payoutItem.payoutId,
+    orderItemId: payoutItem.orderItemId,
+    orderId: orderItem ? orderItem.orderId : null,
+    productId: orderItem ? orderItem.productId : null,
+    quantity: orderItem ? Number(orderItem.quantity) : 0,
+    grossAmountKobo: Number(payoutItem.grossAmountKobo),
+    commissionAmountKobo: Number(payoutItem.commissionAmountKobo),
+    netAmountKobo: Number(payoutItem.netAmountKobo),
+    orderStatus: order ? order.status : null,
+    paidAt: orderItem ? findPaidAtForStore(store, orderItem.orderId) : null,
+    createdAt: payoutItem.createdAt,
+    updatedAt: payoutItem.updatedAt
+  };
+}
+
+function findPaidAtForStore(store, orderId) {
+  const paidPayments = store.payments
+    .filter((payment) => payment.orderId === orderId && payment.status === PAYMENT_STATUSES.PAID)
+    .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
+
+  return paidPayments[0] ? paidPayments[0].updatedAt : null;
+}
+
 function parseDateBoundary(dateValue, endOfDay = false) {
   return Date.parse(`${dateValue}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
 }
 
-function createInMemorySellerFinanceRepository({ store }) {
+function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
   function findPaidAt(orderId) {
-    const paidPayments = store.payments
-      .filter((payment) => payment.orderId === orderId && payment.status === PAYMENT_STATUSES.PAID)
-      .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
-
-    return paidPayments[0] ? paidPayments[0].updatedAt : null;
+    return findPaidAtForStore(store, orderId);
   }
 
   function isAllocatedToOpenPayout(orderItemId) {
@@ -101,6 +128,32 @@ function createInMemorySellerFinanceRepository({ store }) {
         ),
         netAmountKobo: calculateNetAmountKobo(item.grossAmountKobo, commissionRatePercent)
       }));
+  }
+
+  async function buildAdminPayout(payout) {
+    const sellerAccount = sellersRepository
+      ? await sellersRepository.findBySellerId(Number(payout.sellerId))
+      : null;
+
+    return {
+      ...mapPayout(store, payout),
+      seller: sellerAccount
+        ? {
+          id: sellerAccount.sellerProfile.id,
+          userId: sellerAccount.user.id,
+          businessName: sellerAccount.sellerProfile.businessName,
+          contactEmail: sellerAccount.sellerProfile.contactEmail,
+          contactPhone: sellerAccount.sellerProfile.contactPhone,
+          fullName: sellerAccount.user.fullName,
+          email: sellerAccount.user.email,
+          phone: sellerAccount.user.phone
+        }
+        : null,
+      items: store.payoutItems
+        .filter((entry) => entry.payoutId === payout.id)
+        .sort((left, right) => left.id - right.id)
+        .map((entry) => mapAdminPayoutItem(store, entry))
+    };
   }
 
   return {
@@ -275,6 +328,90 @@ function createInMemorySellerFinanceRepository({ store }) {
           .map((entry) => mapPayout(store, entry)),
         total: matchedPayouts.length
       };
+    },
+
+    async listPayoutsForAdmin({ limit, offset, search, sellerId, status }) {
+      const normalizedSearch = typeof search === 'string' ? search.trim().toLowerCase() : '';
+      const matchedPayouts = [];
+
+      for (const payout of store.payouts) {
+        if (status && status !== 'all' && payout.status !== status) {
+          continue;
+        }
+
+        if (sellerId && payout.sellerId !== Number(sellerId)) {
+          continue;
+        }
+
+        const sellerAccount = sellersRepository
+          ? await sellersRepository.findBySellerId(Number(payout.sellerId))
+          : null;
+        const searchableText = [
+          sellerAccount && sellerAccount.sellerProfile.businessName,
+          sellerAccount && sellerAccount.user.fullName,
+          sellerAccount && sellerAccount.user.email,
+          payout.bankAccountRef
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        if (normalizedSearch && !searchableText.includes(normalizedSearch)) {
+          continue;
+        }
+
+        matchedPayouts.push(payout);
+      }
+
+      matchedPayouts.sort(
+        (left, right) => new Date(right.requestedAt) - new Date(left.requestedAt) || right.id - left.id
+      );
+
+      return {
+        payouts: await Promise.all(
+          matchedPayouts
+            .slice(offset, offset + limit)
+            .map((entry) => buildAdminPayout(entry))
+        ),
+        total: matchedPayouts.length
+      };
+    },
+
+    async findPayoutByIdForAdmin(payoutId) {
+      const payout = store.payouts.find((entry) => entry.id === Number(payoutId)) || null;
+
+      return payout ? buildAdminPayout(payout) : null;
+    },
+
+    async updatePayoutStatusForAdmin({ adminId, payoutId, rejectionReason, status }) {
+      const payout = store.payouts.find((entry) => entry.id === Number(payoutId)) || null;
+
+      if (!payout) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+
+      payout.status = status;
+      payout.updatedAt = now;
+
+      if (status === PAYOUT_STATUSES.APPROVED) {
+        payout.approvedBy = Number(adminId);
+        payout.approvedAt = now;
+        payout.rejectionReason = null;
+      }
+
+      if (status === PAYOUT_STATUSES.REJECTED) {
+        payout.approvedBy = null;
+        payout.approvedAt = null;
+        payout.rejectionReason = rejectionReason;
+      }
+
+      if (status === PAYOUT_STATUSES.PAID) {
+        payout.settledAt = now;
+      }
+
+      return buildAdminPayout(payout);
     }
   };
 }

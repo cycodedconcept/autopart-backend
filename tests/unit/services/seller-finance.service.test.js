@@ -3,11 +3,15 @@ require('../../setup/jest');
 const { createSellerFinanceService } = require('../../../src/services/seller-finance.service');
 
 describe('seller finance service', () => {
+  let platformConfigRepository;
   let sellerFinanceRepository;
   let sellersRepository;
   let sellerFinanceService;
 
   beforeEach(() => {
+    platformConfigRepository = {
+      findPlatformConfigByKey: jest.fn()
+    };
     sellerFinanceRepository = {
       createSellerPayoutRequest: jest.fn(),
       getSellerSalesSummary: jest.fn(),
@@ -21,8 +25,9 @@ describe('seller finance service', () => {
 
     sellerFinanceService = createSellerFinanceService({
       env: {
-        PLATFORM_COMMISSION_RATE_PERCENT: 12
+        PLATFORM_COMMISSION_RATE_PERCENT: 10
       },
+      platformConfigRepository,
       sellerFinanceRepository,
       sellersRepository
     });
@@ -47,6 +52,10 @@ describe('seller finance service', () => {
         requestedKobo: 0,
         approvedKobo: 0,
         paidKobo: 0
+      });
+      platformConfigRepository.findPlatformConfigByKey.mockResolvedValue({
+        key: 'commission_rate_default',
+        value: 12
       });
 
       const result = await sellerFinanceService.getSellerSalesSummary({
@@ -111,6 +120,10 @@ describe('seller finance service', () => {
         createdAt: '2026-07-07T10:00:00.000Z',
         updatedAt: '2026-07-07T10:00:00.000Z'
       });
+      platformConfigRepository.findPlatformConfigByKey.mockResolvedValue({
+        key: 'commission_rate_default',
+        value: 12
+      });
 
       const result = await sellerFinanceService.createPayoutRequest({
         userId: 11,
@@ -131,6 +144,8 @@ describe('seller finance service', () => {
         bankAccountRef: 'BANK-001',
         itemCount: 1,
         requestedAt: '2026-07-07T10:00:00.000Z',
+        approvedAt: null,
+        rejectionReason: null,
         settledAt: null,
         createdAt: '2026-07-07T10:00:00.000Z',
         updatedAt: '2026-07-07T10:00:00.000Z'
@@ -144,6 +159,10 @@ describe('seller finance service', () => {
         }
       });
       sellerFinanceRepository.createSellerPayoutRequest.mockResolvedValue(null);
+      platformConfigRepository.findPlatformConfigByKey.mockResolvedValue({
+        key: 'commission_rate_default',
+        value: 12
+      });
 
       await expect(sellerFinanceService.createPayoutRequest({
         userId: 11,
@@ -173,6 +192,8 @@ describe('seller finance service', () => {
             bankAccountRef: 'BANK-001',
             itemCount: 1,
             requestedAt: '2026-07-07T10:00:00.000Z',
+            approvedAt: null,
+            rejectionReason: null,
             settledAt: null,
             createdAt: '2026-07-07T10:00:00.000Z',
             updatedAt: '2026-07-07T10:00:00.000Z'
@@ -207,6 +228,8 @@ describe('seller finance service', () => {
             bankAccountRef: 'BANK-001',
             itemCount: 1,
             requestedAt: '2026-07-07T10:00:00.000Z',
+            approvedAt: null,
+            rejectionReason: null,
             settledAt: null,
             createdAt: '2026-07-07T10:00:00.000Z',
             updatedAt: '2026-07-07T10:00:00.000Z'

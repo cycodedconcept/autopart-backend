@@ -4,31 +4,36 @@ function createCategoriesFixture() {
       id: 1001,
       name: 'Engine Components',
       slug: 'engine-components',
-      parentId: null
+      parentId: null,
+      status: 'active'
     },
     {
       id: 1002,
       name: 'Brake System',
       slug: 'brake-system',
-      parentId: null
+      parentId: null,
+      status: 'active'
     },
     {
       id: 1003,
       name: 'Suspension & Steering',
       slug: 'suspension-steering',
-      parentId: null
+      parentId: null,
+      status: 'active'
     },
     {
       id: 1004,
       name: 'Electrical & Lighting',
       slug: 'electrical-lighting',
-      parentId: null
+      parentId: null,
+      status: 'active'
     },
     {
       id: 1005,
       name: 'Filters',
       slug: 'filters',
-      parentId: 1001
+      parentId: 1001,
+      status: 'active'
     }
   ];
 }

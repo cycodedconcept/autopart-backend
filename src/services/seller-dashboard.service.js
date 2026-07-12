@@ -2,10 +2,12 @@ const { ERROR_CODES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const {
   formatDateOnly,
-  getCommissionRatePercent,
   resolveSellerSalesPeriod,
   subtractDays
 } = require('../utils/seller-finance');
+const {
+  resolveCommissionRatePercent
+} = require('../utils/platform-config');
 
 const FEATURED_PRODUCT_LIMIT = 3;
 const LOW_STOCK_THRESHOLD = 5;
@@ -152,6 +154,7 @@ function buildRevenueTimeline(rows, year) {
 function createSellerDashboardService({
   env,
   ordersRepository,
+  platformConfigRepository,
   productsRepository,
   sellerFinanceRepository,
   sellersRepository
@@ -175,7 +178,10 @@ function createSellerDashboardService({
       const sellerId = sellerAccount.sellerProfile.id;
       const period = resolveSellerSalesPeriod(payload.query);
       const comparison = resolveComparisonWindow(period.dateTo);
-      const commissionRatePercent = getCommissionRatePercent(env);
+      const commissionRatePercent = await resolveCommissionRatePercent({
+        env,
+        platformConfigRepository
+      });
       const revenueChartYear = Number(period.dateTo.slice(0, 4));
       const [
         inventory,

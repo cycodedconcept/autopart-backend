@@ -12,18 +12,30 @@ const {
   createVehicleTaxonomySchema,
   deleteCategorySchema,
   deleteVehicleTaxonomySchema,
+  getAdminDashboardSchema,
   getCategorySchema,
+  getPlatformConfigSchema,
   getSellerVerificationCandidateSchema,
+  listAdminDisputesSchema,
+  listAdminOrdersSchema,
+  listAdminPayoutsSchema,
+  listAuditLogsSchema,
   getVehicleTaxonomySchema,
   listCategoriesSchema,
   listSellerVerificationQueueSchema,
+  listUsersSchema,
   listVehicleTaxonomySchema,
+  updateAdminDisputeSchema,
+  updateAdminOrderStatusSchema,
+  updateAdminPayoutStatusSchema,
   updateCategorySchema,
+  updatePlatformConfigSchema,
   updateSellerVerificationStatusSchema,
+  updateUserStatusSchema,
   updateVehicleTaxonomySchema
 } = require('../validators/admin.validator');
 
-function createAdminRouter({ adminAuthMiddleware, adminController }) {
+function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboardController }) {
   const router = express.Router();
   const authRateLimiter = createAuthRateLimiter();
 
@@ -35,6 +47,13 @@ function createAdminRouter({ adminAuthMiddleware, adminController }) {
   );
 
   router.use(adminAuthMiddleware);
+
+  router.get(
+    '/dashboard',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.READ_DASHBOARD),
+    validateRequest(getAdminDashboardSchema),
+    asyncHandler(adminDashboardController.getDashboard)
+  );
 
   router.get(
     '/me',
@@ -131,6 +150,83 @@ function createAdminRouter({ adminAuthMiddleware, adminController }) {
     authorizePermissions(ADMIN_PERMISSION_KEYS.VERIFY_SELLERS),
     validateRequest(updateSellerVerificationStatusSchema),
     asyncHandler(adminController.updateSellerVerificationStatus)
+  );
+
+  router.get(
+    '/users',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_USERS),
+    validateRequest(listUsersSchema),
+    asyncHandler(adminController.listUsers)
+  );
+
+  router.patch(
+    '/users/:id/status',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_USERS),
+    validateRequest(updateUserStatusSchema),
+    asyncHandler(adminController.updateUserStatus)
+  );
+
+  router.get(
+    '/orders',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_ORDERS),
+    validateRequest(listAdminOrdersSchema),
+    asyncHandler(adminController.listOrders)
+  );
+
+  router.patch(
+    '/orders/:id/status',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_ORDERS),
+    validateRequest(updateAdminOrderStatusSchema),
+    asyncHandler(adminController.updateOrderStatus)
+  );
+
+  router.get(
+    '/disputes',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(listAdminDisputesSchema),
+    asyncHandler(adminController.listDisputes)
+  );
+
+  router.patch(
+    '/disputes/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(updateAdminDisputeSchema),
+    asyncHandler(adminController.updateDispute)
+  );
+
+  router.get(
+    '/payouts',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.APPROVE_PAYOUTS),
+    validateRequest(listAdminPayoutsSchema),
+    asyncHandler(adminController.listPayouts)
+  );
+
+  router.patch(
+    '/payouts/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.APPROVE_PAYOUTS),
+    validateRequest(updateAdminPayoutStatusSchema),
+    asyncHandler(adminController.updatePayoutStatus)
+  );
+
+  router.get(
+    '/config',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_CONFIG),
+    validateRequest(getPlatformConfigSchema),
+    asyncHandler(adminController.getPlatformConfig)
+  );
+
+  router.patch(
+    '/config',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_CONFIG),
+    validateRequest(updatePlatformConfigSchema),
+    asyncHandler(adminController.updatePlatformConfig)
+  );
+
+  router.get(
+    '/audit-logs',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.READ_AUDIT_LOGS),
+    validateRequest(listAuditLogsSchema),
+    asyncHandler(adminController.listAuditLogs)
   );
 
   return router;

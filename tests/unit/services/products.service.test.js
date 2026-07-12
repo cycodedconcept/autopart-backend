@@ -227,7 +227,8 @@ describe('products service', () => {
       productsRepository.findCategoryById.mockResolvedValue({
         id: 1002,
         name: 'Brake System',
-        slug: 'brake-system'
+        slug: 'brake-system',
+        status: 'active'
       });
       productsRepository.createSellerProduct.mockResolvedValue({
         id: 5001,
@@ -338,7 +339,8 @@ describe('products service', () => {
       productsRepository.findCategoryById.mockResolvedValue({
         id: 1002,
         name: 'Brake System',
-        slug: 'brake-system'
+        slug: 'brake-system',
+        status: 'active'
       });
       productsRepository.findVehicleTaxonomyEntry.mockResolvedValue(null);
 
@@ -369,6 +371,51 @@ describe('products service', () => {
       })).rejects.toMatchObject({
         statusCode: 404,
         code: 'NOT_FOUND'
+      });
+    });
+
+    it('rejects archived categories for seller product creation', async () => {
+      sellersRepository.findByUserId.mockResolvedValue({
+        sellerProfile: {
+          id: 77,
+          businessName: 'Prime Auto Hub',
+          rating: 4.6
+        }
+      });
+      productsRepository.findCategoryById.mockResolvedValue({
+        id: 1002,
+        name: 'Brake System',
+        slug: 'brake-system',
+        status: 'archived'
+      });
+
+      await expect(productsService.createSellerProduct({
+        userId: 9,
+        title: 'Front Brake Disc',
+        description: 'Premium brake disc for Toyota Camry.',
+        categoryId: 1002,
+        partNumber: 'DISC-001',
+        condition: 'new',
+        priceKobo: 4500000,
+        stockQty: 12,
+        location: 'Lagos',
+        compatibility: [
+          {
+            make: 'Toyota',
+            model: 'Camry',
+            yearFrom: 2007,
+            yearTo: 2011
+          }
+        ],
+        photos: [
+          {
+            filePath: 'uploads/product-images/disc-1.png',
+            position: 1
+          }
+        ]
+      })).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'CONFLICT'
       });
     });
   });
@@ -508,12 +555,14 @@ describe('products service', () => {
         {
           id: 1002,
           name: 'Brake System',
-          slug: 'brake-system'
+          slug: 'brake-system',
+          status: 'active'
         },
         {
           id: 1003,
           name: 'Suspension & Steering',
-          slug: 'suspension-steering'
+          slug: 'suspension-steering',
+          status: 'active'
         }
       ]);
       productsRepository.createSellerProductsBulk.mockResolvedValue([
@@ -652,7 +701,8 @@ describe('products service', () => {
       productsRepository.findCategoryById.mockResolvedValue({
         id: 1003,
         name: 'Suspension & Steering',
-        slug: 'suspension-steering'
+        slug: 'suspension-steering',
+        status: 'active'
       });
       productsRepository.updateOwnedProduct.mockResolvedValue({
         id: 5001,

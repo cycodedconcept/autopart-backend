@@ -12,6 +12,7 @@ const { createInMemoryCommerceStore } = require('./support/in-memory-commerce-st
 const { createFakePaystackClient } = require('./support/fake-paystack-client');
 const { createInMemoryOrdersRepository } = require('./support/in-memory-orders-repository');
 const { createInMemoryPaymentsRepository } = require('./support/in-memory-payments-repository');
+const { createInMemoryPlatformConfigRepository } = require('./support/in-memory-platform-config-repository');
 const { createInMemoryProductsRepository } = require('./support/in-memory-products-repository');
 const { createInMemorySellerFinanceRepository } = require('./support/in-memory-seller-finance-repository');
 const { createInMemorySellersRepository } = require('./support/in-memory-sellers-repository');
@@ -131,6 +132,7 @@ describe('Seller finance API integration', () => {
     const sellersRepository = createInMemorySellersRepository({ usersRepository });
     const productsRepository = createInMemoryProductsRepository();
     const commerceStore = createInMemoryCommerceStore();
+    const platformConfigRepository = createInMemoryPlatformConfigRepository();
 
     uploadDirectory = path.join(os.tmpdir(), `autoparts-seller-finance-${Date.now()}`);
     app = createApp({
@@ -151,8 +153,10 @@ describe('Seller finance API integration', () => {
         store: commerceStore
       }),
       sellerFinanceRepository: createInMemorySellerFinanceRepository({
+        sellersRepository,
         store: commerceStore
       }),
+      platformConfigRepository,
       paystackClient: createFakePaystackClient(),
       env: {
         NODE_ENV: 'test',

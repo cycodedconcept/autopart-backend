@@ -6,7 +6,7 @@ This file tells Codex how to work in this repository. Read it fully before gener
 
 ## 0. Current Status & Next Task  ← READ THIS FIRST
 
-**Build order:** Buyer (done) -> Seller (done) -> **Admin (current)** -> Logistics.
+**Build order:** Buyer (done) -> Seller (done) -> Admin (done) -> **Logistics (next)**.
 
 **Completed**
 - [x] Project skeleton (Section 3 layout)
@@ -15,17 +15,16 @@ This file tells Codex how to work in this repository. Read it fully before gener
 - [x] **Admin Milestone A-A** — dedicated admin auth, RBAC, seeded `super_admin`, scoped `verification_admin`, `GET /api/v1/admin/me`
 - [x] **Admin Milestone A-B** — seller verification queue, seller detail view with stored Dojah response, approve/reject flow, removed `SELLER_AUTO_VERIFY`, re-ran affected seller/admin tests
 - [x] **Admin Milestone A-C** — admin category tree CRUD, admin vehicle taxonomy CRUD, seller compatibility now validates against admin-managed taxonomy, re-ran affected buyer/seller/admin tests
+- [x] **Admin Milestone A-D** — paginated buyer/seller oversight, account suspension/ban controls, platform-wide order oversight with status intervention, re-ran affected buyer/seller/admin tests
+- [x] **Admin Milestone A-E** — payout approval review, approve/reject/paid payout transitions, admin-owned platform config, payout/commission `// ADMIN-STUB` replaced, re-ran affected seller/admin tests
+- [x] **Admin Milestone A-F** — disputes queue, resolve/reject decisions with refund linkage metadata, expanded audit-log writes, `GET /api/v1/admin/audit-logs`, re-ran affected unit/integration tests
 
-**NEXT TASK → Admin Panel, Milestone A-D — User & order oversight (Section 6C).**
-Build, in this order:
-1. List and search buyers, sellers, and orders with pagination.
-2. Suspend or ban users with the right admin permission checks.
-3. Add admin order oversight with controlled status intervention.
-4. Re-run the affected buyer, seller, and admin tests.
+**NEXT TASK → Logistics module planning / first milestone implementation.**
+Admin Milestones `A-A` through `A-F` are complete. The next phase is Logistics, but stop here so migrations can be run and the admin work can be reviewed first.
 
-Follow the build recipe in Section 13: migration -> repository -> service -> validator -> controller -> route -> tests, then confirm tests pass. **Stop after A-D so I can run migrations and review.**
+Follow the build recipe in Section 13 when Logistics starts. **Stop here so I can run migrations and review.**
 
-**After this:** A-D (user & order oversight) -> A-E (payout approval + platform config) -> A-F (disputes + audit log). Then Logistics.
+**After this:** Logistics.
 
 **This module resolves earlier stubs.** As you build, replace the matching markers and re-run the affected tests:
 - Seller verification Dojah review flow + admin stub resolved in A-B.
@@ -151,16 +150,16 @@ Ground every endpoint in PRD section 4.4 (Admin Panel Features), 4.5 (Super Admi
 - Sellers still only SELECT categories; admin owns creation. Optional: a "seller category request -> admin approves" queue (P1).
 - REPLACES seeded-category ownership / `// ADMIN-STUB`. Confirm seller listing + buyer catalogue still pass.
 
-### Milestone A-D — User & order oversight  [NEXT]
+### Milestone A-D — User & order oversight  [DONE]
 - List/search all buyers, sellers, and orders (paginated). Suspend or ban any user; override where needed.
 - Read-only order oversight across the whole platform, with the ability to intervene on status.
 
-### Milestone A-E — Payout approval + platform config
+### Milestone A-E — Payout approval + platform config  [DONE]
 - Review seller payout requests; approve / reject / mark paid. Move `payouts` through its states.
 - Manage global config: commission rate(s) per category/tier, and any platform settings.
 - REPLACES the `// ADMIN-STUB` on payout approval and commission config.
 
-### Milestone A-F — Disputes + audit log
+### Milestone A-F — Disputes + audit log  [DONE]
 - Dispute queue: view buyer/seller disputes, take a decision, resolve. Where a refund is needed, connect to the existing payment records (Paystack refund reference).
 - Audit log: every sensitive admin action (approvals, rejections, bans, payout decisions, config/commission changes) writes an `audit_logs` row with actor, action, target, and timestamp. Expose a read endpoint.
 
@@ -175,14 +174,15 @@ Money in kobo. Buyer + seller tables already exist. Admin flow adds the followin
 **Existing:** `users`, `buyer_addresses`, `categories`, `vehicles_taxonomy`, `products`, `product_images`, `product_compatibility`, `carts`, `cart_items`, `orders`, `order_items`, `payments`, `order_status_history`, `seller_profiles`, `seller_documents`, `payouts`.
 
 **Admin flow additions:**
+- Extend `users`: ensure `account_status` supports `active` / `suspended` / `banned`.
 - `admins` — id, full_name, email (unique), password_hash, is_active, timestamps
 - `roles` — id, name (unique, e.g. `super_admin`, `verification_admin`), description
-- `permissions` — id, key (unique, e.g. `sellers.verify`, `payouts.approve`, `categories.manage`, `users.ban`, `config.manage`, `disputes.resolve`), description
+- `permissions` — id, key (unique, e.g. `dashboard.read`, `sellers.verify`, `payouts.approve`, `categories.manage`, `users.manage`, `config.manage`, `disputes.resolve`), description
 - `role_permissions` — role_id (FK), permission_id (FK)
 - `admin_roles` — admin_id (FK), role_id (FK)
 - `audit_logs` — id, admin_id (FK), action (string key), target_type, target_id, detail (JSON), created_at
 - `platform_config` — id, key (unique, e.g. `commission_rate_default`), value (JSON or string), updated_at
-- `disputes` — id, order_id (FK), raised_by (`buyer`/`seller`), reason, status (`open`/`resolved`/`rejected`), resolution_note, resolved_by (admin FK), timestamps
+- `disputes` — id, order_id (FK), seller_id (nullable FK), raised_by (`buyer`/`seller`), reason, status (`open`/`resolved`/`rejected`), resolution_note, refund_reference, refund_amount_kobo, resolved_by (admin FK), resolved_at, timestamps
 - Extend `seller_profiles`: ensure `verification_status`, `rejection_reason`, `cac_verification_status`, `cac_verification_response`, `cac_verification_checked_at`, `verified_by` (admin FK), `verified_at`.
 - Extend `payouts`: ensure `approved_by` (admin FK), `approved_at`, and status flow `requested -> approved -> paid` / `rejected`.
 
@@ -194,7 +194,7 @@ Money in kobo. Buyer + seller tables already exist. Admin flow adds the followin
 - Buyer routes (built): `auth/*`, `me`, `products`, `products/:id`, `cart/*`, `orders`, `orders/:id`, `payments/*`.
 - Seller routes (built): `seller/*`.
 - Admin routes (this phase), all under admin auth + permission guard:
-  - `POST /api/v1/admin/login` . `GET /api/v1/admin/me`
+  - `POST /api/v1/admin/login` . `GET /api/v1/admin/dashboard` . `GET /api/v1/admin/me`
   - `GET  /api/v1/admin/sellers?status=pending` . `GET /api/v1/admin/sellers/:id` . `PATCH /api/v1/admin/sellers/:id/verification`
   - `GET/POST/PATCH/DELETE /api/v1/admin/categories` (+ `/categories/:id`) . `GET /api/v1/admin/category-requests` (P1)
   - `GET/POST/PATCH/DELETE /api/v1/admin/vehicle-taxonomy` (+ `/vehicle-taxonomy/:id`)

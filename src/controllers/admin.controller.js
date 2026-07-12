@@ -38,7 +38,7 @@ function createAdminController({ adminService }) {
 
       return sendSuccess(res, {
         data: result,
-        message: 'Category deleted successfully.'
+        message: 'Category archived successfully.'
       });
     },
 
@@ -71,6 +71,26 @@ function createAdminController({ adminService }) {
       });
     },
 
+    async getPlatformConfig(req, res) {
+      const result = await adminService.getPlatformConfig();
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Platform configuration fetched successfully.'
+      });
+    },
+
+    async listAuditLogs(req, res) {
+      const result = await adminService.listAuditLogs({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Audit logs fetched successfully.'
+      });
+    },
+
     async getSellerVerificationCandidate(req, res) {
       const result = await adminService.getSellerVerificationCandidate({
         sellerId: req.params.id
@@ -94,11 +114,46 @@ function createAdminController({ adminService }) {
     },
 
     async listCategories(req, res) {
-      const result = await adminService.listCategories();
+      const result = await adminService.listCategories({
+        query: req.query
+      });
 
       return sendSuccess(res, {
         data: result,
         message: 'Categories fetched successfully.'
+      });
+    },
+
+    async listOrders(req, res) {
+      const result = await adminService.listOrders({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Orders fetched successfully.'
+      });
+    },
+
+    async listDisputes(req, res) {
+      const result = await adminService.listDisputes({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Disputes fetched successfully.'
+      });
+    },
+
+    async listPayouts(req, res) {
+      const result = await adminService.listPayouts({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Payout requests fetched successfully.'
       });
     },
 
@@ -110,6 +165,17 @@ function createAdminController({ adminService }) {
       return sendSuccess(res, {
         data: result,
         message: 'Seller verification review queue fetched successfully.'
+      });
+    },
+
+    async listUsers(req, res) {
+      const result = await adminService.listUsers({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Users fetched successfully.'
       });
     },
 
@@ -141,7 +207,8 @@ function createAdminController({ adminService }) {
         categoryId: req.params.id,
         name: req.body.name,
         slug: req.body.slug,
-        parentId: req.body.parentId
+        parentId: req.body.parentId,
+        status: req.body.status
       });
 
       return sendSuccess(res, {
@@ -161,6 +228,78 @@ function createAdminController({ adminService }) {
       return sendSuccess(res, {
         data: result,
         message: 'Seller verification status updated successfully.'
+      });
+    },
+
+    async updateOrderStatus(req, res) {
+      const result = await adminService.updateOrderStatus({
+        adminId: req.admin.id,
+        orderId: req.params.id,
+        status: req.body.status,
+        note: req.body.note
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Order status updated successfully.'
+      });
+    },
+
+    async updateDispute(req, res) {
+      const result = await adminService.updateDispute({
+        adminId: req.admin.id,
+        disputeId: req.params.id,
+        status: req.body.status,
+        resolutionNote: req.body.resolutionNote,
+        refundReference: req.body.refundReference,
+        refundAmountKobo: req.body.refundAmountKobo
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Dispute decision recorded successfully.'
+      });
+    },
+
+    async updatePayoutStatus(req, res) {
+      const result = await adminService.updatePayoutStatus({
+        adminId: req.admin.id,
+        payoutId: req.params.id,
+        status: req.body.status,
+        rejectionReason: req.body.rejectionReason
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Payout status updated successfully.'
+      });
+    },
+
+    async updatePlatformConfig(req, res) {
+      const result = await adminService.updatePlatformConfig({
+        adminId: req.admin.id,
+        commissionRateDefault: req.body.commissionRateDefault,
+        commissionRatesByCategory: req.body.commissionRatesByCategory,
+        commissionRatesBySellerTier: req.body.commissionRatesBySellerTier,
+        platformSettings: req.body.platformSettings
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Platform configuration updated successfully.'
+      });
+    },
+
+    async updateUserStatus(req, res) {
+      const result = await adminService.updateUserStatus({
+        adminId: req.admin.id,
+        userId: req.params.id,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'User account status updated successfully.'
       });
     },
 

@@ -94,6 +94,29 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
     };
   }
 
+  async function mapAdminOrder(order) {
+    if (!order) {
+      return null;
+    }
+
+    const buyer = usersRepository && typeof usersRepository.findById === 'function'
+      ? await usersRepository.findById(order.buyerId)
+      : null;
+    const sellerCount = new Set(
+      store.orderItems
+        .filter((item) => item.orderId === order.id)
+        .map((item) => item.sellerId)
+    ).size;
+
+    return {
+      ...mapOrder(order, getOrderTotalItems(order.id)),
+      buyerFullName: buyer ? buyer.fullName : `Buyer #${order.buyerId}`,
+      buyerEmail: buyer ? buyer.email : null,
+      buyerPhone: buyer ? buyer.phone : null,
+      sellerCount
+    };
+  }
+
   return {
     async createOrder(payload) {
       const now = new Date().toISOString();
@@ -197,6 +220,47 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
             };
           }),
         total: matchedOrders.length
+      };
+    },
+
+    async listOrdersForAdmin(filters) {
+      const matchedOrders = store.orders
+        .filter((order) => (
+          (!filters.status || filters.status === 'all' || order.status === filters.status)
+          && (
+            !filters.paymentStatus
+            || filters.paymentStatus === 'all'
+            || order.paymentStatus === filters.paymentStatus
+          )
+        ))
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+      const filteredOrders = [];
+
+      for (const order of matchedOrders) {
+        const mappedOrder = await mapAdminOrder(order);
+
+        if (!filters.search) {
+          filteredOrders.push(mappedOrder);
+          continue;
+        }
+
+        const search = String(filters.search).toLowerCase();
+        const searchableFields = [
+          String(mappedOrder.id),
+          mappedOrder.paymentReference,
+          mappedOrder.buyerFullName,
+          mappedOrder.buyerEmail,
+          mappedOrder.buyerPhone
+        ];
+
+        if (searchableFields.some((value) => String(value || '').toLowerCase().includes(search))) {
+          filteredOrders.push(mappedOrder);
+        }
+      }
+
+      return {
+        orders: filteredOrders.slice(filters.offset, filters.offset + filters.limit),
+        total: filteredOrders.length
       };
     },
 
@@ -360,6 +424,12 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
       return order ? mapOrder(order, getOrderTotalItems(order.id)) : null;
     },
 
+    async findOrderByIdForAdmin(orderId) {
+      const order = store.orders.find((entry) => entry.id === Number(orderId)) || null;
+
+      return mapAdminOrder(order);
+    },
+
     async findOrderItemsByOrderId(orderId, buyerId) {
       const order = store.orders.find((entry) => (
         entry.id === Number(orderId) && entry.buyerId === Number(buyerId)
@@ -431,6 +501,15 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
       );
     },
 
+    async findOrderStatusHistoryByOrderIdForAdmin(orderId) {
+      return clone(
+        store.orderStatusHistory
+          .filter((entry) => entry.orderId === Number(orderId))
+          .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))
+          .map(mapStatusHistoryEntry)
+      );
+    },
+
     async updateSellerOrderItemStatus(payload) {
       const orderItem = store.orderItems.find((item) => (
         item.id === Number(payload.orderItemId) && item.sellerId === Number(payload.sellerId)
@@ -444,6 +523,30 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
       orderItem.updatedAt = new Date().toISOString();
 
       return this.findSellerOrderItemById(orderItem.id, orderItem.sellerId);
+    },
+
+    async updateOrderStatusForAdmin(payload) {
+      const order = store.orders.find((entry) => entry.id === Number(payload.orderId));
+
+      if (!order) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+
+      order.status = payload.status;
+      order.updatedAt = now;
+      store.orderStatusHistory.push({
+        id: store.counters.orderStatusHistoryId,
+        orderId: order.id,
+        status: payload.status,
+        note: payload.note || null,
+        createdAt: now,
+        updatedAt: now
+      });
+      store.counters.orderStatusHistoryId += 1;
+
+      return mapAdminOrder(order);
     }
   };
 }

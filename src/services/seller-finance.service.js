@@ -2,9 +2,11 @@ const { ERROR_CODES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
 const {
-  getCommissionRatePercent,
   resolveSellerSalesPeriod
 } = require('../utils/seller-finance');
+const {
+  resolveCommissionRatePercent
+} = require('../utils/platform-config');
 
 function mapPayout(payout) {
   return {
@@ -16,13 +18,20 @@ function mapPayout(payout) {
     bankAccountRef: payout.bankAccountRef,
     itemCount: payout.itemCount,
     requestedAt: payout.requestedAt,
+    approvedAt: payout.approvedAt || null,
+    rejectionReason: payout.rejectionReason || null,
     settledAt: payout.settledAt,
     createdAt: payout.createdAt,
     updatedAt: payout.updatedAt
   };
 }
 
-function createSellerFinanceService({ env, sellerFinanceRepository, sellersRepository }) {
+function createSellerFinanceService({
+  env,
+  platformConfigRepository,
+  sellerFinanceRepository,
+  sellersRepository
+}) {
   async function ensureSellerProfile(userId) {
     const sellerAccount = await sellersRepository.findByUserId(userId);
 
@@ -40,7 +49,10 @@ function createSellerFinanceService({ env, sellerFinanceRepository, sellersRepos
     async getSellerSalesSummary(payload) {
       const sellerAccount = await ensureSellerProfile(payload.userId);
       const period = resolveSellerSalesPeriod(payload.query);
-      const commissionRatePercent = getCommissionRatePercent(env);
+      const commissionRatePercent = await resolveCommissionRatePercent({
+        env,
+        platformConfigRepository
+      });
       const sales = await sellerFinanceRepository.getSellerSalesSummary({
         sellerId: sellerAccount.sellerProfile.id,
         commissionRatePercent,
@@ -64,10 +76,14 @@ function createSellerFinanceService({ env, sellerFinanceRepository, sellersRepos
 
     async createPayoutRequest(payload) {
       const sellerAccount = await ensureSellerProfile(payload.userId);
+      const commissionRatePercent = await resolveCommissionRatePercent({
+        env,
+        platformConfigRepository
+      });
       const payout = await sellerFinanceRepository.createSellerPayoutRequest({
         sellerId: sellerAccount.sellerProfile.id,
         bankAccountRef: payload.bankAccountRef.trim(),
-        commissionRatePercent: getCommissionRatePercent(env)
+        commissionRatePercent
       });
 
       if (!payout) {
@@ -77,7 +93,6 @@ function createSellerFinanceService({ env, sellerFinanceRepository, sellersRepos
         });
       }
 
-      // ADMIN-STUB: admin approval and settlement will later own the payout lifecycle.
       return mapPayout(payout);
     },
 

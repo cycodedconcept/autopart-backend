@@ -2,16 +2,21 @@ const express = require('express');
 const morgan = require('morgan');
 const { getPool } = require('./config/database');
 const logger = require('./utils/logger');
+const { createAdminDashboardRepository } = require('./repositories/admin-dashboard.repository');
 const { createAdminRepository } = require('./repositories/admin.repository');
+const { createAuditLogRepository } = require('./repositories/audit-log.repository');
 const { createUsersRepository } = require('./repositories/users.repository');
+const { createPlatformConfigRepository } = require('./repositories/platform-config.repository');
 const { createProductsRepository } = require('./repositories/products.repository');
 const { createBuyerAddressesRepository } = require('./repositories/buyer-addresses.repository');
 const { createCartsRepository } = require('./repositories/carts.repository');
+const { createDisputesRepository } = require('./repositories/disputes.repository');
 const { createOrdersRepository } = require('./repositories/orders.repository');
 const { createPaymentsRepository } = require('./repositories/payments.repository');
 const { createSellerFinanceRepository } = require('./repositories/seller-finance.repository');
 const { createSellersRepository } = require('./repositories/sellers.repository');
 const { createAdminService } = require('./services/admin.service');
+const { createAdminDashboardService } = require('./services/admin-dashboard.service');
 const { createAuthService } = require('./services/auth.service');
 const { createCartService } = require('./services/cart.service');
 const { createOrdersService } = require('./services/orders.service');
@@ -22,6 +27,7 @@ const { createSellerFinanceService } = require('./services/seller-finance.servic
 const { createSellersService } = require('./services/sellers.service');
 const { createCacVerificationService } = require('./services/cac-verification.service');
 const { createAdminController } = require('./controllers/admin.controller');
+const { createAdminDashboardController } = require('./controllers/admin-dashboard.controller');
 const { createAuthController } = require('./controllers/auth.controller');
 const { createCartController } = require('./controllers/cart.controller');
 const { createMeController } = require('./controllers/me.controller');
@@ -71,13 +77,25 @@ function createDependencies(overrides = {}) {
   const adminRepository = overrides.adminRepository || createAdminRepository({
     db: resolveDb()
   });
+  const adminDashboardRepository = overrides.adminDashboardRepository || createAdminDashboardRepository({
+    db: resolveDb()
+  });
+  const auditLogRepository = overrides.auditLogRepository || createAuditLogRepository({
+    db: resolveDb()
+  });
   const productsRepository = overrides.productsRepository || createProductsRepository({
+    db: resolveDb()
+  });
+  const platformConfigRepository = overrides.platformConfigRepository || createPlatformConfigRepository({
     db: resolveDb()
   });
   const buyerAddressesRepository = overrides.buyerAddressesRepository || createBuyerAddressesRepository({
     db: resolveDb()
   });
   const cartsRepository = overrides.cartsRepository || createCartsRepository({
+    db: resolveDb()
+  });
+  const disputesRepository = overrides.disputesRepository || createDisputesRepository({
     db: resolveDb()
   });
   const ordersRepository = overrides.ordersRepository || createOrdersRepository({
@@ -109,10 +127,26 @@ function createDependencies(overrides = {}) {
     env: appEnv
   });
   const adminService = overrides.adminService || createAdminService({
+    env: appEnv,
     adminRepository,
+    auditLogRepository,
+    disputesRepository,
+    platformConfigRepository,
     productsRepository,
+    sellerFinanceRepository,
+    usersRepository,
+    sellersRepository,
+    ordersRepository,
     jwtUtils: overrides.jwtUtils || jwtUtils,
     passwordUtils: overrides.passwordUtils || passwordUtils
+  });
+  const adminDashboardService = overrides.adminDashboardService || createAdminDashboardService({
+    adminDashboardRepository,
+    adminRepository,
+    auditLogRepository,
+    disputesRepository,
+    env: appEnv,
+    platformConfigRepository
   });
   const cartService = overrides.cartService || createCartService({
     cartsRepository,
@@ -141,12 +175,14 @@ function createDependencies(overrides = {}) {
   });
   const sellerFinanceService = overrides.sellerFinanceService || createSellerFinanceService({
     env: appEnv,
+    platformConfigRepository,
     sellerFinanceRepository,
     sellersRepository
   });
   const sellerDashboardService = overrides.sellerDashboardService || createSellerDashboardService({
     env: appEnv,
     ordersRepository,
+    platformConfigRepository,
     productsRepository,
     sellerFinanceRepository,
     sellersRepository
@@ -154,6 +190,8 @@ function createDependencies(overrides = {}) {
 
   return {
     adminController: overrides.adminController || createAdminController({ adminService }),
+    adminDashboardController: overrides.adminDashboardController
+      || createAdminDashboardController({ adminDashboardService }),
     authController: overrides.authController || createAuthController({ authService }),
     cartController: overrides.cartController || createCartController({ cartService }),
     meController: overrides.meController || createMeController(),
@@ -208,6 +246,7 @@ function createApp(overrides = {}) {
   app.use('/api/v1/admin', createAdminRouter({
     adminAuthMiddleware: dependencies.adminAuthMiddleware,
     adminController: dependencies.adminController,
+    adminDashboardController: dependencies.adminDashboardController
   }));
 
   app.use('/api/v1', createMeRouter({

@@ -1,4 +1,4 @@
-const { ERROR_CODES, PRODUCT_STATUSES } = require('../config/constants');
+const { CATEGORY_STATUSES, ERROR_CODES, PRODUCT_STATUSES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { parseCsvText } = require('../utils/csv');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
@@ -209,6 +209,13 @@ function createProductsService({ productsRepository, sellersRepository }) {
       });
     }
 
+    if (category.status === CATEGORY_STATUSES.ARCHIVED) {
+      throw new AppError('Category is archived and cannot be used for seller products.', {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+
     return category;
   }
 
@@ -274,6 +281,13 @@ function createProductsService({ productsRepository, sellersRepository }) {
         throw new AppError(`Category ${categoryId} was not found for the inventory csv upload.`, {
           statusCode: 404,
           code: ERROR_CODES.NOT_FOUND
+        });
+      }
+
+      if (categoriesById.get(categoryId).status === CATEGORY_STATUSES.ARCHIVED) {
+        throw new AppError(`Category ${categoryId} is archived and cannot be used for the inventory csv upload.`, {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
         });
       }
     }

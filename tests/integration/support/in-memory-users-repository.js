@@ -19,6 +19,7 @@ function createInMemoryUsersRepository() {
         passwordResetTokenHash: null,
         passwordResetExpiresAt: null,
         isVerified: payload.isVerified,
+        accountStatus: payload.accountStatus || 'active',
         createdAt: now,
         updatedAt: now
       };
@@ -100,6 +101,59 @@ function createInMemoryUsersRepository() {
       }
 
       user.isVerified = Boolean(isVerified);
+      user.updatedAt = new Date().toISOString();
+
+      return cloneUser(user);
+    },
+
+    async findManagedUserById(userId) {
+      const user = users.find((entry) => (
+        entry.id === Number(userId) && entry.role !== 'admin'
+      ));
+
+      return cloneUser(user || null);
+    },
+
+    async listManagedUsers(filters) {
+      const matchedUsers = users
+        .filter((user) => user.role !== 'admin')
+        .filter((user) => !filters.role || filters.role === 'all' || user.role === filters.role)
+        .filter((user) => (
+          !filters.status || filters.status === 'all' || user.accountStatus === filters.status
+        ))
+        .filter((user) => {
+          if (!filters.search) {
+            return true;
+          }
+
+          const search = String(filters.search).toLowerCase();
+
+          return [
+            user.fullName,
+            user.email,
+            user.phone
+          ].some((value) => String(value || '').toLowerCase().includes(search));
+        })
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+
+      return {
+        users: matchedUsers
+          .slice(filters.offset, filters.offset + filters.limit)
+          .map(cloneUser),
+        total: matchedUsers.length
+      };
+    },
+
+    async updateAccountStatus(userId, accountStatus) {
+      const user = users.find((entry) => (
+        entry.id === Number(userId) && entry.role !== 'admin'
+      ));
+
+      if (!user) {
+        return null;
+      }
+
+      user.accountStatus = accountStatus;
       user.updatedAt = new Date().toISOString();
 
       return cloneUser(user);

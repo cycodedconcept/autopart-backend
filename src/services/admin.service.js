@@ -1,12 +1,24 @@
 const {
+  CATEGORY_STATUSES,
+  DISPUTE_RAISED_BY,
+  DISPUTE_STATUSES,
   ERROR_CODES,
+  ORDER_STATUSES,
+  PAYMENT_STATUSES,
+  PAYOUT_STATUSES,
   SELLER_DOCUMENT_TYPES,
   SELLER_VERIFICATION_STATUSES,
-  TOKEN_SUBJECT_TYPES
+  TOKEN_SUBJECT_TYPES,
+  USER_ACCOUNT_STATUSES,
+  USER_ROLES
 } = require('../config/constants');
 const { sanitizeAdmin } = require('../utils/admin');
 const AppError = require('../utils/app-error');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
+const {
+  buildPlatformConfig,
+  buildPlatformConfigEntries
+} = require('../utils/platform-config');
 const { sanitizeSellerAccount } = require('../utils/seller');
 const { sanitizeUser } = require('../utils/user');
 
@@ -16,6 +28,48 @@ function normalizeEmail(email) {
 
 function normalizeVerificationQueueStatus(status) {
   return status || SELLER_VERIFICATION_STATUSES.PENDING;
+}
+
+function normalizeCategoryListStatus(status) {
+  return status || 'all';
+}
+
+function normalizeManagedUserRole(role) {
+  return role || 'all';
+}
+
+function normalizeManagedUserStatus(status) {
+  return status || 'all';
+}
+
+function normalizeOrderListStatus(status) {
+  return status || 'all';
+}
+
+function normalizeOrderListPaymentStatus(status) {
+  return status || 'all';
+}
+
+function normalizePayoutListStatus(status) {
+  return status || 'all';
+}
+
+function normalizeDisputeListStatus(status) {
+  return status || 'all';
+}
+
+function normalizeDisputeRaisedBy(raisedBy) {
+  return raisedBy || 'all';
+}
+
+function normalizeSearchTerm(search) {
+  if (typeof search !== 'string') {
+    return null;
+  }
+
+  const trimmedSearch = search.trim();
+
+  return trimmedSearch ? trimmedSearch : null;
 }
 
 function resolveRejectionReason(status, rejectionReason) {
@@ -66,6 +120,7 @@ function buildCategoryTreeNode(category, categoriesByParentId) {
     name: category.name,
     slug: category.slug,
     parentId: category.parentId,
+    status: category.status,
     children: childCategories.map((childCategory) => buildCategoryTreeNode(
       childCategory,
       categoriesByParentId
@@ -77,7 +132,10 @@ function buildCategoryTreeNode(category, categoriesByParentId) {
 
 function buildCategoryTree(categories) {
   const categoriesByParentId = buildCategoriesByParentId(categories);
-  const rootCategories = categoriesByParentId.get('root') || [];
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const rootCategories = categories.filter((category) => (
+    category.parentId === null || !categoriesById.has(category.parentId)
+  ));
 
   return rootCategories.map((category) => buildCategoryTreeNode(category, categoriesByParentId));
 }
@@ -90,7 +148,8 @@ function mapCategorySummary(category) {
   return {
     id: category.id,
     name: category.name,
-    slug: category.slug
+    slug: category.slug,
+    status: category.status
   };
 }
 
@@ -138,6 +197,311 @@ function normalizeVehicleField(value) {
   return String(value || '').trim();
 }
 
+function mapManagedSellerProfile(profile) {
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    businessName: profile.businessName,
+    rating: profile.rating,
+    contactPhone: profile.contactPhone,
+    contactEmail: profile.contactEmail,
+    cacNumber: profile.cacNumber,
+    verificationStatus: profile.verificationStatus,
+    rejectionReason: profile.rejectionReason,
+    verifiedBy: profile.verifiedBy,
+    verifiedAt: profile.verifiedAt,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt
+  };
+}
+
+function mapManagedUser(user, sellerAccount) {
+  return {
+    ...sanitizeUser(user),
+    accountStatus: user.accountStatus || USER_ACCOUNT_STATUSES.ACTIVE,
+    sellerProfile: sellerAccount ? mapManagedSellerProfile(sellerAccount.sellerProfile) : null
+  };
+}
+
+function mapAdminOrderStatusHistoryEntry(entry) {
+  if (!entry) {
+    return null;
+  }
+
+  return {
+    id: entry.id,
+    status: entry.status,
+    note: entry.note,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt
+  };
+}
+
+function mapAdminOrder(order, statusHistory = null) {
+  if (!order) {
+    return null;
+  }
+
+  return {
+    id: order.id,
+    status: order.status,
+    paymentMethod: order.paymentMethod,
+    paymentReference: order.paymentReference,
+    paymentStatus: order.paymentStatus,
+    subtotalKobo: order.subtotalKobo,
+    deliveryFeeKobo: order.deliveryFeeKobo,
+    totalKobo: order.totalKobo,
+    totalItems: order.totalItems,
+    sellerCount: order.sellerCount,
+    buyer: {
+      id: order.buyerId,
+      fullName: order.buyerFullName,
+      email: order.buyerEmail,
+      phone: order.buyerPhone
+    },
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    ...(statusHistory
+      ? {
+        statusHistory: statusHistory.map(mapAdminOrderStatusHistoryEntry)
+      }
+      : {})
+  };
+}
+
+function mapAdminPayoutItem(item) {
+  if (!item) {
+    return null;
+  }
+
+  return {
+    id: item.id,
+    orderItemId: item.orderItemId,
+    orderId: item.orderId,
+    productId: item.productId,
+    quantity: item.quantity,
+    grossAmountKobo: item.grossAmountKobo,
+    commissionAmountKobo: item.commissionAmountKobo,
+    netAmountKobo: item.netAmountKobo,
+    orderStatus: item.orderStatus,
+    paidAt: item.paidAt,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  };
+}
+
+function mapAdminSellerSummary(seller) {
+  if (!seller) {
+    return null;
+  }
+
+  return {
+    id: seller.id,
+    userId: seller.userId,
+    businessName: seller.businessName,
+    contactEmail: seller.contactEmail,
+    contactPhone: seller.contactPhone,
+    fullName: seller.fullName,
+    email: seller.email,
+    phone: seller.phone
+  };
+}
+
+function mapAdminPayout(payout) {
+  if (!payout) {
+    return null;
+  }
+
+  return {
+    id: payout.id,
+    grossAmountKobo: payout.grossAmountKobo,
+    commissionAmountKobo: payout.commissionAmountKobo,
+    amountKobo: payout.amountKobo,
+    status: payout.status,
+    approvedBy: payout.approvedBy,
+    approvedAt: payout.approvedAt,
+    rejectionReason: payout.rejectionReason,
+    bankAccountRef: payout.bankAccountRef,
+    itemCount: payout.itemCount,
+    requestedAt: payout.requestedAt,
+    settledAt: payout.settledAt,
+    createdAt: payout.createdAt,
+    updatedAt: payout.updatedAt,
+    seller: mapAdminSellerSummary(payout.seller),
+    items: Array.isArray(payout.items) ? payout.items.map(mapAdminPayoutItem) : []
+  };
+}
+
+function mapAdminDispute(dispute) {
+  if (!dispute) {
+    return null;
+  }
+
+  return {
+    id: dispute.id,
+    orderId: dispute.orderId,
+    raisedBy: dispute.raisedBy,
+    reason: dispute.reason,
+    status: dispute.status,
+    resolutionNote: dispute.resolutionNote,
+    refundReference: dispute.refundReference,
+    refundAmountKobo: dispute.refundAmountKobo,
+    resolvedBy: dispute.resolvedBy,
+    resolvedAt: dispute.resolvedAt,
+    createdAt: dispute.createdAt,
+    updatedAt: dispute.updatedAt,
+    order: dispute.order
+      ? {
+        id: dispute.order.id,
+        status: dispute.order.status,
+        paymentMethod: dispute.order.paymentMethod,
+        paymentReference: dispute.order.paymentReference,
+        paymentStatus: dispute.order.paymentStatus,
+        totalKobo: dispute.order.totalKobo,
+        createdAt: dispute.order.createdAt,
+        updatedAt: dispute.order.updatedAt
+      }
+      : null,
+    buyer: dispute.buyer
+      ? {
+        id: dispute.buyer.id,
+        fullName: dispute.buyer.fullName,
+        email: dispute.buyer.email,
+        phone: dispute.buyer.phone
+      }
+      : null,
+    raisedBySeller: mapAdminSellerSummary(dispute.raisedBySeller),
+    resolvedByAdmin: dispute.resolvedByAdmin
+      ? {
+        id: dispute.resolvedByAdmin.id,
+        fullName: dispute.resolvedByAdmin.fullName,
+        email: dispute.resolvedByAdmin.email
+      }
+      : null,
+    sellers: Array.isArray(dispute.sellers) ? dispute.sellers.map(mapAdminSellerSummary) : []
+  };
+}
+
+function mapAdminAuditLog(log) {
+  if (!log) {
+    return null;
+  }
+
+  return {
+    id: log.id,
+    action: log.action,
+    targetType: log.targetType,
+    targetId: log.targetId,
+    detail: log.detail,
+    createdAt: log.createdAt,
+    admin: log.admin
+      ? {
+        id: log.admin.id,
+        fullName: log.admin.fullName,
+        email: log.admin.email
+      }
+      : null
+  };
+}
+
+function orderStatusRequiresPaidPayment(status) {
+  return [
+    ORDER_STATUSES.CONFIRMED,
+    ORDER_STATUSES.PICKED_UP,
+    ORDER_STATUSES.IN_TRANSIT,
+    ORDER_STATUSES.DELIVERED,
+    ORDER_STATUSES.DISPUTED
+  ].includes(status);
+}
+
+function canTransitionAdminOrder(currentStatus, nextStatus) {
+  if (currentStatus === nextStatus) {
+    return false;
+  }
+
+  switch (currentStatus) {
+    case ORDER_STATUSES.PENDING_PAYMENT:
+      return nextStatus === ORDER_STATUSES.CANCELLED;
+    case ORDER_STATUSES.CONFIRMED:
+      return [
+        ORDER_STATUSES.PICKED_UP,
+        ORDER_STATUSES.IN_TRANSIT,
+        ORDER_STATUSES.DELIVERED,
+        ORDER_STATUSES.CANCELLED,
+        ORDER_STATUSES.DISPUTED
+      ].includes(nextStatus);
+    case ORDER_STATUSES.PICKED_UP:
+      return [
+        ORDER_STATUSES.IN_TRANSIT,
+        ORDER_STATUSES.DELIVERED,
+        ORDER_STATUSES.CANCELLED,
+        ORDER_STATUSES.DISPUTED
+      ].includes(nextStatus);
+    case ORDER_STATUSES.IN_TRANSIT:
+      return [
+        ORDER_STATUSES.DELIVERED,
+        ORDER_STATUSES.CANCELLED,
+        ORDER_STATUSES.DISPUTED
+      ].includes(nextStatus);
+    case ORDER_STATUSES.DISPUTED:
+      return [
+        ORDER_STATUSES.CONFIRMED,
+        ORDER_STATUSES.PICKED_UP,
+        ORDER_STATUSES.IN_TRANSIT,
+        ORDER_STATUSES.DELIVERED,
+        ORDER_STATUSES.CANCELLED
+      ].includes(nextStatus);
+    default:
+      return false;
+  }
+}
+
+function resolveAdminOrderStatusNote(currentStatus, nextStatus, note) {
+  const trimmedNote = typeof note === 'string' ? note.trim() : '';
+
+  return trimmedNote || `Admin updated order status from ${currentStatus} to ${nextStatus}.`;
+}
+
+function canTransitionAdminPayout(currentStatus, nextStatus) {
+  if (currentStatus === nextStatus) {
+    return false;
+  }
+
+  switch (currentStatus) {
+    case PAYOUT_STATUSES.REQUESTED:
+      return [
+        PAYOUT_STATUSES.APPROVED,
+        PAYOUT_STATUSES.REJECTED
+      ].includes(nextStatus);
+    case PAYOUT_STATUSES.APPROVED:
+      return nextStatus === PAYOUT_STATUSES.PAID;
+    default:
+      return false;
+  }
+}
+
+function resolvePayoutRejectionReason(status, rejectionReason) {
+  if (status !== PAYOUT_STATUSES.REJECTED) {
+    return null;
+  }
+
+  return rejectionReason.trim();
+}
+
+function buildChangedPlatformConfigKeys(currentConfig, nextConfig) {
+  return Object.keys(nextConfig).filter((key) => (
+    JSON.stringify(currentConfig[key]) !== JSON.stringify(nextConfig[key])
+  ));
+}
+
+function disputeIncludesRefundDetails(payload) {
+  return payload.refundReference !== undefined || payload.refundAmountKobo !== undefined;
+}
+
 function categoryCreatesCycle(categoryId, parentId, categories) {
   if (parentId === null || parentId === undefined) {
     return false;
@@ -165,7 +529,53 @@ function categoryCreatesCycle(categoryId, parentId, categories) {
   return false;
 }
 
-function createAdminService({ adminRepository, jwtUtils, passwordUtils, productsRepository }) {
+function collectDescendantCategoryIds(categoryId, categories) {
+  const categoriesByParentId = buildCategoriesByParentId(categories);
+  const ids = [];
+  const queue = [Number(categoryId)];
+
+  while (queue.length) {
+    const currentCategoryId = queue.shift();
+
+    ids.push(currentCategoryId);
+
+    const childCategories = categoriesByParentId.get(String(currentCategoryId)) || [];
+
+    for (const childCategory of childCategories) {
+      queue.push(childCategory.id);
+    }
+  }
+
+  return ids;
+}
+
+function createAdminService({
+  adminRepository,
+  auditLogRepository,
+  disputesRepository,
+  env,
+  jwtUtils,
+  passwordUtils,
+  platformConfigRepository,
+  productsRepository,
+  sellerFinanceRepository,
+  usersRepository,
+  sellersRepository,
+  ordersRepository
+}) {
+  async function loadManagedUser(user) {
+    const sellerAccount = (
+      user
+      && user.role === USER_ROLES.SELLER
+      && sellersRepository
+      && typeof sellersRepository.findByUserId === 'function'
+    )
+      ? await sellersRepository.findByUserId(user.id)
+      : null;
+
+    return mapManagedUser(user, sellerAccount);
+  }
+
   async function getAuthenticatedAdmin(token) {
     let decodedToken;
 
@@ -248,6 +658,17 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
     return category;
   }
 
+  function ensureCategoryIsUsable(category, message) {
+    if (category.status === CATEGORY_STATUSES.ARCHIVED) {
+      throw new AppError(message, {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+
+    return category;
+  }
+
   async function ensureVehicleTaxonomyExists(vehicleTaxonomyId) {
     const vehicleTaxonomy = await productsRepository.findVehicleTaxonomyById(vehicleTaxonomyId);
 
@@ -261,6 +682,103 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
     return vehicleTaxonomy;
   }
 
+  async function ensureManagedUserExists(userId) {
+    const user = await usersRepository.findManagedUserById(userId);
+
+    if (!user) {
+      throw new AppError('User was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return user;
+  }
+
+  async function ensureOrderExists(orderId) {
+    const order = await ordersRepository.findOrderByIdForAdmin(orderId);
+
+    if (!order) {
+      throw new AppError('Order was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return order;
+  }
+
+  async function ensurePayoutExists(payoutId) {
+    const payout = await sellerFinanceRepository.findPayoutByIdForAdmin(payoutId);
+
+    if (!payout) {
+      throw new AppError('Payout request was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return payout;
+  }
+
+  async function ensureDisputeExists(disputeId) {
+    if (!disputesRepository || typeof disputesRepository.findDisputeByIdForAdmin !== 'function') {
+      throw new AppError('Dispute management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const dispute = await disputesRepository.findDisputeByIdForAdmin(disputeId);
+
+    if (!dispute) {
+      throw new AppError('Dispute was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return dispute;
+  }
+
+  async function listCurrentPlatformConfig() {
+    if (
+      !platformConfigRepository
+      || typeof platformConfigRepository.listPlatformConfigByKeys !== 'function'
+    ) {
+      return buildPlatformConfig([], env);
+    }
+
+    const entries = await platformConfigRepository.listPlatformConfigByKeys();
+
+    return buildPlatformConfig(entries, env);
+  }
+
+  async function persistPlatformConfig(config) {
+    if (
+      !platformConfigRepository
+      || typeof platformConfigRepository.upsertPlatformConfigEntries !== 'function'
+    ) {
+      throw new AppError('Platform configuration updates are unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const entries = buildPlatformConfigEntries(config);
+    const updatedEntries = await platformConfigRepository.upsertPlatformConfigEntries(entries);
+
+    return buildPlatformConfig(updatedEntries, env);
+  }
+
+  async function recordAuditLog(payload) {
+    if (!auditLogRepository || typeof auditLogRepository.createAuditLog !== 'function') {
+      return;
+    }
+
+    await auditLogRepository.createAuditLog(payload);
+  }
+
   return {
     getAuthenticatedAdmin,
 
@@ -270,7 +788,9 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
       const parentId = payload.parentId === undefined ? null : payload.parentId;
 
       if (parentId !== null) {
-        await ensureCategoryExists(parentId);
+        const parentCategory = await ensureCategoryExists(parentId);
+
+        ensureCategoryIsUsable(parentCategory, 'Archived categories cannot be used as parent categories.');
       }
 
       const existingCategoryWithSlug = await productsRepository.findCategoryBySlug(slug);
@@ -285,7 +805,8 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
       const category = await productsRepository.createCategory({
         name,
         slug,
-        parentId
+        parentId,
+        status: CATEGORY_STATUSES.ACTIVE
       });
       const categories = await productsRepository.listAllCategories();
 
@@ -315,30 +836,29 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
     },
 
     async deleteCategory(payload) {
-      const category = await ensureCategoryExists(payload.categoryId);
-      const [childCount, productCount, categories] = await Promise.all([
-        productsRepository.countChildCategories(payload.categoryId),
-        productsRepository.countProductsByCategoryId(payload.categoryId),
+      const [category, categories] = await Promise.all([
+        ensureCategoryExists(payload.categoryId),
         productsRepository.listAllCategories()
       ]);
 
-      if (childCount > 0) {
-        throw new AppError('Categories with child categories cannot be deleted.', {
+      if (category.status === CATEGORY_STATUSES.ARCHIVED) {
+        throw new AppError('Category is already archived.', {
           statusCode: 409,
           code: ERROR_CODES.CONFLICT
         });
       }
 
-      if (productCount > 0) {
-        throw new AppError('Categories assigned to existing products cannot be deleted.', {
-          statusCode: 409,
-          code: ERROR_CODES.CONFLICT
-        });
-      }
+      const categoryIdsToArchive = collectDescendantCategoryIds(payload.categoryId, categories);
 
-      await productsRepository.deleteCategory(payload.categoryId);
+      await productsRepository.updateCategoriesStatus(
+        categoryIdsToArchive,
+        CATEGORY_STATUSES.ARCHIVED
+      );
 
-      return buildCategoryDetail(category, categories);
+      const updatedCategories = await productsRepository.listAllCategories();
+      const updatedCategory = updatedCategories.find((entry) => entry.id === Number(payload.categoryId));
+
+      return buildCategoryDetail(updatedCategory, updatedCategories);
     },
 
     async deleteVehicleTaxonomyEntry(payload) {
@@ -386,11 +906,151 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
       return ensureVehicleTaxonomyExists(payload.vehicleTaxonomyId);
     },
 
-    async listCategories() {
-      const categories = await productsRepository.listAllCategories();
+    async getPlatformConfig() {
+      return listCurrentPlatformConfig();
+    },
+
+    async listCategories(payload = {}) {
+      const status = normalizeCategoryListStatus(payload.query && payload.query.status);
+      const categories = await productsRepository.listAllCategories({ status });
 
       return {
-        categories: buildCategoryTree(categories)
+        categories: buildCategoryTree(categories),
+        filters: {
+          status
+        }
+      };
+    },
+
+    async listOrders(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        status: normalizeOrderListStatus(payload.query.status),
+        paymentStatus: normalizeOrderListPaymentStatus(payload.query.paymentStatus),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const result = await ordersRepository.listOrdersForAdmin(filters);
+
+      return {
+        orders: result.orders.map((order) => mapAdminOrder(order)),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          status: filters.status,
+          paymentStatus: filters.paymentStatus,
+          search: filters.search
+        }
+      };
+    },
+
+    async listPayouts(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        status: normalizePayoutListStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        sellerId: payload.query.sellerId || null,
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const result = await sellerFinanceRepository.listPayoutsForAdmin(filters);
+
+      return {
+        payouts: result.payouts.map((payout) => mapAdminPayout(payout)),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          status: filters.status,
+          search: filters.search,
+          sellerId: filters.sellerId
+        }
+      };
+    },
+
+    async listDisputes(payload) {
+      if (!disputesRepository || typeof disputesRepository.listDisputesForAdmin !== 'function') {
+        throw new AppError('Dispute management is unavailable.', {
+          statusCode: 500,
+          code: ERROR_CODES.INTERNAL_SERVER_ERROR
+        });
+      }
+
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        status: normalizeDisputeListStatus(payload.query.status),
+        raisedBy: normalizeDisputeRaisedBy(payload.query.raisedBy),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const result = await disputesRepository.listDisputesForAdmin(filters);
+
+      return {
+        disputes: result.disputes.map((dispute) => mapAdminDispute(dispute)),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          status: filters.status,
+          raisedBy: filters.raisedBy,
+          search: filters.search
+        }
+      };
+    },
+
+    async listAuditLogs(payload) {
+      if (!auditLogRepository || typeof auditLogRepository.listAuditLogs !== 'function') {
+        throw new AppError('Audit log access is unavailable.', {
+          statusCode: 500,
+          code: ERROR_CODES.INTERNAL_SERVER_ERROR
+        });
+      }
+
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        adminId: payload.query.adminId || null,
+        action: normalizeSearchTerm(payload.query.action),
+        targetType: normalizeSearchTerm(payload.query.targetType),
+        targetId: payload.query.targetId || null,
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const result = await auditLogRepository.listAuditLogs(filters);
+
+      return {
+        auditLogs: result.logs.map((log) => mapAdminAuditLog(log)),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          adminId: filters.adminId,
+          action: filters.action,
+          targetType: filters.targetType,
+          targetId: filters.targetId
+        }
       };
     },
 
@@ -418,6 +1078,36 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
         }),
         filters: {
           status
+        }
+      };
+    },
+
+    async listUsers(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        role: normalizeManagedUserRole(payload.query.role),
+        status: normalizeManagedUserStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const result = await usersRepository.listManagedUsers(filters);
+      const users = await Promise.all(result.users.map((user) => loadManagedUser(user)));
+
+      return {
+        users,
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          role: filters.role,
+          status: filters.status,
+          search: filters.search
         }
       };
     },
@@ -463,9 +1153,14 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
       const parentId = payload.parentId !== undefined
         ? payload.parentId
         : existingCategory.parentId;
+      const status = payload.status !== undefined
+        ? payload.status
+        : existingCategory.status;
 
       if (parentId !== null) {
-        await ensureCategoryExists(parentId);
+        const parentCategory = await ensureCategoryExists(parentId);
+
+        ensureCategoryIsUsable(parentCategory, 'Archived categories cannot be used as parent categories.');
       }
 
       if (categoryCreatesCycle(payload.categoryId, parentId, categories)) {
@@ -484,14 +1179,92 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
         });
       }
 
+      if (status === CATEGORY_STATUSES.ACTIVE && parentId !== null) {
+        const parentCategory = categories.find((category) => category.id === parentId) || null;
+
+        if (parentCategory && parentCategory.status === CATEGORY_STATUSES.ARCHIVED) {
+          throw new AppError('Archived categories cannot be used as parent categories.', {
+            statusCode: 409,
+            code: ERROR_CODES.CONFLICT
+          });
+        }
+      }
+
+      const shouldArchiveSubtree = (
+        payload.status === CATEGORY_STATUSES.ARCHIVED
+        && existingCategory.status !== CATEGORY_STATUSES.ARCHIVED
+      );
+
       const updatedCategory = await productsRepository.updateCategory(payload.categoryId, {
         name: payload.name !== undefined ? name : undefined,
         slug: payload.slug !== undefined ? slug : undefined,
-        parentId: payload.parentId !== undefined ? parentId : undefined
+        parentId: payload.parentId !== undefined ? parentId : undefined,
+        status: payload.status !== undefined ? status : undefined
       });
+
+      if (shouldArchiveSubtree) {
+        const descendantCategoryIds = collectDescendantCategoryIds(payload.categoryId, categories)
+          .filter((categoryId) => categoryId !== Number(payload.categoryId));
+
+        if (descendantCategoryIds.length) {
+          await productsRepository.updateCategoriesStatus(
+            descendantCategoryIds,
+            CATEGORY_STATUSES.ARCHIVED
+          );
+        }
+      }
+
       const updatedCategories = await productsRepository.listAllCategories();
 
       return buildCategoryDetail(updatedCategory, updatedCategories);
+    },
+
+    async updatePlatformConfig(payload) {
+      const currentConfig = await listCurrentPlatformConfig();
+
+      if (Array.isArray(payload.commissionRatesByCategory)) {
+        const categoryIds = Array.from(new Set(
+          payload.commissionRatesByCategory.map((entry) => Number(entry.categoryId))
+        ));
+
+        await Promise.all(categoryIds.map((categoryId) => ensureCategoryExists(categoryId)));
+      }
+
+      const nextConfig = {
+        commissionRateDefault: payload.commissionRateDefault !== undefined
+          ? payload.commissionRateDefault
+          : currentConfig.commissionRateDefault,
+        commissionRatesByCategory: payload.commissionRatesByCategory !== undefined
+          ? payload.commissionRatesByCategory
+          : currentConfig.commissionRatesByCategory,
+        commissionRatesBySellerTier: payload.commissionRatesBySellerTier !== undefined
+          ? payload.commissionRatesBySellerTier
+          : currentConfig.commissionRatesBySellerTier,
+        platformSettings: payload.platformSettings !== undefined
+          ? payload.platformSettings
+          : currentConfig.platformSettings
+      };
+      const changedKeys = buildChangedPlatformConfigKeys(currentConfig, nextConfig);
+
+      if (!changedKeys.length) {
+        return currentConfig;
+      }
+
+      const updatedConfig = await persistPlatformConfig(nextConfig);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'platform_config.updated',
+        targetType: 'platform_config',
+        targetId: null,
+        detail: {
+          changedKeys,
+          previousConfig: currentConfig,
+          nextConfig: updatedConfig
+        }
+      });
+
+      return updatedConfig;
     },
 
     async updateSellerVerificationStatus(payload) {
@@ -528,7 +1301,214 @@ function createAdminService({ adminRepository, jwtUtils, passwordUtils, products
         )
       });
 
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: `seller_verification.${payload.verificationStatus}`,
+        targetType: 'seller',
+        targetId: updatedSellerAccount.sellerProfile.id,
+        detail: {
+          previousStatus: sellerAccount.sellerProfile.verificationStatus,
+          nextStatus: updatedSellerAccount.sellerProfile.verificationStatus,
+          userId: updatedSellerAccount.user.id,
+          rejectionReason: updatedSellerAccount.sellerProfile.rejectionReason
+        }
+      });
+
       return sanitizeSellerAccount(updatedSellerAccount, sanitizeUser);
+    },
+
+    async updateOrderStatus(payload) {
+      const existingOrder = await ensureOrderExists(payload.orderId);
+
+      if (existingOrder.status === payload.status) {
+        throw new AppError('Order already has this status.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      if (!canTransitionAdminOrder(existingOrder.status, payload.status)) {
+        throw new AppError(
+          `Orders in ${existingOrder.status} status cannot be moved to ${payload.status}.`,
+          {
+            statusCode: 409,
+            code: ERROR_CODES.CONFLICT
+          }
+        );
+      }
+
+      if (
+        orderStatusRequiresPaidPayment(payload.status)
+        && existingOrder.paymentStatus !== PAYMENT_STATUSES.PAID
+      ) {
+        throw new AppError('Only paid orders can move into confirmed, fulfilment, or disputed states.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const note = resolveAdminOrderStatusNote(existingOrder.status, payload.status, payload.note);
+
+      const updatedOrder = await ordersRepository.updateOrderStatusForAdmin({
+        orderId: payload.orderId,
+        status: payload.status,
+        note
+      });
+      const statusHistory = await ordersRepository.findOrderStatusHistoryByOrderIdForAdmin(
+        payload.orderId
+      );
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'order_status.updated',
+        targetType: 'order',
+        targetId: updatedOrder.id,
+        detail: {
+          previousStatus: existingOrder.status,
+          nextStatus: updatedOrder.status,
+          note
+        }
+      });
+
+      return mapAdminOrder(updatedOrder, statusHistory);
+    },
+
+    async updatePayoutStatus(payload) {
+      const existingPayout = await ensurePayoutExists(payload.payoutId);
+
+      if (existingPayout.status === payload.status) {
+        throw new AppError('Payout request already has this status.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      if (!canTransitionAdminPayout(existingPayout.status, payload.status)) {
+        throw new AppError(
+          `Payout requests in ${existingPayout.status} status cannot be moved to ${payload.status}.`,
+          {
+            statusCode: 409,
+            code: ERROR_CODES.CONFLICT
+          }
+        );
+      }
+
+      const rejectionReason = resolvePayoutRejectionReason(
+        payload.status,
+        payload.rejectionReason || ''
+      );
+      const updatedPayout = await sellerFinanceRepository.updatePayoutStatusForAdmin({
+        adminId: payload.adminId,
+        payoutId: payload.payoutId,
+        status: payload.status,
+        rejectionReason
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: `payout.${payload.status}`,
+        targetType: 'payout',
+        targetId: updatedPayout.id,
+        detail: {
+          previousStatus: existingPayout.status,
+          nextStatus: updatedPayout.status,
+          sellerId: updatedPayout.seller ? updatedPayout.seller.id : null,
+          amountKobo: updatedPayout.amountKobo,
+          rejectionReason
+        }
+      });
+
+      return mapAdminPayout(updatedPayout);
+    },
+
+    async updateDispute(payload) {
+      const existingDispute = await ensureDisputeExists(payload.disputeId);
+
+      if (existingDispute.status !== DISPUTE_STATUSES.OPEN) {
+        throw new AppError('Only open disputes can be reviewed.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      if (payload.status === DISPUTE_STATUSES.RESOLVED && disputeIncludesRefundDetails(payload)) {
+        if (
+          !existingDispute.order
+          || existingDispute.order.paymentStatus !== PAYMENT_STATUSES.PAID
+          || !existingDispute.order.paymentReference
+        ) {
+          throw new AppError('Refund details can only be recorded for paid orders with a payment reference.', {
+            statusCode: 409,
+            code: ERROR_CODES.CONFLICT
+          });
+        }
+
+        if (payload.refundAmountKobo > existingDispute.order.totalKobo) {
+          throw new AppError('Refund amount cannot exceed the order total.', {
+            statusCode: 422,
+            code: ERROR_CODES.VALIDATION_ERROR
+          });
+        }
+      }
+
+      const updatedDispute = await disputesRepository.updateDisputeDecision({
+        adminId: payload.adminId,
+        disputeId: payload.disputeId,
+        status: payload.status,
+        resolutionNote: payload.resolutionNote.trim(),
+        refundReference: payload.refundReference || null,
+        refundAmountKobo: payload.refundAmountKobo
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: `dispute.${payload.status}`,
+        targetType: 'dispute',
+        targetId: updatedDispute.id,
+        detail: {
+          previousStatus: existingDispute.status,
+          nextStatus: updatedDispute.status,
+          orderId: updatedDispute.orderId,
+          raisedBy: updatedDispute.raisedBy,
+          sellerId: updatedDispute.raisedBy === DISPUTE_RAISED_BY.SELLER
+            && updatedDispute.raisedBySeller
+            ? updatedDispute.raisedBySeller.id
+            : null,
+          resolutionNote: updatedDispute.resolutionNote,
+          refundReference: updatedDispute.refundReference,
+          refundAmountKobo: updatedDispute.refundAmountKobo
+        }
+      });
+
+      return mapAdminDispute(updatedDispute);
+    },
+
+    async updateUserStatus(payload) {
+      const existingUser = await ensureManagedUserExists(payload.userId);
+      const currentStatus = existingUser.accountStatus || USER_ACCOUNT_STATUSES.ACTIVE;
+
+      if (currentStatus === payload.status) {
+        throw new AppError('User already has this account status.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const updatedUser = await usersRepository.updateAccountStatus(payload.userId, payload.status);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'user_status.updated',
+        targetType: 'user',
+        targetId: updatedUser.id,
+        detail: {
+          previousStatus: currentStatus,
+          nextStatus: updatedUser.accountStatus || USER_ACCOUNT_STATUSES.ACTIVE,
+          role: updatedUser.role
+        }
+      });
+
+      return loadManagedUser(updatedUser);
     },
 
     async updateVehicleTaxonomyEntry(payload) {

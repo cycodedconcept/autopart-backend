@@ -55,6 +55,11 @@ function mapPayoutRow(row) {
     commissionAmountKobo: toNumber(row.commission_amount_kobo),
     amountKobo: toNumber(row.amount_kobo),
     status: row.status,
+    approvedBy: row.approved_by === null || row.approved_by === undefined
+      ? null
+      : Number(row.approved_by),
+    approvedAt: row.approved_at,
+    rejectionReason: row.rejection_reason,
     bankAccountRef: row.bank_account_ref,
     itemCount: toNumber(row.item_count),
     requestedAt: row.requested_at,
@@ -71,6 +76,56 @@ function mapEligiblePayoutItemRow(row) {
     commissionAmountKobo: toNumber(row.commission_amount_kobo),
     netAmountKobo: toNumber(row.net_amount_kobo)
   };
+}
+
+function mapAdminPayoutItemRow(row) {
+  return {
+    id: row.id,
+    payoutId: row.payout_id,
+    orderItemId: row.order_item_id,
+    orderId: row.order_id,
+    productId: row.product_id,
+    quantity: toNumber(row.quantity),
+    grossAmountKobo: toNumber(row.gross_amount_kobo),
+    commissionAmountKobo: toNumber(row.commission_amount_kobo),
+    netAmountKobo: toNumber(row.net_amount_kobo),
+    orderStatus: row.order_status,
+    paidAt: row.paid_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapAdminPayoutRow(row, items = []) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...mapPayoutRow(row),
+    seller: {
+      id: row.seller_id,
+      userId: toNumber(row.user_id),
+      businessName: row.business_name,
+      contactEmail: row.contact_email,
+      contactPhone: row.contact_phone,
+      fullName: row.full_name,
+      email: row.email,
+      phone: row.phone
+    },
+    items
+  };
+}
+
+function groupPayoutItemsByPayoutId(rows) {
+  return rows.reduce((accumulator, row) => {
+    const existingItems = accumulator.get(row.payout_id) || [];
+
+    existingItems.push(mapAdminPayoutItemRow(row));
+    accumulator.set(row.payout_id, existingItems);
+
+    return accumulator;
+  }, new Map());
 }
 
 function buildEligiblePayoutItemsQuery(options = {}) {
@@ -138,6 +193,128 @@ async function findPayoutByIdWithConnection(connection, payoutId, sellerId) {
   );
 
   return mapPayoutRow(rows[0]);
+}
+
+async function findPayoutItemsByPayoutIdsWithConnection(connection, payoutIds) {
+  if (!payoutIds.length) {
+    return new Map();
+  }
+
+  const placeholders = payoutIds.map(() => '?').join(', ');
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        pi.id,
+        pi.payout_id,
+        pi.order_item_id,
+        oi.order_id,
+        oi.product_id,
+        oi.quantity,
+        pi.gross_amount_kobo,
+        pi.commission_amount_kobo,
+        pi.net_amount_kobo,
+        o.status AS order_status,
+        paid_payments.paid_at,
+        pi.created_at,
+        pi.updated_at
+      FROM payout_items pi
+      INNER JOIN order_items oi ON oi.id = pi.order_item_id
+      INNER JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN (
+        SELECT
+          order_id,
+          MAX(updated_at) AS paid_at
+        FROM payments
+        WHERE status = ?
+        GROUP BY order_id
+      ) paid_payments ON paid_payments.order_id = o.id
+      WHERE pi.payout_id IN (${placeholders})
+      ORDER BY pi.payout_id ASC, pi.id ASC
+    `,
+    [PAYMENT_STATUSES.PAID, ...payoutIds]
+  );
+
+  return groupPayoutItemsByPayoutId(rows);
+}
+
+async function findPayoutByIdForAdminWithConnection(connection, payoutId) {
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        p.id,
+        p.seller_id,
+        p.gross_amount_kobo,
+        p.commission_amount_kobo,
+        p.amount_kobo,
+        p.status,
+        p.approved_by,
+        p.approved_at,
+        p.rejection_reason,
+        p.bank_account_ref,
+        p.requested_at,
+        p.settled_at,
+        p.created_at,
+        p.updated_at,
+        (
+          SELECT COUNT(*)
+          FROM payout_items pi
+          WHERE pi.payout_id = p.id
+        ) AS item_count,
+        sp.user_id,
+        sp.business_name,
+        sp.contact_email,
+        sp.contact_phone,
+        u.full_name,
+        u.email,
+        u.phone
+      FROM payouts p
+      INNER JOIN seller_profiles sp ON sp.id = p.seller_id
+      INNER JOIN users u ON u.id = sp.user_id
+      WHERE p.id = ?
+      LIMIT 1
+    `,
+    [payoutId]
+  );
+
+  if (!rows[0]) {
+    return null;
+  }
+
+  const itemsByPayoutId = await findPayoutItemsByPayoutIdsWithConnection(connection, [payoutId]);
+
+  return mapAdminPayoutRow(rows[0], itemsByPayoutId.get(rows[0].id) || []);
+}
+
+function buildAdminPayoutFilters({ search, sellerId, status }) {
+  const clauses = [];
+  const params = [];
+
+  if (status && status !== 'all') {
+    clauses.push('p.status = ?');
+    params.push(status);
+  }
+
+  if (sellerId) {
+    clauses.push('p.seller_id = ?');
+    params.push(sellerId);
+  }
+
+  if (search) {
+    clauses.push(`(
+      sp.business_name LIKE ?
+      OR u.full_name LIKE ?
+      OR u.email LIKE ?
+      OR p.bank_account_ref LIKE ?
+    )`);
+    const searchPattern = `%${search}%`;
+
+    params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+  }
+
+  return {
+    clause: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '',
+    params
+  };
 }
 
 function createSellerFinanceRepository({ db }) {
@@ -483,6 +660,134 @@ function createSellerFinanceRepository({ db }) {
         payouts: rows.map(mapPayoutRow),
         total: toNumber(countRows[0] && countRows[0].total)
       };
+    },
+
+    async listPayoutsForAdmin({ limit, offset, search, sellerId, status }) {
+      const filters = buildAdminPayoutFilters({
+        status,
+        sellerId,
+        search
+      });
+      const [countRows] = await db.execute(
+        `
+          SELECT COUNT(*) AS total
+          FROM payouts p
+          INNER JOIN seller_profiles sp ON sp.id = p.seller_id
+          INNER JOIN users u ON u.id = sp.user_id
+          ${filters.clause}
+        `,
+        filters.params
+      );
+      const [rows] = await db.execute(
+        `
+          SELECT
+            p.id,
+            p.seller_id,
+            p.gross_amount_kobo,
+            p.commission_amount_kobo,
+            p.amount_kobo,
+            p.status,
+            p.approved_by,
+            p.approved_at,
+            p.rejection_reason,
+            p.bank_account_ref,
+            p.requested_at,
+            p.settled_at,
+            p.created_at,
+            p.updated_at,
+            (
+              SELECT COUNT(*)
+              FROM payout_items pi
+              WHERE pi.payout_id = p.id
+            ) AS item_count,
+            sp.user_id,
+            sp.business_name,
+            sp.contact_email,
+            sp.contact_phone,
+            u.full_name,
+            u.email,
+            u.phone
+          FROM payouts p
+          INNER JOIN seller_profiles sp ON sp.id = p.seller_id
+          INNER JOIN users u ON u.id = sp.user_id
+          ${filters.clause}
+          ORDER BY p.requested_at DESC, p.id DESC
+          LIMIT ? OFFSET ?
+        `,
+        [...filters.params, limit, offset]
+      );
+      const payoutIds = rows.map((row) => row.id);
+      const itemsByPayoutId = await findPayoutItemsByPayoutIdsWithConnection(db, payoutIds);
+
+      return {
+        payouts: rows.map((row) => mapAdminPayoutRow(row, itemsByPayoutId.get(row.id) || [])),
+        total: toNumber(countRows[0] && countRows[0].total)
+      };
+    },
+
+    async findPayoutByIdForAdmin(payoutId) {
+      return findPayoutByIdForAdminWithConnection(db, payoutId);
+    },
+
+    async updatePayoutStatusForAdmin({ adminId, payoutId, rejectionReason, status }) {
+      const connection = await db.getConnection();
+
+      try {
+        await connection.beginTransaction();
+
+        const existingPayout = await findPayoutByIdForAdminWithConnection(connection, payoutId);
+
+        if (!existingPayout) {
+          await connection.rollback();
+          return null;
+        }
+
+        const approvedBy = status === PAYOUT_STATUSES.APPROVED
+          ? Number(adminId)
+          : status === PAYOUT_STATUSES.REJECTED
+            ? null
+            : existingPayout.approvedBy;
+        const approvedAt = status === PAYOUT_STATUSES.APPROVED
+          ? new Date()
+          : status === PAYOUT_STATUSES.REJECTED
+            ? null
+            : existingPayout.approvedAt;
+        const settledAt = status === PAYOUT_STATUSES.PAID
+          ? new Date()
+          : existingPayout.settledAt;
+
+        await connection.execute(
+          `
+            UPDATE payouts
+            SET
+              status = ?,
+              approved_by = ?,
+              approved_at = ?,
+              rejection_reason = ?,
+              settled_at = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+          [
+            status,
+            approvedBy,
+            approvedAt,
+            status === PAYOUT_STATUSES.REJECTED ? rejectionReason : null,
+            settledAt,
+            payoutId
+          ]
+        );
+
+        const updatedPayout = await findPayoutByIdForAdminWithConnection(connection, payoutId);
+        await connection.commit();
+
+        return updatedPayout;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
     }
   };
 }

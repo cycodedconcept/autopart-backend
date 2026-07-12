@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and Admin Milestones `A-A` through `A-C`. This repository currently implements the buyer flow, seller flow, and the current admin operations slice: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus CAC verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and dedicated admin auth with seller verification plus catalogue-management RBAC.
+Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and Admin Milestones `A-A` through `A-F`. This repository currently implements the buyer flow, seller flow, and the full admin operations slice: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus CAC verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and dedicated admin auth with dashboard overview, seller verification, catalogue management, user and order oversight, payout review, platform configuration RBAC, disputes review, and audit-log access.
 
 ## Implemented Milestone
 
@@ -30,20 +30,29 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Seller CSV bulk upload for creating multiple listings in one request
 - Seller sales and revenue summary by date range with platform commission deduction
 - Seller pending payout calculation plus payout request history
-- `// ADMIN-STUB` handoff for commission ownership and payout approval lifecycle
 - Dedicated admin authentication via `admins` plus `/api/v1/admin/login`
 - Admin RBAC with `roles`, `permissions`, `role_permissions`, and `admin_roles`
 - Seeded `super_admin` access plus a scoped `verification_admin` role
 - Permission-gated `GET /api/v1/admin/me`
+- Admin-protected super admin dashboard overview with KPI cards, alerts, queue previews, leaderboard widgets, and recent activity behind `dashboard.read`
 - Admin-protected seller verification review queue, seller detail view, and approve or reject actions behind `sellers.verify`
-- Admin-protected category tree CRUD behind `categories.manage`
+- Admin-protected category tree create/update plus archive-and-restore management behind `categories.manage`
 - Admin-protected vehicle taxonomy CRUD behind `categories.manage`
+- Admin-protected buyer and seller oversight listing with search, pagination, and seller-profile summaries behind `users.manage`
+- Admin-controlled buyer/seller account statuses (`active`, `suspended`, `banned`) enforced at login and on protected routes
+- Admin-protected platform-wide order oversight list with search, payment filters, and controlled order-status intervention behind `orders.manage`
+- Admin-protected payout review queue with seller/order-item detail plus approve, reject, and mark-paid transitions behind `payouts.approve`
+- Admin-owned platform config reads and updates for default commission, category overrides, seller-tier overrides, and platform settings behind `config.manage`
+- Admin-protected disputes queue with buyer/order/seller context plus resolve-or-reject actions behind `disputes.resolve`
+- Admin-protected audit-log list endpoint behind `audit_logs.read`
+- Audit-log writes for seller verification, user status changes, order interventions, payout decisions, dispute decisions, and platform config changes
 - Seller compatibility payloads now validate against admin-managed vehicle taxonomy entries
+- Seller commission reads now resolve from admin-owned platform config with `PLATFORM_COMMISSION_RATE_PERCENT` retained as a bootstrap fallback in development and test
 - Buyer order detail now includes per-item `itemStatus` alongside the existing order-level status history
 - Buyer catalogue, cart, and order reads now project seller business metadata from real seller profiles instead of the old product-level seller stub
 - Joi request validation, auth rate limiting, central error handling
 - MySQL migration and seed scaffolding for buyer-flow tables plus seller onboarding, payout, and admin-role tables
-- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, admin seller verification, and admin catalogue management
+- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, admin seller verification, admin catalogue management, and admin user/order oversight
 
 ## Project Structure
 
@@ -77,7 +86,7 @@ Seller onboarding uses:
 
 - `UPLOAD_DIR` for local document storage in development
 - `DOJAH_BASE_URL`, `DOJAH_APP_ID`, and `DOJAH_API_KEY` for CAC lookups during seller registration
-- `PLATFORM_COMMISSION_RATE_PERCENT` to control seller payout commission deductions in development and test
+- `PLATFORM_COMMISSION_RATE_PERCENT` as the bootstrap fallback commission rate before admin-managed config is changed in development and test
 
 Local admin review uses:
 
@@ -156,15 +165,27 @@ npm run lint
 ### Admin
 
 - `POST /api/v1/admin/login`
+- `GET /api/v1/admin/dashboard`
 - `GET /api/v1/admin/me`
 - `GET /api/v1/admin/sellers`
 - `GET /api/v1/admin/sellers/:id`
 - `PATCH /api/v1/admin/sellers/:id/verification`
+- `GET /api/v1/admin/users`
+- `PATCH /api/v1/admin/users/:id/status`
 - `GET /api/v1/admin/categories`
 - `POST /api/v1/admin/categories`
 - `GET /api/v1/admin/categories/:id`
 - `PATCH /api/v1/admin/categories/:id`
 - `DELETE /api/v1/admin/categories/:id`
+- `GET /api/v1/admin/orders`
+- `PATCH /api/v1/admin/orders/:id/status`
+- `GET /api/v1/admin/payouts`
+- `PATCH /api/v1/admin/payouts/:id`
+- `GET /api/v1/admin/config`
+- `PATCH /api/v1/admin/config`
+- `GET /api/v1/admin/disputes`
+- `PATCH /api/v1/admin/disputes/:id`
+- `GET /api/v1/admin/audit-logs`
 - `GET /api/v1/admin/vehicle-taxonomy`
 - `POST /api/v1/admin/vehicle-taxonomy`
 - `GET /api/v1/admin/vehicle-taxonomy/:id`
@@ -208,6 +229,23 @@ Login as the seeded dev admin:
 {
   "email": "superadmin@autoparts.local",
   "password": "Password123"
+}
+```
+
+Suspend a seller or buyer account:
+
+```json
+{
+  "status": "suspended"
+}
+```
+
+Move an order forward from the admin panel:
+
+```json
+{
+  "status": "picked_up",
+  "note": "Collected from seller by operations team."
 }
 ```
 
@@ -453,6 +491,21 @@ Create an admin vehicle taxonomy entry:
 }
 ```
 
+Archive a category without permanently deleting it:
+
+```text
+DELETE /api/v1/admin/categories/:id
+Authorization: Bearer <admin-token>
+```
+
+Restore an archived category:
+
+```json
+{
+  "status": "active"
+}
+```
+
 Reject a seller verification:
 
 ```text
@@ -561,8 +614,16 @@ GET /api/v1/orders/1/receipt?format=html
 - `GET /api/v1/seller/payouts` returns `{ payouts, pagination }` and supports optional payout `status` filtering.
 - Seller payout eligibility currently treats paid, non-cancelled seller order items as completed sales until the logistics delivery lifecycle is finalized.
 - `GET /api/v1/admin/sellers` returns `{ sellers, pagination, filters }` and supports `status=all|pending|verified|rejected`, defaulting to `pending`.
+- `GET /api/v1/admin/dashboard` returns UI-ready summary data for the admin home screen, including alerts, overview cards, operational cards, seller verification and payout queue previews, dispute and order previews, top sellers, recent audit activity, and platform-health metrics.
 - `GET /api/v1/admin/sellers/:id` returns the seller account, uploaded documents, and the stored CAC lookup response from Dojah.
 - `PATCH /api/v1/admin/sellers/:id/verification` accepts `verified` or `rejected`; `rejectionReason` is required when rejecting.
+- `GET /api/v1/admin/payouts` returns `{ payouts, pagination, filters }` and supports `status`, `sellerId`, `search`, `page`, and `limit`.
+- `PATCH /api/v1/admin/payouts/:id` accepts `approved`, `rejected`, or `paid`; `rejectionReason` is required when rejecting, and only `requested -> approved|rejected` plus `approved -> paid` are allowed.
+- `GET /api/v1/admin/config` returns the current admin-owned platform config for commissions and other operational settings.
+- `PATCH /api/v1/admin/config` accepts any combination of `commissionRateDefault`, `commissionRatesByCategory`, `commissionRatesBySellerTier`, and `platformSettings`.
+- `GET /api/v1/admin/disputes` returns `{ disputes, pagination, filters }` and supports `status`, `raisedBy`, `search`, `page`, and `limit`.
+- `PATCH /api/v1/admin/disputes/:id` accepts `resolved` or `rejected`; `resolutionNote` is required, refund metadata is optional for resolved disputes, and only open disputes can be reviewed.
+- `GET /api/v1/admin/audit-logs` returns `{ auditLogs, pagination, filters }` and supports `adminId`, `action`, `targetType`, `targetId`, `page`, and `limit`.
 - The webhook endpoint expects the `x-paystack-signature` header and stores only sanitized Paystack references/status metadata. No card data is stored.
 
 ## Database
@@ -570,4 +631,4 @@ GET /api/v1/orders/1/receipt?format=html
 - Money values are stored in kobo.
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
 - Run `npm run seed` to load the sample catalogue data plus the dev admin user for local review flows.
-- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, seller order-item status, seller payout, and admin-role support needed through the first Admin milestone.
+- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, seller payout, admin RBAC, `platform_config`, `audit_logs`, and `disputes` data needed through Admin Milestone `A-F`.

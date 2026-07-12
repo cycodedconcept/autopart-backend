@@ -4,6 +4,12 @@ const USER_ROLES = {
   SELLER: 'seller'
 };
 
+const USER_ACCOUNT_STATUSES = {
+  ACTIVE: 'active',
+  BANNED: 'banned',
+  SUSPENDED: 'suspended'
+};
+
 const TOKEN_SUBJECT_TYPES = {
   ADMIN: 'admin',
   USER: 'user'
@@ -16,6 +22,7 @@ const ADMIN_ROLE_NAMES = {
 
 const ADMIN_PERMISSION_KEYS = {
   APPROVE_PAYOUTS: 'payouts.approve',
+  READ_DASHBOARD: 'dashboard.read',
   MANAGE_CATEGORIES: 'categories.manage',
   MANAGE_CONFIG: 'config.manage',
   MANAGE_ORDERS: 'orders.manage',
@@ -28,6 +35,10 @@ const ADMIN_PERMISSION_KEYS = {
 
 const ADMIN_PERMISSION_DEFINITIONS = [
   {
+    key: ADMIN_PERMISSION_KEYS.READ_DASHBOARD,
+    description: 'Read the super admin dashboard overview and operational widgets.'
+  },
+  {
     key: ADMIN_PERMISSION_KEYS.READ_SELF,
     description: 'View the authenticated admin profile and assigned permissions.'
   },
@@ -37,7 +48,7 @@ const ADMIN_PERMISSION_DEFINITIONS = [
   },
   {
     key: ADMIN_PERMISSION_KEYS.MANAGE_CATEGORIES,
-    description: 'Create, update, and delete catalogue categories.'
+    description: 'Create, update, archive, and restore catalogue categories.'
   },
   {
     key: ADMIN_PERMISSION_KEYS.MANAGE_USERS,
@@ -84,6 +95,11 @@ const ADMIN_ROLE_DEFINITIONS = [
 const PRODUCT_STATUSES = {
   ACTIVE: 'active',
   INACTIVE: 'inactive'
+};
+
+const CATEGORY_STATUSES = {
+  ACTIVE: 'active',
+  ARCHIVED: 'archived'
 };
 
 const SELLER_DOCUMENT_TYPES = {
@@ -142,6 +158,24 @@ const PAYOUT_STATUSES = {
   REJECTED: 'rejected'
 };
 
+const DISPUTE_RAISED_BY = {
+  BUYER: 'buyer',
+  SELLER: 'seller'
+};
+
+const DISPUTE_STATUSES = {
+  OPEN: 'open',
+  REJECTED: 'rejected',
+  RESOLVED: 'resolved'
+};
+
+const PLATFORM_CONFIG_KEYS = {
+  COMMISSION_RATE_DEFAULT: 'commission_rate_default',
+  COMMISSION_RATES_BY_CATEGORY: 'commission_rates_by_category',
+  COMMISSION_RATES_BY_SELLER_TIER: 'commission_rates_by_seller_tier',
+  PLATFORM_SETTINGS: 'platform_settings'
+};
+
 const ERROR_CODES = {
   AUTH_REQUIRED: 'AUTH_REQUIRED',
   CART_EMPTY: 'CART_EMPTY',
@@ -164,16 +198,21 @@ module.exports = {
   ADMIN_PERMISSION_KEYS,
   ADMIN_ROLE_DEFINITIONS,
   ADMIN_ROLE_NAMES,
+  CATEGORY_STATUSES,
+  DISPUTE_RAISED_BY,
+  DISPUTE_STATUSES,
   ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   PAYOUT_STATUSES,
+  PLATFORM_CONFIG_KEYS,
   PRODUCT_STATUSES,
   CAC_VERIFICATION_OUTCOMES,
   SELLER_DOCUMENT_TYPES,
   SELLER_VERIFICATION_STATUSES,
   TOKEN_SUBJECT_TYPES,
+  USER_ACCOUNT_STATUSES,
   USER_ROLES,
   ERROR_CODES
 };

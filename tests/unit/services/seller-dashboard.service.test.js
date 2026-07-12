@@ -4,6 +4,7 @@ const { createSellerDashboardService } = require('../../../src/services/seller-d
 
 describe('seller dashboard service', () => {
   let ordersRepository;
+  let platformConfigRepository;
   let productsRepository;
   let sellerFinanceRepository;
   let sellersRepository;
@@ -27,15 +28,19 @@ describe('seller dashboard service', () => {
       getSellerRevenueTrend: jest.fn(),
       summarizeSellerPayoutBalances: jest.fn()
     };
+    platformConfigRepository = {
+      findPlatformConfigByKey: jest.fn()
+    };
     sellersRepository = {
       findByUserId: jest.fn()
     };
 
     sellerDashboardService = createSellerDashboardService({
       env: {
-        PLATFORM_COMMISSION_RATE_PERCENT: 12
+        PLATFORM_COMMISSION_RATE_PERCENT: 10
       },
       ordersRepository,
+      platformConfigRepository,
       productsRepository,
       sellerFinanceRepository,
       sellersRepository
@@ -169,6 +174,10 @@ describe('seller dashboard service', () => {
       requestedKobo: 500000,
       approvedKobo: 0,
       paidKobo: 3000000
+    });
+    platformConfigRepository.findPlatformConfigByKey.mockResolvedValue({
+      key: 'commission_rate_default',
+      value: 12
     });
 
     const result = await sellerDashboardService.getDashboard({

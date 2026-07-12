@@ -136,6 +136,30 @@ describe('auth service', () => {
         password: 'Password123'
       })).rejects.toBeInstanceOf(AppError);
     });
+
+    it('rejects suspended accounts after password verification', async () => {
+      usersRepository.findByEmail.mockResolvedValue({
+        id: 8,
+        role: 'seller',
+        fullName: 'Suspended Seller',
+        email: 'suspended@example.com',
+        phone: null,
+        passwordHash: 'stored-hash',
+        accountStatus: 'suspended',
+        isVerified: false,
+        createdAt: '2026-06-29T10:00:00.000Z',
+        updatedAt: '2026-06-29T10:00:00.000Z'
+      });
+      passwordUtils.comparePassword.mockResolvedValue(true);
+
+      await expect(authService.login({
+        identifier: 'suspended@example.com',
+        password: 'Password123'
+      })).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN'
+      });
+    });
   });
 
   describe('getAuthenticatedUser', () => {
@@ -164,6 +188,27 @@ describe('auth service', () => {
         isVerified: false,
         createdAt: '2026-06-29T10:00:00.000Z',
         updatedAt: '2026-06-29T10:00:00.000Z'
+      });
+    });
+
+    it('rejects banned authenticated users', async () => {
+      jwtUtils.verifyAccessToken.mockReturnValue({ sub: 5 });
+      usersRepository.findById.mockResolvedValue({
+        id: 5,
+        role: 'buyer',
+        fullName: 'Ngozi Okafor',
+        email: 'ngozi@example.com',
+        phone: '+2347012345678',
+        passwordHash: 'secret',
+        accountStatus: 'banned',
+        isVerified: false,
+        createdAt: '2026-06-29T10:00:00.000Z',
+        updatedAt: '2026-06-29T10:00:00.000Z'
+      });
+
+      await expect(authService.getAuthenticatedUser('token')).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN'
       });
     });
   });

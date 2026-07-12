@@ -1,4 +1,9 @@
-const { ERROR_CODES, TOKEN_SUBJECT_TYPES, USER_ROLES } = require('../config/constants');
+const {
+  ERROR_CODES,
+  TOKEN_SUBJECT_TYPES,
+  USER_ACCOUNT_STATUSES,
+  USER_ROLES
+} = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { isValidNigerianPhone, normalizeNigerianPhone } = require('../utils/phone');
 const { sanitizeUser } = require('../utils/user');
@@ -43,6 +48,22 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
       statusCode: 401,
       code: ERROR_CODES.INVALID_CREDENTIALS
     });
+  }
+
+  function ensureAccountIsActive(user) {
+    if (!user || !user.accountStatus || user.accountStatus === USER_ACCOUNT_STATUSES.ACTIVE) {
+      return user;
+    }
+
+    throw new AppError(
+      user.accountStatus === USER_ACCOUNT_STATUSES.BANNED
+        ? 'This account has been banned.'
+        : 'This account has been suspended.',
+      {
+        statusCode: 403,
+        code: ERROR_CODES.FORBIDDEN
+      }
+    );
   }
 
   async function findUserByIdentifier(identifier) {
@@ -127,6 +148,8 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
       throw buildInvalidCredentialsError();
     }
 
+    ensureAccountIsActive(user);
+
     const token = jwtUtils.signAccessToken({
       sub: user.id,
       role: user.role,
@@ -203,6 +226,8 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
       });
     }
 
+    ensureAccountIsActive(user);
+
     const isCurrentPasswordValid = await passwordUtils.comparePassword(
       payload.currentPassword,
       user.passwordHash
@@ -265,6 +290,8 @@ function createAuthService({ usersRepository, jwtUtils, passwordUtils, passwordR
         code: ERROR_CODES.UNAUTHORIZED
       });
     }
+
+    ensureAccountIsActive(user);
 
     return sanitizeUser(user);
   }
