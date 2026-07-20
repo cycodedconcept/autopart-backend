@@ -3,8 +3,10 @@ const {
   DISPUTE_RAISED_BY,
   DISPUTE_STATUSES,
   ERROR_CODES,
+  LOGISTICS_COMPANY_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
+  PAYOUT_PAYEE_TYPES,
   PAYOUT_STATUSES,
   SELLER_DOCUMENT_TYPES,
   SELLER_VERIFICATION_STATUSES,
@@ -19,6 +21,14 @@ const {
   buildPlatformConfig,
   buildPlatformConfigEntries
 } = require('../utils/platform-config');
+const {
+  buildDeliveryJobsByStatus,
+  buildDeliveryMetrics,
+  buildRiderStatusSummary,
+  sanitizeDeliveryZone,
+  sanitizeLogisticsCompany,
+  sanitizeRider
+} = require('../utils/logistics');
 const { sanitizeSellerAccount } = require('../utils/seller');
 const { sanitizeUser } = require('../utils/user');
 
@@ -60,6 +70,18 @@ function normalizeDisputeListStatus(status) {
 
 function normalizeDisputeRaisedBy(raisedBy) {
   return raisedBy || 'all';
+}
+
+function normalizeLogisticsCompanyStatus(status) {
+  return status || 'all';
+}
+
+function normalizeRiderStatus(status) {
+  return status || 'all';
+}
+
+function normalizeDeliveryJobStatus(status) {
+  return status || 'all';
 }
 
 function normalizeSearchTerm(search) {
@@ -227,6 +249,77 @@ function mapManagedUser(user, sellerAccount) {
   };
 }
 
+function mapAdminLogisticsCompany(company) {
+  return sanitizeLogisticsCompany(company);
+}
+
+function mapAdminRider(rider) {
+  if (!rider) {
+    return null;
+  }
+
+  return {
+    ...sanitizeRider(rider),
+    company: sanitizeLogisticsCompany(rider.company || null)
+  };
+}
+
+function buildAdminLogisticsCompanySummary(summary) {
+  return {
+    totalCompaniesCount: Number(summary && summary.totalCompaniesCount) || 0,
+    pendingCount: Number(summary && summary.pendingCount) || 0,
+    approvedCount: Number(summary && summary.approvedCount) || 0,
+    suspendedCount: Number(summary && summary.suspendedCount) || 0
+  };
+}
+
+function formatDeliveryJobCode(jobId) {
+  return `DLV-${String(jobId).padStart(4, '0')}`;
+}
+
+function mapAdminDeliveryJob(job, options = {}) {
+  if (!job) {
+    return null;
+  }
+
+  return {
+    id: job.id,
+    jobCode: formatDeliveryJobCode(job.id),
+    orderId: job.orderId,
+    orderItemId: job.orderItemId,
+    sellerId: job.sellerId,
+    zoneId: job.zoneId || null,
+    companyId: job.companyId || null,
+    riderId: job.riderId || null,
+    status: job.status,
+    failureReason: job.failureReason || null,
+    pickupAddress: job.pickupAddress,
+    assignedAt: job.assignedAt,
+    pickedUpAt: job.pickedUpAt,
+    inTransitAt: job.inTransitAt,
+    deliveredAt: job.deliveredAt,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    zone: sanitizeDeliveryZone(job.zone || null),
+    order: job.order,
+    item: job.item,
+    buyer: job.buyer,
+    seller: job.seller,
+    assignedCompany: sanitizeLogisticsCompany(job.assignedCompany || null),
+    assignedRider: job.assignedRider
+      ? {
+        ...sanitizeRider(job.assignedRider),
+        company: sanitizeLogisticsCompany(job.assignedRider.company || null)
+      }
+      : null,
+    ...(options.statusHistory
+      ? {
+        statusHistory: options.statusHistory
+      }
+      : {})
+  };
+}
+
 function mapAdminOrderStatusHistoryEntry(entry) {
   if (!entry) {
     return null;
@@ -280,7 +373,9 @@ function mapAdminPayoutItem(item) {
 
   return {
     id: item.id,
+    payoutId: item.payoutId,
     orderItemId: item.orderItemId,
+    deliveryJobId: item.deliveryJobId,
     orderId: item.orderId,
     productId: item.productId,
     quantity: item.quantity,
@@ -288,6 +383,7 @@ function mapAdminPayoutItem(item) {
     commissionAmountKobo: item.commissionAmountKobo,
     netAmountKobo: item.netAmountKobo,
     orderStatus: item.orderStatus,
+    deliveryJobStatus: item.deliveryJobStatus,
     paidAt: item.paidAt,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt
@@ -318,6 +414,7 @@ function mapAdminPayout(payout) {
 
   return {
     id: payout.id,
+    payeeType: payout.payeeType || PAYOUT_PAYEE_TYPES.SELLER,
     grossAmountKobo: payout.grossAmountKobo,
     commissionAmountKobo: payout.commissionAmountKobo,
     amountKobo: payout.amountKobo,
@@ -332,6 +429,7 @@ function mapAdminPayout(payout) {
     createdAt: payout.createdAt,
     updatedAt: payout.updatedAt,
     seller: mapAdminSellerSummary(payout.seller),
+    logisticsCompany: sanitizeLogisticsCompany(payout.logisticsCompany || null),
     items: Array.isArray(payout.items) ? payout.items.map(mapAdminPayoutItem) : []
   };
 }
@@ -551,10 +649,13 @@ function collectDescendantCategoryIds(categoryId, categories) {
 
 function createAdminService({
   adminRepository,
+  assignmentService,
   auditLogRepository,
+  deliveryJobsRepository,
   disputesRepository,
   env,
   jwtUtils,
+  logisticsRepository,
   passwordUtils,
   platformConfigRepository,
   productsRepository,
@@ -693,6 +794,66 @@ function createAdminService({
     }
 
     return user;
+  }
+
+  async function ensureLogisticsCompanyExists(companyId) {
+    if (!logisticsRepository || typeof logisticsRepository.findCompanyById !== 'function') {
+      throw new AppError('Logistics company management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const company = await logisticsRepository.findCompanyById(companyId);
+
+    if (!company) {
+      throw new AppError('Logistics company was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return company;
+  }
+
+  async function ensureRiderExists(riderId) {
+    if (!logisticsRepository || typeof logisticsRepository.findRiderById !== 'function') {
+      throw new AppError('Logistics rider management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const rider = await logisticsRepository.findRiderById(riderId);
+
+    if (!rider) {
+      throw new AppError('Rider was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return rider;
+  }
+
+  async function ensureDeliveryJobExists(jobId) {
+    if (!deliveryJobsRepository || typeof deliveryJobsRepository.findJobById !== 'function') {
+      throw new AppError('Delivery job management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const job = await deliveryJobsRepository.findJobById(jobId);
+
+    if (!job) {
+      throw new AppError('Delivery job was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return job;
   }
 
   async function ensureOrderExists(orderId) {
@@ -957,8 +1118,10 @@ function createAdminService({
         maxLimit: 50
       });
       const filters = {
+        payeeType: payload.query.payeeType || 'all',
         status: normalizePayoutListStatus(payload.query.status),
         search: normalizeSearchTerm(payload.query.search),
+        companyId: payload.query.companyId || null,
         sellerId: payload.query.sellerId || null,
         limit: pagination.limit,
         offset: pagination.offset
@@ -973,8 +1136,10 @@ function createAdminService({
           total: result.total
         }),
         filters: {
+          payeeType: filters.payeeType,
           status: filters.status,
           search: filters.search,
+          companyId: filters.companyId,
           sellerId: filters.sellerId
         }
       };
@@ -1108,6 +1273,117 @@ function createAdminService({
           role: filters.role,
           status: filters.status,
           search: filters.search
+        }
+      };
+    },
+
+    async listLogisticsCompanies(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        status: normalizeLogisticsCompanyStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const [result, summary] = await Promise.all([
+        logisticsRepository.listCompanies(filters),
+        logisticsRepository.summarizeCompanies({
+          search: filters.search
+        })
+      ]);
+
+      return {
+        companies: result.companies.map(mapAdminLogisticsCompany),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          status: filters.status,
+          search: filters.search
+        },
+        summary: buildAdminLogisticsCompanySummary(summary)
+      };
+    },
+
+    async listLogisticsRiders(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        companyId: payload.query.companyId || null,
+        status: normalizeRiderStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const [result, summary] = await Promise.all([
+        logisticsRepository.listRiders(filters),
+        logisticsRepository.summarizeRiders({
+          companyId: filters.companyId,
+          search: filters.search
+        })
+      ]);
+
+      return {
+        riders: result.riders.map(mapAdminRider),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          companyId: filters.companyId,
+          status: filters.status,
+          search: filters.search
+        },
+        summary: buildRiderStatusSummary(summary)
+      };
+    },
+
+    async listDeliveryJobs(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        companyId: payload.query.companyId || null,
+        riderId: payload.query.riderId || null,
+        status: normalizeDeliveryJobStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const [result, summary] = await Promise.all([
+        deliveryJobsRepository.listJobs(filters),
+        deliveryJobsRepository.summarizeJobs({
+          companyId: filters.companyId,
+          riderId: filters.riderId,
+          search: filters.search
+        })
+      ]);
+
+      return {
+        jobs: result.jobs.map((job) => mapAdminDeliveryJob(job)),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total: result.total
+        }),
+        filters: {
+          companyId: filters.companyId,
+          riderId: filters.riderId,
+          status: filters.status,
+          search: filters.search
+        },
+        summary: {
+          jobsByStatus: buildDeliveryJobsByStatus(summary),
+          deliveryMetrics: buildDeliveryMetrics(summary)
         }
       };
     },
@@ -1413,6 +1689,9 @@ function createAdminService({
           previousStatus: existingPayout.status,
           nextStatus: updatedPayout.status,
           sellerId: updatedPayout.seller ? updatedPayout.seller.id : null,
+          logisticsCompanyId: updatedPayout.logisticsCompany
+            ? updatedPayout.logisticsCompany.id
+            : null,
           amountKobo: updatedPayout.amountKobo,
           rejectionReason
         }
@@ -1481,6 +1760,75 @@ function createAdminService({
       });
 
       return mapAdminDispute(updatedDispute);
+    },
+
+    async updateLogisticsCompanyStatus(payload) {
+      const existingCompany = await ensureLogisticsCompanyExists(payload.companyId);
+
+      if (existingCompany.status === payload.status) {
+        throw new AppError('Logistics company already has this status.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const updatedCompany = await logisticsRepository.updateCompanyStatus({
+        companyId: existingCompany.id,
+        status: payload.status,
+        approvedBy: payload.status === LOGISTICS_COMPANY_STATUSES.APPROVED
+          ? payload.adminId
+          : existingCompany.approvedBy
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'logistics_company.status_updated',
+        targetType: 'logistics_company',
+        targetId: updatedCompany.id,
+        detail: {
+          previousStatus: existingCompany.status,
+          nextStatus: updatedCompany.status
+        }
+      });
+
+      return mapAdminLogisticsCompany(updatedCompany);
+    },
+
+    async assignDeliveryJob(payload) {
+      if (!assignmentService || typeof assignmentService.assignJobToRider !== 'function') {
+        throw new AppError('Delivery job assignment is unavailable.', {
+          statusCode: 500,
+          code: ERROR_CODES.INTERNAL_SERVER_ERROR
+        });
+      }
+
+      const existingJob = await ensureDeliveryJobExists(payload.jobId);
+      const rider = await ensureRiderExists(payload.riderId);
+      const assignedJob = await assignmentService.assignJobToRider({
+        jobId: existingJob.id,
+        riderId: rider.id,
+        note: payload.note
+      });
+      const statusHistory = await deliveryJobsRepository.findStatusHistoryByJobId(existingJob.id);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'delivery_job.assigned',
+        targetType: 'delivery_job',
+        targetId: assignedJob.id,
+        detail: {
+          previousStatus: existingJob.status,
+          nextStatus: assignedJob.status,
+          orderId: assignedJob.orderId,
+          orderItemId: assignedJob.orderItemId,
+          riderId: rider.id,
+          companyId: rider.companyId
+        }
+      });
+
+      return mapAdminDeliveryJob(assignedJob, {
+        statusHistory
+      });
     },
 
     async updateUserStatus(payload) {

@@ -1,7 +1,9 @@
 const {
+  DELIVERY_JOB_STATUSES,
   ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
+  PAYOUT_PAYEE_TYPES,
   PAYOUT_STATUSES
 } = require('../config/constants');
 
@@ -13,6 +15,10 @@ const PAYOUT_HOLD_STATUSES = [
 
 function toNumber(value) {
   return value === null || value === undefined ? 0 : Number(value);
+}
+
+function toNullableNumber(value) {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 function mapSalesSummaryRow(row) {
@@ -50,14 +56,14 @@ function mapPayoutRow(row) {
 
   return {
     id: row.id,
-    sellerId: row.seller_id,
+    payeeType: row.payee_type || PAYOUT_PAYEE_TYPES.SELLER,
+    sellerId: toNullableNumber(row.seller_id),
+    logisticsCompanyId: toNullableNumber(row.logistics_company_id),
     grossAmountKobo: toNumber(row.gross_amount_kobo),
     commissionAmountKobo: toNumber(row.commission_amount_kobo),
     amountKobo: toNumber(row.amount_kobo),
     status: row.status,
-    approvedBy: row.approved_by === null || row.approved_by === undefined
-      ? null
-      : Number(row.approved_by),
+    approvedBy: toNullableNumber(row.approved_by),
     approvedAt: row.approved_at,
     rejectionReason: row.rejection_reason,
     bankAccountRef: row.bank_account_ref,
@@ -78,11 +84,22 @@ function mapEligiblePayoutItemRow(row) {
   };
 }
 
+function mapEligibleLogisticsPayoutJobRow(row) {
+  return {
+    deliveryJobId: row.delivery_job_id,
+    orderItemId: row.order_item_id,
+    grossAmountKobo: toNumber(row.gross_amount_kobo),
+    commissionAmountKobo: toNumber(row.commission_amount_kobo),
+    netAmountKobo: toNumber(row.net_amount_kobo)
+  };
+}
+
 function mapAdminPayoutItemRow(row) {
   return {
     id: row.id,
     payoutId: row.payout_id,
     orderItemId: row.order_item_id,
+    deliveryJobId: toNullableNumber(row.delivery_job_id),
     orderId: row.order_id,
     productId: row.product_id,
     quantity: toNumber(row.quantity),
@@ -90,6 +107,7 @@ function mapAdminPayoutItemRow(row) {
     commissionAmountKobo: toNumber(row.commission_amount_kobo),
     netAmountKobo: toNumber(row.net_amount_kobo),
     orderStatus: row.order_status,
+    deliveryJobStatus: row.delivery_job_status || null,
     paidAt: row.paid_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -103,16 +121,28 @@ function mapAdminPayoutRow(row, items = []) {
 
   return {
     ...mapPayoutRow(row),
-    seller: {
-      id: row.seller_id,
-      userId: toNumber(row.user_id),
-      businessName: row.business_name,
-      contactEmail: row.contact_email,
-      contactPhone: row.contact_phone,
-      fullName: row.full_name,
-      email: row.email,
-      phone: row.phone
-    },
+    seller: row.seller_id
+      ? {
+        id: Number(row.seller_id),
+        userId: toNumber(row.user_id),
+        businessName: row.business_name,
+        contactEmail: row.contact_email,
+        contactPhone: row.contact_phone,
+        fullName: row.full_name,
+        email: row.email,
+        phone: row.phone
+      }
+      : null,
+    logisticsCompany: row.logistics_company_id
+      ? {
+        id: Number(row.logistics_company_id),
+        name: row.logistics_company_name,
+        email: row.logistics_company_email,
+        phone: row.logistics_company_phone,
+        address: row.logistics_company_address,
+        status: row.logistics_company_status
+      }
+      : null,
     items
   };
 }
@@ -141,6 +171,7 @@ function buildEligiblePayoutItemsQuery(options = {}) {
       oi.line_total_kobo - ROUND((oi.line_total_kobo * ?) / 100, 0) AS net_amount_kobo
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
+    INNER JOIN delivery_jobs dj ON dj.order_item_id = oi.id
     INNER JOIN (
       SELECT
         order_id,
@@ -153,11 +184,53 @@ function buildEligiblePayoutItemsQuery(options = {}) {
       AND o.payment_status = ?
       AND o.status <> ?
       AND oi.item_status <> ?
+      AND dj.status = ?
       AND NOT EXISTS (
         SELECT 1
         FROM payout_items pi
         INNER JOIN payouts p ON p.id = pi.payout_id
         WHERE pi.order_item_id = oi.id
+          AND p.payee_type = ?
+          AND p.status IN (${activePayoutStatusPlaceholders})
+      )
+    ${orderByClause}
+    ${forUpdateClause}
+  `;
+}
+
+function buildEligibleLogisticsPayoutJobsQuery(options = {}) {
+  const activePayoutStatusPlaceholders = PAYOUT_HOLD_STATUSES.map(() => '?').join(', ');
+  const orderByClause = options.orderById ? 'ORDER BY dj.id ASC' : '';
+  const forUpdateClause = options.forUpdate ? 'FOR UPDATE' : '';
+
+  return `
+    SELECT
+      dj.id AS delivery_job_id,
+      dj.order_item_id,
+      dj.delivery_fee_kobo AS gross_amount_kobo,
+      dj.platform_margin_kobo AS commission_amount_kobo,
+      dj.company_share_kobo AS net_amount_kobo
+    FROM delivery_jobs dj
+    INNER JOIN orders o ON o.id = dj.order_id
+    INNER JOIN (
+      SELECT
+        order_id,
+        MAX(updated_at) AS paid_at
+      FROM payments
+      WHERE status = ?
+      GROUP BY order_id
+    ) paid_payments ON paid_payments.order_id = o.id
+    WHERE dj.company_id = ?
+      AND o.payment_status = ?
+      AND o.status <> ?
+      AND dj.status = ?
+      AND dj.company_share_kobo > 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM payout_items pi
+        INNER JOIN payouts p ON p.id = pi.payout_id
+        WHERE pi.delivery_job_id = dj.id
+          AND p.payee_type = ?
           AND p.status IN (${activePayoutStatusPlaceholders})
       )
     ${orderByClause}
@@ -170,7 +243,9 @@ async function findPayoutByIdWithConnection(connection, payoutId, sellerId) {
     `
       SELECT
         p.id,
+        p.payee_type,
         p.seller_id,
+        p.logistics_company_id,
         p.gross_amount_kobo,
         p.commission_amount_kobo,
         p.amount_kobo,
@@ -186,10 +261,47 @@ async function findPayoutByIdWithConnection(connection, payoutId, sellerId) {
           WHERE pi.payout_id = p.id
         ) AS item_count
       FROM payouts p
-      WHERE p.id = ? AND p.seller_id = ?
+      WHERE p.id = ? AND p.seller_id = ? AND p.payee_type = ?
       LIMIT 1
     `,
-    [payoutId, sellerId]
+    [payoutId, sellerId, PAYOUT_PAYEE_TYPES.SELLER]
+  );
+
+  return mapPayoutRow(rows[0]);
+}
+
+async function findLogisticsPayoutByIdWithConnection(connection, payoutId, companyId) {
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        p.id,
+        p.payee_type,
+        p.seller_id,
+        p.logistics_company_id,
+        p.gross_amount_kobo,
+        p.commission_amount_kobo,
+        p.amount_kobo,
+        p.status,
+        p.approved_by,
+        p.approved_at,
+        p.rejection_reason,
+        p.bank_account_ref,
+        p.requested_at,
+        p.settled_at,
+        p.created_at,
+        p.updated_at,
+        (
+          SELECT COUNT(*)
+          FROM payout_items pi
+          WHERE pi.payout_id = p.id
+        ) AS item_count
+      FROM payouts p
+      WHERE p.id = ?
+        AND p.logistics_company_id = ?
+        AND p.payee_type = ?
+      LIMIT 1
+    `,
+    [payoutId, companyId, PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY]
   );
 
   return mapPayoutRow(rows[0]);
@@ -207,6 +319,7 @@ async function findPayoutItemsByPayoutIdsWithConnection(connection, payoutIds) {
         pi.id,
         pi.payout_id,
         pi.order_item_id,
+        pi.delivery_job_id,
         oi.order_id,
         oi.product_id,
         oi.quantity,
@@ -214,12 +327,14 @@ async function findPayoutItemsByPayoutIdsWithConnection(connection, payoutIds) {
         pi.commission_amount_kobo,
         pi.net_amount_kobo,
         o.status AS order_status,
+        dj.status AS delivery_job_status,
         paid_payments.paid_at,
         pi.created_at,
         pi.updated_at
       FROM payout_items pi
       INNER JOIN order_items oi ON oi.id = pi.order_item_id
       INNER JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN delivery_jobs dj ON dj.id = pi.delivery_job_id
       LEFT JOIN (
         SELECT
           order_id,
@@ -242,7 +357,9 @@ async function findPayoutByIdForAdminWithConnection(connection, payoutId) {
     `
       SELECT
         p.id,
+        p.payee_type,
         p.seller_id,
+        p.logistics_company_id,
         p.gross_amount_kobo,
         p.commission_amount_kobo,
         p.amount_kobo,
@@ -266,10 +383,16 @@ async function findPayoutByIdForAdminWithConnection(connection, payoutId) {
         sp.contact_phone,
         u.full_name,
         u.email,
-        u.phone
+        u.phone,
+        lc.name AS logistics_company_name,
+        lc.email AS logistics_company_email,
+        lc.phone AS logistics_company_phone,
+        lc.address AS logistics_company_address,
+        lc.status AS logistics_company_status
       FROM payouts p
-      INNER JOIN seller_profiles sp ON sp.id = p.seller_id
-      INNER JOIN users u ON u.id = sp.user_id
+      LEFT JOIN seller_profiles sp ON sp.id = p.seller_id
+      LEFT JOIN users u ON u.id = sp.user_id
+      LEFT JOIN logistics_companies lc ON lc.id = p.logistics_company_id
       WHERE p.id = ?
       LIMIT 1
     `,
@@ -285,7 +408,13 @@ async function findPayoutByIdForAdminWithConnection(connection, payoutId) {
   return mapAdminPayoutRow(rows[0], itemsByPayoutId.get(rows[0].id) || []);
 }
 
-function buildAdminPayoutFilters({ search, sellerId, status }) {
+function buildAdminPayoutFilters({
+  companyId,
+  payeeType,
+  search,
+  sellerId,
+  status
+}) {
   const clauses = [];
   const params = [];
 
@@ -299,16 +428,37 @@ function buildAdminPayoutFilters({ search, sellerId, status }) {
     params.push(sellerId);
   }
 
+  if (companyId) {
+    clauses.push('p.logistics_company_id = ?');
+    params.push(companyId);
+  }
+
+  if (payeeType && payeeType !== 'all') {
+    clauses.push('p.payee_type = ?');
+    params.push(payeeType);
+  }
+
   if (search) {
     clauses.push(`(
       sp.business_name LIKE ?
       OR u.full_name LIKE ?
       OR u.email LIKE ?
       OR p.bank_account_ref LIKE ?
+      OR lc.name LIKE ?
+      OR lc.email LIKE ?
+      OR lc.phone LIKE ?
     )`);
     const searchPattern = `%${search}%`;
 
-    params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    params.push(
+      searchPattern,
+      searchPattern,
+      searchPattern,
+      searchPattern,
+      searchPattern,
+      searchPattern,
+      searchPattern
+    );
   }
 
   return {
@@ -480,10 +630,10 @@ function createSellerFinanceRepository({ db }) {
             status,
             COALESCE(SUM(amount_kobo), 0) AS total_amount_kobo
           FROM payouts
-          WHERE seller_id = ?
+          WHERE seller_id = ? AND payee_type = ?
           GROUP BY status
         `,
-        [sellerId]
+        [sellerId, PAYOUT_PAYEE_TYPES.SELLER]
       );
       const [pendingRows] = await db.execute(
         `
@@ -501,6 +651,88 @@ function createSellerFinanceRepository({ db }) {
           PAYMENT_STATUSES.PAID,
           ORDER_STATUSES.CANCELLED,
           ORDER_ITEM_STATUSES.CANCELLED,
+          DELIVERY_JOB_STATUSES.DELIVERED,
+          PAYOUT_PAYEE_TYPES.SELLER,
+          ...PAYOUT_HOLD_STATUSES
+        ]
+      );
+      const byStatus = new Map(
+        statusRows.map((row) => [row.status, toNumber(row.total_amount_kobo)])
+      );
+
+      return {
+        pendingKobo: toNumber(pendingRows[0] && pendingRows[0].pending_kobo),
+        requestedKobo: byStatus.get(PAYOUT_STATUSES.REQUESTED) || 0,
+        approvedKobo: byStatus.get(PAYOUT_STATUSES.APPROVED) || 0,
+        paidKobo: byStatus.get(PAYOUT_STATUSES.PAID) || 0
+      };
+    },
+
+    async getLogisticsCompanyEarningsSummary({ companyId }) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            COUNT(*) AS completed_jobs_count,
+            COALESCE(SUM(dj.delivery_fee_kobo), 0) AS delivery_fees_kobo,
+            COALESCE(SUM(dj.platform_margin_kobo), 0) AS platform_margin_kobo,
+            COALESCE(SUM(dj.company_share_kobo), 0) AS company_share_kobo
+          FROM delivery_jobs dj
+          INNER JOIN orders o ON o.id = dj.order_id
+          INNER JOIN (
+            SELECT
+              order_id,
+              MAX(updated_at) AS paid_at
+            FROM payments
+            WHERE status = ?
+            GROUP BY order_id
+          ) paid_payments ON paid_payments.order_id = o.id
+          WHERE dj.company_id = ?
+            AND dj.status = ?
+            AND o.payment_status = ?
+        `,
+        [
+          PAYMENT_STATUSES.PAID,
+          companyId,
+          DELIVERY_JOB_STATUSES.DELIVERED,
+          PAYMENT_STATUSES.PAID
+        ]
+      );
+
+      return {
+        completedJobsCount: toNumber(rows[0] && rows[0].completed_jobs_count),
+        deliveryFeesKobo: toNumber(rows[0] && rows[0].delivery_fees_kobo),
+        platformMarginKobo: toNumber(rows[0] && rows[0].platform_margin_kobo),
+        companyShareKobo: toNumber(rows[0] && rows[0].company_share_kobo)
+      };
+    },
+
+    async summarizeLogisticsCompanyPayoutBalances({ companyId }) {
+      const [statusRows] = await db.execute(
+        `
+          SELECT
+            status,
+            COALESCE(SUM(amount_kobo), 0) AS total_amount_kobo
+          FROM payouts
+          WHERE logistics_company_id = ? AND payee_type = ?
+          GROUP BY status
+        `,
+        [companyId, PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY]
+      );
+      const [pendingRows] = await db.execute(
+        `
+          SELECT
+            COALESCE(SUM(eligible.net_amount_kobo), 0) AS pending_kobo
+          FROM (
+            ${buildEligibleLogisticsPayoutJobsQuery()}
+          ) AS eligible
+        `,
+        [
+          PAYMENT_STATUSES.PAID,
+          companyId,
+          PAYMENT_STATUSES.PAID,
+          ORDER_STATUSES.CANCELLED,
+          DELIVERY_JOB_STATUSES.DELIVERED,
+          PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY,
           ...PAYOUT_HOLD_STATUSES
         ]
       );
@@ -535,6 +767,8 @@ function createSellerFinanceRepository({ db }) {
             PAYMENT_STATUSES.PAID,
             ORDER_STATUSES.CANCELLED,
             ORDER_ITEM_STATUSES.CANCELLED,
+            DELIVERY_JOB_STATUSES.DELIVERED,
+            PAYOUT_PAYEE_TYPES.SELLER,
             ...PAYOUT_HOLD_STATUSES
           ]
         );
@@ -557,6 +791,7 @@ function createSellerFinanceRepository({ db }) {
         const [payoutResult] = await connection.execute(
           `
             INSERT INTO payouts (
+              payee_type,
               seller_id,
               gross_amount_kobo,
               commission_amount_kobo,
@@ -564,9 +799,10 @@ function createSellerFinanceRepository({ db }) {
               status,
               bank_account_ref
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
           `,
           [
+            PAYOUT_PAYEE_TYPES.SELLER,
             sellerId,
             totals.grossAmountKobo,
             totals.commissionAmountKobo,
@@ -582,15 +818,17 @@ function createSellerFinanceRepository({ db }) {
               INSERT INTO payout_items (
                 payout_id,
                 order_item_id,
+                delivery_job_id,
                 gross_amount_kobo,
                 commission_amount_kobo,
                 net_amount_kobo
               )
-              VALUES (?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?)
             `,
             [
               payoutResult.insertId,
               item.orderItemId,
+              null,
               item.grossAmountKobo,
               item.commissionAmountKobo,
               item.netAmountKobo
@@ -610,8 +848,111 @@ function createSellerFinanceRepository({ db }) {
       }
     },
 
+    async createLogisticsCompanyPayoutRequest({ bankAccountRef, companyId }) {
+      const connection = await db.getConnection();
+
+      try {
+        await connection.beginTransaction();
+
+        const [eligibleRows] = await connection.execute(
+          buildEligibleLogisticsPayoutJobsQuery({
+            orderById: true,
+            forUpdate: true
+          }),
+          [
+            PAYMENT_STATUSES.PAID,
+            companyId,
+            PAYMENT_STATUSES.PAID,
+            ORDER_STATUSES.CANCELLED,
+            DELIVERY_JOB_STATUSES.DELIVERED,
+            PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY,
+            ...PAYOUT_HOLD_STATUSES
+          ]
+        );
+
+        if (!eligibleRows.length) {
+          await connection.rollback();
+          return null;
+        }
+
+        const eligibleJobs = eligibleRows.map(mapEligibleLogisticsPayoutJobRow);
+        const totals = eligibleJobs.reduce((accumulator, job) => ({
+          grossAmountKobo: accumulator.grossAmountKobo + job.grossAmountKobo,
+          commissionAmountKobo: accumulator.commissionAmountKobo + job.commissionAmountKobo,
+          amountKobo: accumulator.amountKobo + job.netAmountKobo
+        }), {
+          grossAmountKobo: 0,
+          commissionAmountKobo: 0,
+          amountKobo: 0
+        });
+        const [payoutResult] = await connection.execute(
+          `
+            INSERT INTO payouts (
+              payee_type,
+              seller_id,
+              logistics_company_id,
+              gross_amount_kobo,
+              commission_amount_kobo,
+              amount_kobo,
+              status,
+              bank_account_ref
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY,
+            null,
+            companyId,
+            totals.grossAmountKobo,
+            totals.commissionAmountKobo,
+            totals.amountKobo,
+            PAYOUT_STATUSES.REQUESTED,
+            bankAccountRef
+          ]
+        );
+
+        for (const job of eligibleJobs) {
+          await connection.execute(
+            `
+              INSERT INTO payout_items (
+                payout_id,
+                order_item_id,
+                delivery_job_id,
+                gross_amount_kobo,
+                commission_amount_kobo,
+                net_amount_kobo
+              )
+              VALUES (?, ?, ?, ?, ?, ?)
+            `,
+            [
+              payoutResult.insertId,
+              job.orderItemId,
+              job.deliveryJobId,
+              job.grossAmountKobo,
+              job.commissionAmountKobo,
+              job.netAmountKobo
+            ]
+          );
+        }
+
+        const payout = await findLogisticsPayoutByIdWithConnection(
+          connection,
+          payoutResult.insertId,
+          companyId
+        );
+        await connection.commit();
+
+        return payout;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
+
     async listSellerPayouts({ limit, offset, sellerId, status }) {
-      const filters = [sellerId];
+      const filters = [sellerId, PAYOUT_PAYEE_TYPES.SELLER];
       let statusClause = '';
 
       if (status) {
@@ -623,7 +964,7 @@ function createSellerFinanceRepository({ db }) {
         `
           SELECT COUNT(*) AS total
           FROM payouts p
-          WHERE p.seller_id = ?
+          WHERE p.seller_id = ? AND p.payee_type = ?
           ${statusClause}
         `,
         filters
@@ -632,7 +973,9 @@ function createSellerFinanceRepository({ db }) {
         `
           SELECT
             p.id,
+            p.payee_type,
             p.seller_id,
+            p.logistics_company_id,
             p.gross_amount_kobo,
             p.commission_amount_kobo,
             p.amount_kobo,
@@ -648,7 +991,7 @@ function createSellerFinanceRepository({ db }) {
               WHERE pi.payout_id = p.id
             ) AS item_count
           FROM payouts p
-          WHERE p.seller_id = ?
+          WHERE p.seller_id = ? AND p.payee_type = ?
           ${statusClause}
           ORDER BY p.requested_at DESC, p.id DESC
           LIMIT ? OFFSET ?
@@ -662,8 +1005,10 @@ function createSellerFinanceRepository({ db }) {
       };
     },
 
-    async listPayoutsForAdmin({ limit, offset, search, sellerId, status }) {
+    async listPayoutsForAdmin({ companyId, limit, offset, payeeType, search, sellerId, status }) {
       const filters = buildAdminPayoutFilters({
+        companyId,
+        payeeType,
         status,
         sellerId,
         search
@@ -672,8 +1017,9 @@ function createSellerFinanceRepository({ db }) {
         `
           SELECT COUNT(*) AS total
           FROM payouts p
-          INNER JOIN seller_profiles sp ON sp.id = p.seller_id
-          INNER JOIN users u ON u.id = sp.user_id
+          LEFT JOIN seller_profiles sp ON sp.id = p.seller_id
+          LEFT JOIN users u ON u.id = sp.user_id
+          LEFT JOIN logistics_companies lc ON lc.id = p.logistics_company_id
           ${filters.clause}
         `,
         filters.params
@@ -682,7 +1028,9 @@ function createSellerFinanceRepository({ db }) {
         `
           SELECT
             p.id,
+            p.payee_type,
             p.seller_id,
+            p.logistics_company_id,
             p.gross_amount_kobo,
             p.commission_amount_kobo,
             p.amount_kobo,
@@ -706,10 +1054,16 @@ function createSellerFinanceRepository({ db }) {
             sp.contact_phone,
             u.full_name,
             u.email,
-            u.phone
+            u.phone,
+            lc.name AS logistics_company_name,
+            lc.email AS logistics_company_email,
+            lc.phone AS logistics_company_phone,
+            lc.address AS logistics_company_address,
+            lc.status AS logistics_company_status
           FROM payouts p
-          INNER JOIN seller_profiles sp ON sp.id = p.seller_id
-          INNER JOIN users u ON u.id = sp.user_id
+          LEFT JOIN seller_profiles sp ON sp.id = p.seller_id
+          LEFT JOIN users u ON u.id = sp.user_id
+          LEFT JOIN logistics_companies lc ON lc.id = p.logistics_company_id
           ${filters.clause}
           ORDER BY p.requested_at DESC, p.id DESC
           LIMIT ? OFFSET ?

@@ -123,6 +123,7 @@ function mapOrderItemRow(row) {
     quantity: Number(row.quantity),
     unitPriceKobo: Number(row.unit_price_kobo),
     lineTotalKobo: Number(row.line_total_kobo),
+    deliveryFeeKobo: Number(row.delivery_fee_kobo || 0),
     itemStatus: row.item_status,
     title: row.title,
     partNumber: row.part_number,
@@ -332,9 +333,10 @@ function createOrdersRepository({ db }) {
                 quantity,
                 unit_price_kobo,
                 line_total_kobo,
+                delivery_fee_kobo,
                 item_status
               )
-              VALUES (?, ?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `,
             [
               result.insertId,
@@ -343,6 +345,7 @@ function createOrdersRepository({ db }) {
               item.quantity,
               item.unitPriceKobo,
               item.lineTotalKobo,
+              item.deliveryFeeKobo || 0,
               item.itemStatus
             ]
           );
@@ -775,6 +778,7 @@ function createOrdersRepository({ db }) {
             oi.quantity,
             oi.unit_price_kobo,
             oi.line_total_kobo,
+            oi.delivery_fee_kobo,
             oi.item_status,
             p.title,
             p.part_number,
@@ -820,6 +824,7 @@ function createOrdersRepository({ db }) {
             oi.quantity,
             oi.unit_price_kobo,
             oi.line_total_kobo,
+            oi.delivery_fee_kobo,
             oi.item_status,
             p.title,
             p.part_number,
@@ -859,6 +864,7 @@ function createOrdersRepository({ db }) {
             oi.quantity,
             oi.unit_price_kobo,
             oi.line_total_kobo,
+            oi.delivery_fee_kobo,
             oi.item_status,
             p.title,
             p.part_number,

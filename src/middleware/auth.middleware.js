@@ -35,7 +35,23 @@ function createAdminAuthMiddleware({ adminService }) {
   });
 }
 
+function createLogisticsCompanyAuthMiddleware({ logisticsService }) {
+  return createBearerAuthMiddleware({
+    authenticate: (token) => logisticsService.getAuthenticatedLogisticsCompany(token),
+    requestProperty: 'user'
+  });
+}
+
+function createRiderAuthMiddleware({ logisticsService }) {
+  return createBearerAuthMiddleware({
+    authenticate: (token) => logisticsService.getAuthenticatedRider(token),
+    requestProperty: 'user'
+  });
+}
+
 module.exports = {
   createAdminAuthMiddleware,
-  createAuthMiddleware
+  createAuthMiddleware,
+  createLogisticsCompanyAuthMiddleware,
+  createRiderAuthMiddleware
 };

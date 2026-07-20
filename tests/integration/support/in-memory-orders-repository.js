@@ -68,6 +68,7 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
       quantity: Number(orderItem.quantity),
       unitPriceKobo: Number(orderItem.unitPriceKobo),
       lineTotalKobo: Number(orderItem.lineTotalKobo),
+      deliveryFeeKobo: Number(orderItem.deliveryFeeKobo || 0),
       itemStatus: orderItem.itemStatus,
       title: product ? product.title : null,
       partNumber: product ? product.partNumber : null,
@@ -151,6 +152,7 @@ function createInMemoryOrdersRepository({ productsRepository, store, usersReposi
           quantity: item.quantity,
           unitPriceKobo: item.unitPriceKobo,
           lineTotalKobo: item.lineTotalKobo,
+          deliveryFeeKobo: item.deliveryFeeKobo || 0,
           itemStatus: item.itemStatus,
           createdAt: now,
           updatedAt: now

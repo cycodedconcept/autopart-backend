@@ -15,7 +15,9 @@ const { createFakePaystackClient } = require('./support/fake-paystack-client');
 const { createInMemoryAdminRepository } = require('./support/in-memory-admin-repository');
 const { createInMemoryAdminDashboardRepository } = require('./support/in-memory-admin-dashboard-repository');
 const { createInMemoryAuditLogRepository } = require('./support/in-memory-audit-log-repository');
+const { createInMemoryDeliveryJobsRepository } = require('./support/in-memory-delivery-jobs-repository');
 const { createInMemoryDisputesRepository } = require('./support/in-memory-disputes-repository');
+const { createInMemoryLogisticsRepository } = require('./support/in-memory-logistics-repository');
 const { createInMemoryOrdersRepository } = require('./support/in-memory-orders-repository');
 const { createInMemoryPaymentsRepository } = require('./support/in-memory-payments-repository');
 const { createInMemoryPlatformConfigRepository } = require('./support/in-memory-platform-config-repository');
@@ -23,6 +25,10 @@ const { createInMemoryProductsRepository } = require('./support/in-memory-produc
 const { createInMemorySellerFinanceRepository } = require('./support/in-memory-seller-finance-repository');
 const { createInMemorySellersRepository } = require('./support/in-memory-sellers-repository');
 const { createInMemoryUsersRepository } = require('./support/in-memory-users-repository');
+const {
+  progressDeliveryJob,
+  registerAndLoginLogistics
+} = require('./support/logistics-test-helpers');
 
 const { expect } = chai;
 
@@ -142,7 +148,7 @@ async function createPendingOrder(app, token, paymentMethod = 'paystack') {
   return createOrderResponse.body.data.id;
 }
 
-async function createOrder(app, token, productId, quantity = 2) {
+async function createOrder(app, token, productId, quantity = 2, deliveryAddress = null) {
   await request(app)
     .post('/api/v1/cart/items')
     .set('Authorization', `Bearer ${token}`)
@@ -157,7 +163,7 @@ async function createOrder(app, token, productId, quantity = 2) {
     .set('Authorization', `Bearer ${token}`)
     .send({
       paymentMethod: 'paystack',
-      deliveryAddress: {
+      deliveryAddress: deliveryAddress || {
         label: 'Workshop',
         street: '12 Adeola Odeku Street',
         city: 'Ikeja',
@@ -202,6 +208,17 @@ describe('Admin API integration', () => {
     const usersRepository = createInMemoryUsersRepository();
     const sellersRepository = createInMemorySellersRepository({ usersRepository });
     const productsRepository = createInMemoryProductsRepository();
+    const logisticsRepository = createInMemoryLogisticsRepository({
+      store: commerceStore,
+      usersRepository
+    });
+    const deliveryJobsRepository = createInMemoryDeliveryJobsRepository({
+      logisticsRepository,
+      productsRepository,
+      sellersRepository,
+      store: commerceStore,
+      usersRepository
+    });
 
     adminRepository = createInMemoryAdminRepository({ sellersRepository });
     adminDashboardRepository = createInMemoryAdminDashboardRepository({
@@ -247,6 +264,8 @@ describe('Admin API integration', () => {
 
     uploadDirectory = path.join(os.tmpdir(), `autoparts-admin-${Date.now()}`);
     app = createApp({
+      deliveryJobsRepository,
+      logisticsRepository,
       cacVerificationService,
       usersRepository,
       sellersRepository,
@@ -690,6 +709,15 @@ describe('Admin API integration', () => {
     const seller = await registerSeller(app, 'seller-payouts@example.com', 'RC-777004');
     const buyer = await registerBuyer(app, 'buyer-payouts@example.com');
     const adminToken = await loginAdmin(app);
+    const logistics = await registerAndLoginLogistics(app, {
+      fullName: 'Alex Rider',
+      email: 'logistics-admin@example.com',
+      phone: '08012345003',
+      password: 'Password123',
+      providerName: 'Swift Dispatch',
+      vehicleType: 'van',
+      plateNumber: 'LAG-503XY'
+    });
 
     const configResponse = await request(app)
       .get('/api/v1/admin/config')
@@ -756,6 +784,33 @@ describe('Admin API integration', () => {
     await confirmOrderPayment(app, buyer.token, orderId);
 
     const today = new Date().toISOString().slice(0, 10);
+    const sellerSalesBeforeDeliveryResponse = await request(app)
+      .get('/api/v1/seller/sales')
+      .set('Authorization', `Bearer ${seller.token}`)
+      .query({
+        dateFrom: today,
+        dateTo: today
+      })
+      .expect(200);
+
+    expect(sellerSalesBeforeDeliveryResponse.body.data.payouts.pendingKobo).to.equal(0);
+
+    const sellerOrdersResponse = await request(app)
+      .get('/api/v1/seller/orders')
+      .set('Authorization', `Bearer ${seller.token}`)
+      .expect(200);
+    const orderItemId = sellerOrdersResponse.body.data.orders[0].items[0].id;
+
+    await request(app)
+      .patch(`/api/v1/seller/orders/${orderItemId}/status`)
+      .set('Authorization', `Bearer ${seller.token}`)
+      .send({
+        itemStatus: 'ready_for_pickup'
+      })
+      .expect(200);
+
+    await progressDeliveryJob(app, logistics.token, orderItemId);
+
     const sellerSalesResponse = await request(app)
       .get('/api/v1/seller/sales')
       .set('Authorization', `Bearer ${seller.token}`)
@@ -816,6 +871,56 @@ describe('Admin API integration', () => {
 
     expect(markPaidResponse.body.data.status).to.equal('paid');
     expect(markPaidResponse.body.data.settledAt).to.be.a('string');
+
+    const logisticsPayoutRequestResponse = await request(app)
+      .post('/api/v1/logistics/payouts')
+      .set('Authorization', `Bearer ${logistics.companyToken}`)
+      .send({
+        bankAccountRef: 'BANK-LOG-ADMIN-001'
+      })
+      .expect(201);
+
+    expect(logisticsPayoutRequestResponse.body.data.payout.payeeType).to.equal('logistics_company');
+    expect(logisticsPayoutRequestResponse.body.data.payout.companyShareKobo).to.equal(184500);
+
+    const logisticsPayoutListResponse = await request(app)
+      .get('/api/v1/admin/payouts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        payeeType: 'logistics_company',
+        companyId: logistics.companyId,
+        status: 'requested'
+      })
+      .expect(200);
+
+    expect(logisticsPayoutListResponse.body.data.payouts).to.have.length(1);
+    expect(logisticsPayoutListResponse.body.data.payouts[0].payeeType).to.equal('logistics_company');
+    expect(logisticsPayoutListResponse.body.data.payouts[0].logisticsCompany.name).to.equal(
+      'Swift Dispatch'
+    );
+
+    const logisticsPayoutId = logisticsPayoutListResponse.body.data.payouts[0].id;
+    const approveLogisticsPayoutResponse = await request(app)
+      .patch(`/api/v1/admin/payouts/${logisticsPayoutId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        status: 'approved'
+      })
+      .expect(200);
+
+    expect(approveLogisticsPayoutResponse.body.data.status).to.equal('approved');
+    expect(approveLogisticsPayoutResponse.body.data.payeeType).to.equal('logistics_company');
+
+    const markLogisticsPayoutPaidResponse = await request(app)
+      .patch(`/api/v1/admin/payouts/${logisticsPayoutId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        status: 'paid'
+      })
+      .expect(200);
+
+    expect(markLogisticsPayoutPaidResponse.body.data.status).to.equal('paid');
+    expect(markLogisticsPayoutPaidResponse.body.data.settledAt).to.be.a('string');
   });
 
   it('returns the super admin dashboard summary with alerts, previews, and leaderboard widgets', async () => {
@@ -850,6 +955,15 @@ describe('Admin API integration', () => {
       .expect(200);
 
     const adminToken = await loginAdmin(app);
+    const logistics = await registerAndLoginLogistics(app, {
+      fullName: 'Alex Rider',
+      email: 'logistics-dashboard-admin@example.com',
+      phone: '08012345004',
+      password: 'Password123',
+      providerName: 'Swift Dispatch',
+      vehicleType: 'van',
+      plateNumber: 'LAG-504XY'
+    });
 
     await request(app)
       .patch(`/api/v1/admin/sellers/${approvedSeller.sellerId}/verification`)
@@ -881,6 +995,22 @@ describe('Admin API integration', () => {
     const orderId = await createOrder(app, buyer.token, productId, 2);
 
     await confirmOrderPayment(app, buyer.token, orderId);
+
+    const sellerOrdersResponse = await request(app)
+      .get('/api/v1/seller/orders')
+      .set('Authorization', `Bearer ${approvedSeller.token}`)
+      .expect(200);
+    const orderItemId = sellerOrdersResponse.body.data.orders[0].items[0].id;
+
+    await request(app)
+      .patch(`/api/v1/seller/orders/${orderItemId}/status`)
+      .set('Authorization', `Bearer ${approvedSeller.token}`)
+      .send({
+        itemStatus: 'ready_for_pickup'
+      })
+      .expect(200);
+
+    await progressDeliveryJob(app, logistics.token, orderItemId);
 
     await request(app)
       .post('/api/v1/seller/payouts')
@@ -996,6 +1126,267 @@ describe('Admin API integration', () => {
     expect(auditLogsResponse.body.data.auditLogs[0].admin.email).to.equal('superadmin@autoparts.local');
   });
 
+  it('lists logistics companies and riders, then allows admin to approve a company', async () => {
+    const logisticsRegisterResponse = await request(app)
+      .post('/api/v1/logistics/register')
+      .send({
+        name: 'Swift Dispatch',
+        email: 'ops@swiftdispatch.ng',
+        phone: '08012345091',
+        password: 'Password123',
+        address: '12 Sapara Williams Close, Victoria Island, Lagos'
+      })
+      .expect(201);
+    const companyId = logisticsRegisterResponse.body.data.company.id;
+    const companyToken = logisticsRegisterResponse.body.data.token;
+
+    const zonesResponse = await request(app)
+      .get('/api/v1/logistics/zones')
+      .set('Authorization', `Bearer ${companyToken}`)
+      .expect(200);
+
+    await request(app)
+      .post('/api/v1/logistics/riders')
+      .set('Authorization', `Bearer ${companyToken}`)
+      .send({
+        fullName: 'Alex Rider',
+        email: 'alex.admin@swiftdispatch.ng',
+        phone: '08012345092',
+        password: 'Password123',
+        vehicleType: 'van',
+        zoneId: zonesResponse.body.data.zones[0].id,
+        status: 'available'
+      })
+      .expect(201);
+
+    const adminToken = await loginAdmin(app);
+
+    const companiesResponse = await request(app)
+      .get('/api/v1/admin/logistics/companies')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        status: 'pending',
+        search: 'swift'
+      })
+      .expect(200);
+
+    expect(companiesResponse.body.data.companies).to.have.length(1);
+    expect(companiesResponse.body.data.companies[0].status).to.equal('pending');
+    expect(companiesResponse.body.data.summary).to.deep.equal({
+      totalCompaniesCount: 1,
+      pendingCount: 1,
+      approvedCount: 0,
+      suspendedCount: 0
+    });
+
+    const updateCompanyResponse = await request(app)
+      .patch(`/api/v1/admin/logistics/companies/${companyId}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        status: 'approved'
+      })
+      .expect(200);
+
+    expect(updateCompanyResponse.body.data.status).to.equal('approved');
+
+    const ridersResponse = await request(app)
+      .get('/api/v1/admin/logistics/riders')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        companyId,
+        status: 'available'
+      })
+      .expect(200);
+
+    expect(ridersResponse.body.data.riders).to.have.length(1);
+    expect(ridersResponse.body.data.riders[0].company.id).to.equal(companyId);
+    expect(ridersResponse.body.data.summary).to.deep.equal({
+      totalRidersCount: 1,
+      availableCount: 1,
+      onDeliveryCount: 0,
+      unavailableCount: 0,
+      inactiveCount: 0
+    });
+
+    const auditLogsResponse = await request(app)
+      .get('/api/v1/admin/audit-logs')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        action: 'logistics_company.status_updated',
+        targetType: 'logistics_company',
+        targetId: companyId
+      })
+      .expect(200);
+
+    expect(auditLogsResponse.body.data.auditLogs).to.have.length(1);
+    expect(auditLogsResponse.body.data.auditLogs[0].detail.nextStatus).to.equal('approved');
+  });
+
+  it('lists pending delivery jobs and lets admin manually assign one when auto-assignment finds no rider', async () => {
+    const seller = await registerSeller(
+      app,
+      'seller-manual-logistics@example.com',
+      'RC-900010',
+      {
+        businessName: 'Manual Queue Hub',
+        contactEmail: 'queue@manualhub.ng'
+      }
+    );
+    const logistics = await registerAndLoginLogistics(app, {
+      fullName: 'Alex Rider',
+      email: 'manual-rider@example.com',
+      phone: '08012345093',
+      password: 'Password123',
+      providerName: 'Swift Dispatch',
+      vehicleType: 'bike'
+    });
+    const productId = await createSellerListing(app, seller.token, {
+      title: 'Manual Assignment Brake Caliper',
+      description: 'Brake caliper reserved for admin queue testing.',
+      categoryId: 1002,
+      partNumber: 'MANUAL-LGS-010',
+      condition: 'new',
+      priceKobo: 2800000,
+      stockQty: 4,
+      location: 'Lagos',
+      compatibility: [
+        {
+          make: 'Toyota',
+          model: 'Camry',
+          yearFrom: 2007,
+          yearTo: 2011
+        }
+      ]
+    });
+    const buyer = await registerBuyer(app, 'buyer-manual-logistics@example.com');
+    const orderId = await createOrder(app, buyer.token, productId, 1, {
+      label: 'Northern Workshop',
+      street: '23 Bompai Road',
+      city: 'Kano',
+      state: 'Kano',
+      phone: '08022334455'
+    });
+
+    await confirmOrderPayment(app, buyer.token, orderId);
+
+    const sellerOrdersResponse = await request(app)
+      .get('/api/v1/seller/orders')
+      .set('Authorization', `Bearer ${seller.token}`)
+      .expect(200);
+    const orderItemId = sellerOrdersResponse.body.data.orders[0].items[0].id;
+
+    await request(app)
+      .patch(`/api/v1/seller/orders/${orderItemId}/status`)
+      .set('Authorization', `Bearer ${seller.token}`)
+      .send({
+        itemStatus: 'ready_for_pickup'
+      })
+      .expect(200);
+
+    const adminToken = await loginAdmin(app);
+    const pendingJobsResponse = await request(app)
+      .get('/api/v1/admin/delivery-jobs')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        status: 'pending',
+        search: 'kano'
+      })
+      .expect(200);
+
+    expect(pendingJobsResponse.body.data.jobs).to.have.length(1);
+    expect(pendingJobsResponse.body.data.jobs[0].status).to.equal('pending');
+    expect(pendingJobsResponse.body.data.jobs[0].assignedRider).to.equal(null);
+    expect(pendingJobsResponse.body.data.summary.jobsByStatus).to.deep.equal({
+      total: 1,
+      pending: 1,
+      assigned: 0,
+      picked_up: 0,
+      in_transit: 0,
+      delivered: 0,
+      failed: 0,
+      cancelled: 0
+    });
+    expect(pendingJobsResponse.body.data.summary.deliveryMetrics).to.deep.equal({
+      totalJobsCount: 1,
+      unassignedJobsCount: 1,
+      activeJobsCount: 0,
+      deliveredJobsCount: 0,
+      failedJobsCount: 0,
+      completionRatePercent: 0,
+      deliveryFeesKobo: 0,
+      platformMarginKobo: 0,
+      companyShareKobo: 0,
+      averageDeliveryFeeKobo: 0
+    });
+
+    const deliveryJobId = pendingJobsResponse.body.data.jobs[0].id;
+    const assignResponse = await request(app)
+      .patch(`/api/v1/admin/delivery-jobs/${deliveryJobId}/assign`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        riderId: logistics.riderId,
+        note: 'Manual fallback assignment after no automatic zone match was found.'
+      })
+      .expect(200);
+
+    expect(assignResponse.body.data.status).to.equal('assigned');
+    expect(assignResponse.body.data.assignedRider.id).to.equal(logistics.riderId);
+    expect(assignResponse.body.data.assignedCompany.id).to.equal(logistics.companyId);
+    expect(assignResponse.body.data.statusHistory.map((entry) => entry.status)).to.deep.equal([
+      'pending',
+      'assigned'
+    ]);
+
+    const riderJobsResponse = await request(app)
+      .get('/api/v1/rider/jobs')
+      .set('Authorization', `Bearer ${logistics.token}`)
+      .query({
+        status: 'assigned'
+      })
+      .expect(200);
+
+    expect(riderJobsResponse.body.data.jobs).to.have.length(1);
+    expect(riderJobsResponse.body.data.jobs[0].id).to.equal(deliveryJobId);
+
+    const assignedJobsResponse = await request(app)
+      .get('/api/v1/admin/delivery-jobs')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        companyId: logistics.companyId,
+        riderId: logistics.riderId,
+        status: 'assigned'
+      })
+      .expect(200);
+
+    expect(assignedJobsResponse.body.data.jobs).to.have.length(1);
+    expect(assignedJobsResponse.body.data.jobs[0].assignedCompany.id).to.equal(logistics.companyId);
+    expect(assignedJobsResponse.body.data.filters.companyId).to.equal(logistics.companyId);
+    expect(assignedJobsResponse.body.data.filters.riderId).to.equal(logistics.riderId);
+    expect(assignedJobsResponse.body.data.summary.jobsByStatus).to.deep.equal({
+      total: 1,
+      pending: 0,
+      assigned: 1,
+      picked_up: 0,
+      in_transit: 0,
+      delivered: 0,
+      failed: 0,
+      cancelled: 0
+    });
+
+    const auditLogsResponse = await request(app)
+      .get('/api/v1/admin/audit-logs')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
+        action: 'delivery_job.assigned',
+        targetType: 'delivery_job',
+        targetId: deliveryJobId
+      })
+      .expect(200);
+
+    expect(auditLogsResponse.body.data.auditLogs).to.have.length(1);
+    expect(auditLogsResponse.body.data.auditLogs[0].detail.riderId).to.equal(logistics.riderId);
+  });
+
   it('returns 403 when an admin lacks the sellers.verify permission', async () => {
     const adminToken = await loginAdmin(app, {
       email: 'ops-admin@autoparts.local'
@@ -1075,6 +1466,47 @@ describe('Admin API integration', () => {
 
     expect(configResponse.body.success).to.equal(false);
     expect(configResponse.body.error.code).to.equal('FORBIDDEN');
+  });
+
+  it('returns 403 when an admin lacks the logistics.manage permission', async () => {
+    const adminToken = await loginAdmin(app, {
+      email: 'ops-admin@autoparts.local'
+    });
+
+    const companiesResponse = await request(app)
+      .get('/api/v1/admin/logistics/companies')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+
+    expect(companiesResponse.body.success).to.equal(false);
+    expect(companiesResponse.body.error.code).to.equal('FORBIDDEN');
+
+    const ridersResponse = await request(app)
+      .get('/api/v1/admin/logistics/riders')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+
+    expect(ridersResponse.body.success).to.equal(false);
+    expect(ridersResponse.body.error.code).to.equal('FORBIDDEN');
+
+    const jobsResponse = await request(app)
+      .get('/api/v1/admin/delivery-jobs')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+
+    expect(jobsResponse.body.success).to.equal(false);
+    expect(jobsResponse.body.error.code).to.equal('FORBIDDEN');
+
+    const assignJobResponse = await request(app)
+      .patch('/api/v1/admin/delivery-jobs/1/assign')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        riderId: 1
+      })
+      .expect(403);
+
+    expect(assignJobResponse.body.success).to.equal(false);
+    expect(assignJobResponse.body.error.code).to.equal('FORBIDDEN');
   });
 
   it('returns 403 when an admin lacks the disputes.resolve and audit_logs.read permissions', async () => {

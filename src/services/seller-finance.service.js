@@ -59,8 +59,6 @@ function createSellerFinanceService({
         dateFrom: period.dateFrom,
         dateTo: period.dateTo
       });
-      // LOGISTICS-STUB: payout eligibility currently uses paid, non-cancelled seller items
-      // until delivered-item settlement rules land with the logistics module.
       const payouts = await sellerFinanceRepository.summarizeSellerPayoutBalances({
         sellerId: sellerAccount.sellerProfile.id,
         commissionRatePercent

@@ -218,10 +218,132 @@ function buildAuditLogEntry(overrides = {}) {
   };
 }
 
+function buildLogisticsCompany(overrides = {}) {
+  return {
+    id: 41,
+    name: 'Swift Dispatch',
+    email: 'ops@swiftdispatch.ng',
+    phone: '+2348012345678',
+    address: '12 Sapara Williams Close, Victoria Island, Lagos',
+    status: 'pending',
+    approvedBy: null,
+    createdAt: '2026-07-12T09:00:00.000Z',
+    updatedAt: '2026-07-12T09:00:00.000Z',
+    ...overrides
+  };
+}
+
+function buildRider(overrides = {}) {
+  const company = buildLogisticsCompany({
+    id: 41,
+    status: 'approved',
+    approvedBy: 1
+  });
+
+  return {
+    id: 12,
+    companyId: company.id,
+    zoneId: 7,
+    fullName: 'Alex Rider',
+    phone: '+2348012345679',
+    email: 'alex@swiftdispatch.ng',
+    vehicleType: 'bike',
+    status: 'available',
+    createdAt: '2026-07-12T09:30:00.000Z',
+    updatedAt: '2026-07-12T09:30:00.000Z',
+    zone: {
+      id: 7,
+      name: 'Ikeja Central',
+      state: 'Lagos',
+      city: 'Ikeja',
+      createdAt: '2026-07-12T08:00:00.000Z',
+      updatedAt: '2026-07-12T08:00:00.000Z'
+    },
+    company,
+    ...overrides
+  };
+}
+
+function buildDeliveryJob(overrides = {}) {
+  return {
+    id: 81,
+    orderId: 5001,
+    orderItemId: 501,
+    sellerId: 101,
+    zoneId: 7,
+    companyId: null,
+    riderId: null,
+    status: 'pending',
+    pickupAddress: '12 Sapara Williams Close, Victoria Island, Lagos',
+    assignedAt: null,
+    pickedUpAt: null,
+    inTransitAt: null,
+    deliveredAt: null,
+    createdAt: '2026-07-12T10:00:00.000Z',
+    updatedAt: '2026-07-12T10:00:00.000Z',
+    zone: {
+      id: 7,
+      name: 'Ikeja Central',
+      state: 'Lagos',
+      city: 'Ikeja',
+      createdAt: '2026-07-12T08:00:00.000Z',
+      updatedAt: '2026-07-12T08:00:00.000Z'
+    },
+    order: {
+      id: 5001,
+      status: 'confirmed',
+      paymentMethod: 'paystack',
+      paymentReference: 'APT-5001-REF',
+      paymentStatus: 'paid',
+      totalKobo: 3700000,
+      deliveryAddress: {
+        id: 31,
+        label: 'Workshop',
+        street: '12 Adeola Odeku Street',
+        city: 'Ikeja',
+        state: 'Lagos',
+        phone: '+2348012345678'
+      }
+    },
+    item: {
+      id: 501,
+      productId: 7001,
+      title: 'Front Brake Pad Set',
+      partNumber: 'FBP-CAM-07011',
+      quantity: 1,
+      lineTotalKobo: 3700000,
+      itemStatus: 'ready_for_pickup'
+    },
+    buyer: {
+      id: 11,
+      fullName: 'Bola Adeniran',
+      email: 'bola@example.com',
+      phone: '+2348012345678'
+    },
+    seller: {
+      id: 101,
+      userId: 21,
+      businessName: 'Prime Auto Hub',
+      contactEmail: 'sales@primeautohub.ng',
+      contactPhone: '+2348012345678',
+      address: '12 Sapara Williams Close, Victoria Island, Lagos',
+      fullName: 'Uche Okafor',
+      email: 'uche@example.com',
+      phone: '+2348012345678'
+    },
+    assignedCompany: null,
+    assignedRider: null,
+    ...overrides
+  };
+}
+
 describe('admin service', () => {
   let adminRepository;
+  let assignmentService;
   let auditLogRepository;
+  let deliveryJobsRepository;
   let disputesRepository;
+  let logisticsRepository;
   let productsRepository;
   let platformConfigRepository;
   let sellerFinanceRepository;
@@ -243,6 +365,15 @@ describe('admin service', () => {
     auditLogRepository = {
       createAuditLog: jest.fn(),
       listAuditLogs: jest.fn()
+    };
+    assignmentService = {
+      assignJobToRider: jest.fn()
+    };
+    deliveryJobsRepository = {
+      findJobById: jest.fn(),
+      findStatusHistoryByJobId: jest.fn(),
+      listJobs: jest.fn(),
+      summarizeJobs: jest.fn()
     };
     disputesRepository = {
       findDisputeByIdForAdmin: jest.fn(),
@@ -288,6 +419,15 @@ describe('admin service', () => {
       listOrdersForAdmin: jest.fn(),
       updateOrderStatusForAdmin: jest.fn()
     };
+    logisticsRepository = {
+      findCompanyById: jest.fn(),
+      findRiderById: jest.fn(),
+      listCompanies: jest.fn(),
+      listRiders: jest.fn(),
+      summarizeCompanies: jest.fn(),
+      summarizeRiders: jest.fn(),
+      updateCompanyStatus: jest.fn()
+    };
 
     jwtUtils = {
       signAccessToken: jest.fn(() => 'signed-admin-token'),
@@ -300,11 +440,14 @@ describe('admin service', () => {
 
     adminService = createAdminService({
       adminRepository,
+      assignmentService,
       auditLogRepository,
+      deliveryJobsRepository,
       disputesRepository,
       env: {
         PLATFORM_COMMISSION_RATE_PERCENT: 10
       },
+      logisticsRepository,
       productsRepository,
       platformConfigRepository,
       sellerFinanceRepository,
@@ -1196,8 +1339,10 @@ describe('admin service', () => {
       });
 
       expect(sellerFinanceRepository.listPayoutsForAdmin).toHaveBeenCalledWith({
+        payeeType: 'all',
         status: 'requested',
         search: 'uche@example.com',
+        companyId: null,
         sellerId: 101,
         limit: 10,
         offset: 0
@@ -1431,6 +1576,250 @@ describe('admin service', () => {
         statusCode: 422,
         code: 'VALIDATION_ERROR'
       });
+    });
+  });
+
+  describe('listDeliveryJobs', () => {
+    it('returns paginated admin delivery jobs', async () => {
+      deliveryJobsRepository.summarizeJobs.mockResolvedValue({
+        totalJobsCount: 3,
+        unassignedJobsCount: 1,
+        pendingCount: 1,
+        assignedCount: 1,
+        pickedUpCount: 0,
+        inTransitCount: 0,
+        deliveredCount: 1,
+        failedCount: 0,
+        cancelledCount: 0,
+        activeJobsCount: 1,
+        deliveryFeesKobo: 200000,
+        platformMarginKobo: 20000,
+        companyShareKobo: 180000,
+        averageDeliveryFeeKobo: 200000
+      });
+      deliveryJobsRepository.listJobs.mockResolvedValue({
+        jobs: [
+          buildDeliveryJob({
+            status: 'pending'
+          })
+        ],
+        total: 1
+      });
+
+      const result = await adminService.listDeliveryJobs({
+        query: {
+          status: 'pending',
+          companyId: 41,
+          riderId: 12,
+          page: 1,
+          limit: 10
+        }
+      });
+
+      expect(deliveryJobsRepository.listJobs).toHaveBeenCalledWith({
+        companyId: 41,
+        riderId: 12,
+        status: 'pending',
+        search: null,
+        limit: 10,
+        offset: 0
+      });
+      expect(deliveryJobsRepository.summarizeJobs).toHaveBeenCalledWith({
+        companyId: 41,
+        riderId: 12,
+        search: null
+      });
+      expect(result.jobs).toHaveLength(1);
+      expect(result.jobs[0].status).toBe('pending');
+      expect(result.pagination.total).toBe(1);
+      expect(result.filters.companyId).toBe(41);
+      expect(result.filters.riderId).toBe(12);
+      expect(result.summary.jobsByStatus).toEqual({
+        total: 3,
+        pending: 1,
+        assigned: 1,
+        picked_up: 0,
+        in_transit: 0,
+        delivered: 1,
+        failed: 0,
+        cancelled: 0
+      });
+      expect(result.summary.deliveryMetrics).toEqual({
+        totalJobsCount: 3,
+        unassignedJobsCount: 1,
+        activeJobsCount: 1,
+        deliveredJobsCount: 1,
+        failedJobsCount: 0,
+        completionRatePercent: 100,
+        deliveryFeesKobo: 200000,
+        platformMarginKobo: 20000,
+        companyShareKobo: 180000,
+        averageDeliveryFeeKobo: 200000
+      });
+    });
+  });
+
+  describe('listLogisticsCompanies', () => {
+    it('returns paginated logistics companies with oversight summary counts', async () => {
+      logisticsRepository.listCompanies.mockResolvedValue({
+        companies: [
+          buildLogisticsCompany(),
+          buildLogisticsCompany({
+            id: 42,
+            name: 'Northern Haulage',
+            status: 'approved',
+            approvedBy: 5
+          })
+        ],
+        total: 2
+      });
+      logisticsRepository.summarizeCompanies.mockResolvedValue({
+        totalCompaniesCount: 2,
+        pendingCount: 1,
+        approvedCount: 1,
+        suspendedCount: 0
+      });
+
+      const result = await adminService.listLogisticsCompanies({
+        query: {
+          status: 'pending',
+          search: 'dispatch',
+          page: 1,
+          limit: 10
+        }
+      });
+
+      expect(logisticsRepository.listCompanies).toHaveBeenCalledWith({
+        status: 'pending',
+        search: 'dispatch',
+        limit: 10,
+        offset: 0
+      });
+      expect(logisticsRepository.summarizeCompanies).toHaveBeenCalledWith({
+        search: 'dispatch'
+      });
+      expect(result.companies).toHaveLength(2);
+      expect(result.summary).toEqual({
+        totalCompaniesCount: 2,
+        pendingCount: 1,
+        approvedCount: 1,
+        suspendedCount: 0
+      });
+    });
+  });
+
+  describe('listLogisticsRiders', () => {
+    it('returns paginated logistics riders with status summary counts', async () => {
+      logisticsRepository.listRiders.mockResolvedValue({
+        riders: [
+          buildRider(),
+          buildRider({
+            id: 13,
+            status: 'on_delivery',
+            fullName: 'Musa Rider'
+          })
+        ],
+        total: 2
+      });
+      logisticsRepository.summarizeRiders.mockResolvedValue({
+        totalRidersCount: 2,
+        availableCount: 1,
+        onDeliveryCount: 1,
+        unavailableCount: 0,
+        inactiveCount: 0
+      });
+
+      const result = await adminService.listLogisticsRiders({
+        query: {
+          companyId: 41,
+          status: 'available',
+          search: 'swift',
+          page: 1,
+          limit: 10
+        }
+      });
+
+      expect(logisticsRepository.listRiders).toHaveBeenCalledWith({
+        companyId: 41,
+        status: 'available',
+        search: 'swift',
+        limit: 10,
+        offset: 0
+      });
+      expect(logisticsRepository.summarizeRiders).toHaveBeenCalledWith({
+        companyId: 41,
+        search: 'swift'
+      });
+      expect(result.riders).toHaveLength(2);
+      expect(result.summary).toEqual({
+        totalRidersCount: 2,
+        availableCount: 1,
+        onDeliveryCount: 1,
+        unavailableCount: 0,
+        inactiveCount: 0
+      });
+    });
+  });
+
+  describe('assignDeliveryJob', () => {
+    it('assigns a pending delivery job and records the admin audit log', async () => {
+      const rider = buildRider();
+      const pendingJob = buildDeliveryJob();
+      const assignedJob = buildDeliveryJob({
+        status: 'assigned',
+        companyId: rider.companyId,
+        riderId: rider.id,
+        assignedAt: '2026-07-13T10:00:00.000Z',
+        assignedCompany: rider.company,
+        assignedRider: {
+          ...rider,
+          status: 'on_delivery'
+        }
+      });
+
+      deliveryJobsRepository.findJobById.mockResolvedValue(pendingJob);
+      logisticsRepository.findRiderById.mockResolvedValue(rider);
+      assignmentService.assignJobToRider.mockResolvedValue(assignedJob);
+      deliveryJobsRepository.findStatusHistoryByJobId.mockResolvedValue([
+        {
+          id: 1,
+          deliveryJobId: 81,
+          status: 'pending',
+          note: 'Seller marked the order item ready for pickup and the delivery job is awaiting assignment.',
+          createdAt: '2026-07-12T10:00:00.000Z',
+          updatedAt: '2026-07-12T10:00:00.000Z'
+        },
+        {
+          id: 2,
+          deliveryJobId: 81,
+          status: 'assigned',
+          note: 'Assigned by admin.',
+          createdAt: '2026-07-13T10:00:00.000Z',
+          updatedAt: '2026-07-13T10:00:00.000Z'
+        }
+      ]);
+
+      const result = await adminService.assignDeliveryJob({
+        adminId: 5,
+        jobId: 81,
+        riderId: 12,
+        note: 'Assigned by admin.'
+      });
+
+      expect(assignmentService.assignJobToRider).toHaveBeenCalledWith({
+        jobId: 81,
+        riderId: 12,
+        note: 'Assigned by admin.'
+      });
+      expect(auditLogRepository.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        adminId: 5,
+        action: 'delivery_job.assigned',
+        targetType: 'delivery_job',
+        targetId: 81
+      }));
+      expect(result.status).toBe('assigned');
+      expect(result.assignedRider.id).toBe(12);
+      expect(result.statusHistory).toHaveLength(2);
     });
   });
 });

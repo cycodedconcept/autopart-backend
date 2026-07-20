@@ -6,6 +6,12 @@ const {
 } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { calculateCartSummary, calculateLineTotalKobo } = require('../utils/cart');
+const {
+  calculateDeliveryFeeKobo,
+  calculateShipmentWeightKg,
+  resolveDeliveryDistanceKm,
+  resolveDeliveryFeeConfig
+} = require('../utils/delivery-fee');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
 const { normalizeNigerianPhone } = require('../utils/phone');
 
@@ -181,8 +187,6 @@ function canTransitionSellerOrderItem(currentStatus, nextStatus) {
         nextStatus === ORDER_ITEM_STATUSES.READY_FOR_PICKUP
         || nextStatus === ORDER_ITEM_STATUSES.CANCELLED
       );
-    case ORDER_ITEM_STATUSES.READY_FOR_PICKUP:
-      return nextStatus === ORDER_ITEM_STATUSES.CANCELLED;
     default:
       return false;
   }
@@ -388,11 +392,16 @@ function buildOrderReceiptHtml(receipt) {
 }
 
 function createOrdersService({
+  assignmentService,
   buyerAddressesRepository,
   cartsRepository,
+  deliveryJobsRepository,
+  env,
   ordersRepository,
   sellersRepository
 }) {
+  const deliveryFeeConfig = resolveDeliveryFeeConfig(env);
+
   async function resolveDeliveryAddress(userId, payload) {
     if (payload.deliveryAddressId) {
       const savedAddress = await buyerAddressesRepository.findBuyerAddressByIdForUser(
@@ -468,6 +477,24 @@ function createOrdersService({
     return sellerAccount;
   }
 
+  function calculateOrderItemDeliveryFeeKobo({ deliveryAddress, orderItem }) {
+    const totalWeightKg = calculateShipmentWeightKg({
+      quantity: orderItem.quantity
+    });
+    const distanceKm = resolveDeliveryDistanceKm({
+      sellerLocation: orderItem.product ? orderItem.product.location : orderItem.location,
+      deliveryCity: deliveryAddress.city,
+      deliveryState: deliveryAddress.state
+    });
+
+    return calculateDeliveryFeeKobo({
+      baseFeeKobo: deliveryFeeConfig.deliveryBaseFeeKobo,
+      deliveryPerKmKobo: deliveryFeeConfig.deliveryPerKmKobo,
+      distanceKm,
+      totalWeightKg
+    });
+  }
+
   async function createOrder(payload) {
     const cart = await cartsRepository.getCartByUserId(payload.userId);
 
@@ -495,9 +522,19 @@ function createOrdersService({
     }
 
     const deliveryAddress = await resolveDeliveryAddress(payload.userId, payload);
+    const pricedItems = cart.items.map((item) => ({
+      ...item,
+      deliveryFeeKobo: calculateOrderItemDeliveryFeeKobo({
+        deliveryAddress,
+        orderItem: item
+      })
+    }));
+    const deliveryFeeKobo = pricedItems.reduce(
+      (total, item) => total + Number(item.deliveryFeeKobo || 0),
+      0
+    );
     const summary = calculateCartSummary(cart.items, {
-      // Logistics is out of scope for Milestone C, so delivery is zero-rated for now.
-      deliveryFeeKobo: 0
+      deliveryFeeKobo
     });
     const order = await ordersRepository.createOrder({
       buyerId: payload.userId,
@@ -516,12 +553,13 @@ function createOrdersService({
         state: deliveryAddress.state,
         phone: deliveryAddress.phone
       },
-      items: cart.items.map((item) => ({
+      items: pricedItems.map((item) => ({
         productId: item.product.id,
         sellerId: item.product.seller.id,
         quantity: item.quantity,
         unitPriceKobo: item.unitPriceKobo,
         lineTotalKobo: calculateLineTotalKobo(item.quantity, item.unitPriceKobo),
+        deliveryFeeKobo: item.deliveryFeeKobo,
         itemStatus: ORDER_ITEM_STATUSES.PENDING
       }))
     });
@@ -687,11 +725,25 @@ function createOrdersService({
       });
 
       if (payload.itemStatus === ORDER_ITEM_STATUSES.READY_FOR_PICKUP) {
-        // LOGISTICS-STUB: pickup assignment and dispatch coordination land in the logistics module.
-      }
+        if (
+          deliveryJobsRepository
+          && typeof deliveryJobsRepository.createJobForOrderItem === 'function'
+        ) {
+          const deliveryJob = await deliveryJobsRepository.createJobForOrderItem({
+            orderItemId: payload.orderItemId,
+            sellerId: sellerAccount.sellerProfile.id
+          });
 
-      if (payload.itemStatus === ORDER_ITEM_STATUSES.CANCELLED) {
-        // LOGISTICS-STUB: seller-side cancellations will later fan out to delivery/refund workflows.
+          if (
+            deliveryJob
+            && assignmentService
+            && typeof assignmentService.attemptAutoAssignJob === 'function'
+          ) {
+            await assignmentService.attemptAutoAssignJob({
+              jobId: deliveryJob.id
+            });
+          }
+        }
       }
 
       return mapSellerOrderItemState(updatedOrderItem);

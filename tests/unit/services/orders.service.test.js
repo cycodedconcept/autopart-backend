@@ -10,8 +10,8 @@ describe('orders service', () => {
       status: 'confirmed',
       paymentMethod: 'paystack',
       subtotalKobo: 3700000,
-      deliveryFeeKobo: 0,
-      totalKobo: 3700000,
+      deliveryFeeKobo: 205000,
+      totalKobo: 3905000,
       deliveryAddressId: 31,
       deliveryLabel: 'Workshop',
       deliveryStreet: '12 Adeola Odeku Street',
@@ -83,6 +83,8 @@ describe('orders service', () => {
 
   let buyerAddressesRepository;
   let cartsRepository;
+  let deliveryJobsRepository;
+  let assignmentService;
   let ordersRepository;
   let sellersRepository;
   let ordersService;
@@ -95,6 +97,14 @@ describe('orders service', () => {
 
     cartsRepository = {
       getCartByUserId: jest.fn()
+    };
+
+    deliveryJobsRepository = {
+      createJobForOrderItem: jest.fn()
+    };
+
+    assignmentService = {
+      attemptAutoAssignJob: jest.fn()
     };
 
     ordersRepository = {
@@ -114,8 +124,10 @@ describe('orders service', () => {
     };
 
     ordersService = createOrdersService({
+      assignmentService,
       buyerAddressesRepository,
       cartsRepository,
+      deliveryJobsRepository,
       ordersRepository,
       sellersRepository
     });
@@ -132,6 +144,7 @@ describe('orders service', () => {
             title: 'Front Brake Pad Set for Toyota Camry',
             status: 'active',
             stockQty: 18,
+            location: 'Lagos',
             seller: {
               id: 9001,
               businessName: 'Prime Auto Hub',
@@ -158,8 +171,8 @@ describe('orders service', () => {
       paymentMethod: 'paystack',
       paymentStatus: 'pending',
       subtotalKobo: 3700000,
-      deliveryFeeKobo: 0,
-      totalKobo: 3700000,
+      deliveryFeeKobo: 205000,
+      totalKobo: 3905000,
       createdAt: '2026-06-30T10:00:00.000Z',
       updatedAt: '2026-06-30T10:00:00.000Z'
     });
@@ -190,7 +203,8 @@ describe('orders service', () => {
       cartId: 77,
       paymentMethod: 'paystack',
       subtotalKobo: 3700000,
-      totalKobo: 3700000
+      deliveryFeeKobo: 205000,
+      totalKobo: 3905000
     }));
     expect(result.id).toBe(101);
     expect(result.deliveryAddress.id).toBe(31);
@@ -229,6 +243,7 @@ describe('orders service', () => {
             title: 'Front Brake Pad Set for Toyota Camry',
             status: 'active',
             stockQty: 18,
+            location: 'Lagos',
             seller: {
               id: 9001,
               businessName: 'Prime Auto Hub',
@@ -289,8 +304,8 @@ describe('orders service', () => {
           paymentMethod: 'paystack',
           paymentStatus: 'paid',
           subtotalKobo: 3700000,
-          deliveryFeeKobo: 0,
-          totalKobo: 3700000,
+          deliveryFeeKobo: 205000,
+          totalKobo: 3905000,
           totalItems: 2,
           createdAt: '2026-06-30T10:00:00.000Z',
           updatedAt: '2026-06-30T10:30:00.000Z'
@@ -301,8 +316,8 @@ describe('orders service', () => {
           paymentMethod: 'bank_transfer',
           paymentStatus: 'pending',
           subtotalKobo: 3700000,
-          deliveryFeeKobo: 0,
-          totalKobo: 3700000,
+          deliveryFeeKobo: 205000,
+          totalKobo: 3905000,
           totalItems: 1,
           createdAt: '2026-06-30T10:00:00.000Z',
           updatedAt: '2026-06-30T10:30:00.000Z'
@@ -337,8 +352,8 @@ describe('orders service', () => {
       paymentReference: 'APT-101-REF',
       paymentStatus: 'paid',
       subtotalKobo: 3700000,
-      deliveryFeeKobo: 0,
-      totalKobo: 3700000,
+      deliveryFeeKobo: 205000,
+      totalKobo: 3905000,
       totalItems: 2,
       deliveryAddress: {
         id: 31,
@@ -469,7 +484,7 @@ describe('orders service', () => {
       paymentMethod: 'paystack',
       paymentReference: 'APT-101-REF',
       paymentStatus: 'paid',
-      totalKobo: 3700000,
+      totalKobo: 3905000,
       totalItems: 2
     });
     expect(result.receipt.items).toHaveLength(1);
@@ -536,8 +551,8 @@ describe('orders service', () => {
           paymentReference: 'APT-101-REF',
           paymentStatus: 'paid',
           subtotalKobo: 3700000,
-          deliveryFeeKobo: 0,
-          totalKobo: 3700000,
+          deliveryFeeKobo: 205000,
+          totalKobo: 3905000,
           totalItems: 2,
           sellerLineItems: 1,
           sellerTotalItems: 2,
@@ -600,6 +615,9 @@ describe('orders service', () => {
       paymentReference: 'APT-101-REF',
       paymentStatus: 'paid'
     });
+    deliveryJobsRepository.createJobForOrderItem.mockResolvedValue({
+      id: 801
+    });
 
     const result = await ordersService.updateSellerOrderItemStatus({
       userId: 44,
@@ -612,6 +630,13 @@ describe('orders service', () => {
       orderItemId: 501,
       sellerId: 9001,
       itemStatus: 'ready_for_pickup'
+    });
+    expect(deliveryJobsRepository.createJobForOrderItem).toHaveBeenCalledWith({
+      orderItemId: 501,
+      sellerId: 9001
+    });
+    expect(assignmentService.attemptAutoAssignJob).toHaveBeenCalledWith({
+      jobId: 801
     });
     expect(result).toEqual({
       id: 501,

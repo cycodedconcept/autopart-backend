@@ -124,7 +124,8 @@ describe('Orders API integration', () => {
     expect(createOrderResponse.body.success).to.equal(true);
     expect(createOrderResponse.body.data.status).to.equal('pending_payment');
     expect(createOrderResponse.body.data.paymentStatus).to.equal('pending');
-    expect(createOrderResponse.body.data.totalKobo).to.equal(3700000);
+    expect(createOrderResponse.body.data.deliveryFeeKobo).to.equal(205000);
+    expect(createOrderResponse.body.data.totalKobo).to.equal(3905000);
     expect(createOrderResponse.body.data.items).to.have.length(1);
     expect(createOrderResponse.body.data.deliveryAddress.city).to.equal('Ikeja');
     expect(createOrderResponse.body.data.statusHistory).to.have.length(1);

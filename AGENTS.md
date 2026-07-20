@@ -6,30 +6,32 @@ This file tells Codex how to work in this repository. Read it fully before gener
 
 ## 0. Current Status & Next Task  ← READ THIS FIRST
 
-**Build order:** Buyer (done) -> Seller (done) -> Admin (done) -> **Logistics (next)**.
+**Build order:** Buyer (done) -> Seller (done) -> Admin (done) -> **Logistics (current — FINAL MODULE)**.
 
 **Completed**
 - [x] Project skeleton (Section 3 layout)
 - [x] **Buyer flow** — auth, catalogue browsing, cart & checkout, Paystack payment, order tracking & history
 - [x] **Seller flow** — registration & CAC verification (Dojah), listing management, order management, inventory, sales & payouts
-- [x] **Admin Milestone A-A** — dedicated admin auth, RBAC, seeded `super_admin`, scoped `verification_admin`, `GET /api/v1/admin/me`
-- [x] **Admin Milestone A-B** — seller verification queue, seller detail view with stored Dojah response, approve/reject flow, removed `SELLER_AUTO_VERIFY`, re-ran affected seller/admin tests
-- [x] **Admin Milestone A-C** — admin category tree CRUD, admin vehicle taxonomy CRUD, seller compatibility now validates against admin-managed taxonomy, re-ran affected buyer/seller/admin tests
-- [x] **Admin Milestone A-D** — paginated buyer/seller oversight, account suspension/ban controls, platform-wide order oversight with status intervention, re-ran affected buyer/seller/admin tests
-- [x] **Admin Milestone A-E** — payout approval review, approve/reject/paid payout transitions, admin-owned platform config, payout/commission `// ADMIN-STUB` replaced, re-ran affected seller/admin tests
-- [x] **Admin Milestone A-F** — disputes queue, resolve/reject decisions with refund linkage metadata, expanded audit-log writes, `GET /api/v1/admin/audit-logs`, re-ran affected unit/integration tests
+- [x] **Admin flow** — admin auth & RBAC, seller verification, category management, user/order oversight, payout approval, disputes & audit log
+- [x] **Logistics Milestone L-A** — `logistics_companies`, `riders`, and `delivery_zones`; company and rider JWT auth; company-owned rider management; admin logistics approval and rider oversight
+- [x] **Logistics Milestone L-B** — delivery jobs now move through `pending -> assigned`; nearest-available rider auto-assignment uses zone matching; admins can review pending jobs and manually assign a rider; delivered-only seller payout eligibility remains enforced
+- [x] **Logistics Milestone L-C** — rider-owned job access stays aligned with `assigned`; riders can move `assigned -> picked_up -> in_transit -> delivered` or `failed` with a reason; order history, payout eligibility, and rider availability now stay in sync with delivery completion or failure
+- [x] **Logistics Milestone L-D** — delivery fees now use the shared distance/zone-and-weight calculator; completed jobs record platform margin plus company share; logistics companies can review earnings and request payouts through the shared payouts flow
+- [x] **Logistics Milestone L-E** — company job views now expose dashboard status totals plus rider performance summaries; admin logistics oversight now includes cross-company company/rider summary counts, the unassigned-job queue, manual assignment controls, and delivery metrics
 
-**NEXT TASK → Logistics module planning / first milestone implementation.**
-Admin Milestones `A-A` through `A-F` are complete. The next phase is Logistics, but stop here so migrations can be run and the admin work can be reviewed first.
+**NEXT TASK → Full-project cleanup, final regression pass, and handoff.**
+Build, in this order:
+1. Sweep the codebase for remaining cleanup after the final logistics module.
+2. Run the final regression pass across buyer, seller, admin, and logistics flows.
+3. Prepare the final handoff notes.
 
-Follow the build recipe in Section 13 when Logistics starts. **Stop here so I can run migrations and review.**
+Follow the build recipe in Section 13 for any remaining code changes, then confirm tests pass. **Stop here so I can run migrations and review the completed L-E milestone.**
 
-**After this:** Logistics.
+**After this review:** full-project cleanup, final regression pass, and handoff.
 
-**This module resolves earlier stubs.** As you build, replace the matching markers and re-run the affected tests:
-- Seller verification Dojah review flow + admin stub resolved in A-B.
-- Seeded categories / `// ADMIN-STUB` on category ownership resolved in A-C.
-- `// ADMIN-STUB` on payout approval and commission config -> replaced in A-E.
+**This module resolves the remaining logistics gaps.** As you build, replace every `// LOGISTICS-STUB` marker and re-run the affected buyer/seller/admin tests:
+- Delivery pricing and logistics-company earnings now run through the shared settlement flow from L-D.
+- Company dashboard breadth and broader delivery oversight are completed in L-E.
 
 ---
 
@@ -39,7 +41,7 @@ AutoParts Marketplace is a Nigerian B2B & B2C ecommerce platform for auto spare 
 
 This repository is the **backend API only** (no frontend). It is consumed by a responsive web client.
 
-Where a module you are not currently building is unavoidable, build only the minimum surface needed and mark it `// LOGISTICS-STUB`. Do not build the full Logistics module yet.
+Logistics is the final module. After it, every `// SELLER-STUB`, `// ADMIN-STUB`, and `// LOGISTICS-STUB` in the codebase must be gone.
 
 ---
 
@@ -52,12 +54,13 @@ Where a module you are not currently building is unavoidable, build only the min
 - **Query layer:** `mysql2` with **parameterised queries**, or Knex query builder if a builder is needed. Do NOT introduce a heavy ORM (no Sequelize/TypeORM) unless explicitly requested.
 - **Auth:** JWT (`jsonwebtoken`); password hashing with `bcrypt`
 - **Validation:** `joi` (stay consistent)
-- **File upload:** `multer` (CAC docs, product images). Local `/uploads` in dev; keep storage swappable for S3.
-- **External verification:** Dojah CAC lookup (`https://api.dojah.io/api/v1/kyc/cac/basic`, headers `AppId` + `Authorization`) behind a swappable `cacVerificationService`.
+- **File upload:** `multer` (CAC docs, product images, rider documents). Local `/uploads` in dev; storage swappable for S3.
+- **External verification:** Dojah CAC lookup behind the swappable `cacVerificationService`.
 - **Config:** `dotenv`
 - **Testing:** `jest` (unit) and `mocha` + `chai` + `supertest` (integration)
 - **Logging:** `morgan` for HTTP; a small app logger wrapper otherwise
 - **Currency:** NGN. Store money as **integers in kobo** (1 NGN = 100 kobo). Never store money as a float.
+- **No GPS/live tracking this phase.** Status updates only. Do not add map/geolocation SDKs.
 
 ---
 
@@ -72,7 +75,7 @@ Where a module you are not currently building is unavoidable, build only the min
   /repositories  -> all SQL lives here (parameterised queries only)
   /middleware    -> auth, role guard, RBAC/permission guard, validation, error handler, rate limiter, upload
   /validators    -> joi schemas per resource
-  /utils         -> helpers (jwt, password, money, responses, pagination, audit)
+  /utils         -> helpers (jwt, password, money, responses, pagination, audit, distance)
   /db
     /migrations  -> ordered SQL migrations (001_xxx.sql, 002_xxx.sql)
     /seeds       -> seed data for local dev/testing
@@ -95,7 +98,7 @@ README.md
 ## 4. Coding Standards
 
 - Clean, efficient, readable code. Small single-purpose functions, clear names, no dead code.
-- **Reusable components:** factor shared logic into `/utils`, `/middleware`, `/services`. No copy-paste across controllers. Centralise: the response envelope, JWT sign/verify, password hashing, money conversion (naira<->kobo), pagination, file upload, and the audit-log writer.
+- **Reusable components:** factor shared logic into `/utils`, `/middleware`, `/services`. No copy-paste across controllers. Centralise: the response envelope, JWT sign/verify, password hashing, money conversion (naira<->kobo), pagination, file upload, the audit-log writer, and the delivery-fee calculator.
 - ONE consistent response envelope:
   ```json
   { "success": true, "data": { }, "message": "..." }
@@ -113,108 +116,107 @@ README.md
 ## 5. Database Conventions
 
 - MySQL 8, InnoDB, `utf8mb4`.
-- Table names: plural snake_case (`admins`, `audit_logs`).
+- Table names: plural snake_case (`riders`, `delivery_jobs`).
 - Primary keys: `id` BIGINT UNSIGNED AUTO_INCREMENT.
 - Every table has `created_at` and `updated_at` (TIMESTAMP, default CURRENT_TIMESTAMP).
-- Money columns: BIGINT (kobo), clearly named (`price_kobo`, `total_kobo`).
+- Money columns: BIGINT (kobo), clearly named (`delivery_fee_kobo`).
 - Foreign keys explicit, with sensible `ON DELETE`.
 - All schema changes via ordered SQL migrations in `/src/db/migrations`. Never edit an applied migration — add a new one.
 
 ---
 
-## 6. Buyer & Seller Flows  [ALL DONE]
+## 6. Buyer, Seller & Admin Flows  [ALL DONE]
 
-- **Buyer** (PRD 4.1 / 5.1): auth, catalogue browsing, cart & checkout, Paystack payment, order tracking & history.
-- **Seller** (PRD 4.2 / 5.2): registration & CAC verification, listing management, order management, inventory, sales & payouts.
+- **Buyer** (PRD 4.1 / 5.1): auth, catalogue, cart & checkout, Paystack payment, order tracking & history.
+- **Seller** (PRD 4.2 / 5.2): registration & CAC verification, listings, order management, inventory, sales & payouts.
+- **Admin** (PRD 4.4 / 4.5): admin auth & RBAC, seller verification, categories, user/order oversight, payout approval, disputes & audit log.
 
-These flows still depend on the remaining admin stub around payout approval and commission ownership. The Admin flow (Section 6C) replaces that stub. Keep buyer and seller endpoints working and their tests green as you do so.
+These flows now depend on the logistics company and rider module for delivered-order progression and seller payout eligibility. Keep all existing endpoints working and their tests green as Section 6D expands the assignment, pricing, and settlement logic.
 
 ---
 
-## 6C. Admin Flow Milestones (build in this order, P0 first)
+## 6D. Logistics Flow Milestones (build in this order, P0 first)
 
-Ground every endpoint in PRD section 4.4 (Admin Panel Features), 4.5 (Super Admin Features), and the RBAC note. Goal for this phase: **operational control of the platform that's already built.**
+Ground every endpoint in PRD section 4.3 (Logistics Features) and the buyer/seller fulfilment flows.
 
-### Milestone A-A — Admin auth & RBAC  [DONE]
-- `admins` table, admin login (JWT), `GET /admin/me`.
-- RBAC: `roles`, `permissions`, `role_permissions`, `admin_roles`; a permission-guard middleware.
-- Seed a `super_admin` (all permissions) and a scoped role. Every admin route is permission-gated.
+**Scope decisions (locked — do not deviate):**
+- **Two actors:** logistics **companies** (manage a fleet) and **riders** (perform deliveries). A rider belongs to one company.
+- **Assignment:** auto-assign to the nearest available rider, with an **admin manual-assignment fallback** when auto-assign finds no one.
+- **No live GPS tracking.** Status updates only: `pending -> assigned -> picked_up -> in_transit -> delivered` (plus `failed`, `cancelled`).
 
-### Milestone A-B — Seller verification management  [DONE]
-- List pending sellers; view a seller's profile + uploaded CAC/documents + the stored Dojah response.
-- Approve or reject with a reason; on approve, set the seller `verified`.
-- REPLACES the `SELLER_AUTO_VERIFY` flag and the `// ADMIN-STUB` on seller verification. Re-run seller tests.
+### Milestone L-A — Logistics companies & riders  [DONE]
+- `logistics_companies`: registration, login (JWT), company profile. Admin approves/suspends a company (reuse the existing admin permission guard).
+- `riders`: a company onboards/lists/activates/deactivates its OWN riders. Enforce ownership.
+- Rider login (JWT), `GET /rider/me`, and an availability toggle (`available` / `unavailable` / `on_delivery`).
+- `delivery_zones`: simple zone records (name, state/city) used later for fee and matching.
 
-### Milestone A-C — Category & catalogue management  [DONE]
-- Admin CRUD on the category tree (`categories`, parent/child) and the vehicle taxonomy.
-- Sellers still only SELECT categories; admin owns creation. Optional: a "seller category request -> admin approves" queue (P1).
-- REPLACES seeded-category ownership / `// ADMIN-STUB`. Confirm seller listing + buyer catalogue still pass.
+### Milestone L-B — Delivery jobs & auto-assignment  [DONE]
+- When a seller marks an order item `ready_for_pickup`, the existing delivery job should enter the explicit assignment lifecycle `pending -> assigned` instead of waiting for a rider to claim it.
+- **Auto-assignment service:** find the nearest **available** rider (match on zone/location; use a simple distance util — no map SDK). Assign the job, set rider to `on_delivery`, job to `assigned`.
+- **Manual fallback:** if no rider is found, leave the job `pending` and expose it in an admin queue for manual assignment. Admin assignment writes an `audit_logs` row.
+- Keep the matching logic in one `assignmentService` so it can be swapped later.
 
-### Milestone A-D — User & order oversight  [DONE]
-- List/search all buyers, sellers, and orders (paginated). Suspend or ban any user; override where needed.
-- Read-only order oversight across the whole platform, with the ability to intervene on status.
+### Milestone L-C — Rider delivery flow & status updates  [DONE]
+- Rider endpoints: keep view-assigned-jobs and job detail in sync with the new `assigned` state, and extend the status path to `assigned -> picked_up -> in_transit -> delivered` (plus `failed` with a reason).
+- Every status change continues to write to `order_status_history` and update the parent order; L-C tightens this around assigned jobs and failure handling.
+- On `delivered`, free the rider (`available`) and mark the job complete. Delivery confirmation is what releases the seller's payout eligibility.
+- On `failed`, require a failure reason, free the rider back to `available`, return the item to `ready_for_pickup`, and allow admin review for reassignment.
 
-### Milestone A-E — Payout approval + platform config  [DONE]
-- Review seller payout requests; approve / reject / mark paid. Move `payouts` through its states.
-- Manage global config: commission rate(s) per category/tier, and any platform settings.
-- REPLACES the `// ADMIN-STUB` on payout approval and commission config.
+### Milestone L-D — Delivery fees & settlement
+- **Delivery fee calculator** (a reusable util): compute `delivery_fee_kobo` from distance/zone and weight, per the PRD formula. REPLACES the placeholder fee used at checkout.
+- Record the platform's logistics margin and the company's share on each completed job.
+- Company earnings summary + payout request (reuse the existing `payouts` pattern; admin approves).
 
-### Milestone A-F — Disputes + audit log  [DONE]
-- Dispute queue: view buyer/seller disputes, take a decision, resolve. Where a refund is needed, connect to the existing payment records (Paystack refund reference).
-- Audit log: every sensitive admin action (approvals, rejections, bans, payout decisions, config/commission changes) writes an `audit_logs` row with actor, action, target, and timestamp. Expose a read endpoint.
+### Milestone L-E — Company dashboard & admin oversight
+- Company: list its jobs (by status), rider performance summary, earnings.
+- Admin: list all logistics companies and riders, approve/suspend, view the unassigned-job queue, manually assign, and see delivery metrics.
 
-**Out of scope until Admin is done:** the full Logistics module (delivery jobs, rider apps, live tracking), promotions/subscription tiers (P1/P2), advanced analytics (P2). Keep logistics touchpoints as `// LOGISTICS-STUB`.
+**Definition of done for the whole project:** no `// SELLER-STUB`, `// ADMIN-STUB`, or `// LOGISTICS-STUB` remains; a full order can flow buyer -> seller -> rider -> `delivered`; all tests pass.
 
 ---
 
 ## 7. Data Model
 
-Money in kobo. Buyer + seller tables already exist. Admin flow adds the following.
+Money in kobo. Buyer, seller, and admin tables already exist. Logistics adds the following.
 
-**Existing:** `users`, `buyer_addresses`, `categories`, `vehicles_taxonomy`, `products`, `product_images`, `product_compatibility`, `carts`, `cart_items`, `orders`, `order_items`, `payments`, `order_status_history`, `seller_profiles`, `seller_documents`, `payouts`.
+**Existing:** `users`, `buyer_addresses`, `categories`, `vehicles_taxonomy`, `products`, `product_images`, `product_compatibility`, `carts`, `cart_items`, `orders`, `order_items`, `payments`, `order_status_history`, `seller_profiles`, `seller_documents`, `payouts`, `admins`, `roles`, `permissions`, `role_permissions`, `admin_roles`, `audit_logs`, `platform_config`, `disputes`.
 
-**Admin flow additions:**
-- Extend `users`: ensure `account_status` supports `active` / `suspended` / `banned`.
-- `admins` — id, full_name, email (unique), password_hash, is_active, timestamps
-- `roles` — id, name (unique, e.g. `super_admin`, `verification_admin`), description
-- `permissions` — id, key (unique, e.g. `dashboard.read`, `sellers.verify`, `payouts.approve`, `categories.manage`, `users.manage`, `config.manage`, `disputes.resolve`), description
-- `role_permissions` — role_id (FK), permission_id (FK)
-- `admin_roles` — admin_id (FK), role_id (FK)
-- `audit_logs` — id, admin_id (FK), action (string key), target_type, target_id, detail (JSON), created_at
-- `platform_config` — id, key (unique, e.g. `commission_rate_default`), value (JSON or string), updated_at
-- `disputes` — id, order_id (FK), seller_id (nullable FK), raised_by (`buyer`/`seller`), reason, status (`open`/`resolved`/`rejected`), resolution_note, refund_reference, refund_amount_kobo, resolved_by (admin FK), resolved_at, timestamps
-- Extend `seller_profiles`: ensure `verification_status`, `rejection_reason`, `cac_verification_status`, `cac_verification_response`, `cac_verification_checked_at`, `verified_by` (admin FK), `verified_at`.
-- Extend `payouts`: ensure `approved_by` (admin FK), `approved_at`, and status flow `requested -> approved -> paid` / `rejected`.
+**Logistics additions:**
+- `logistics_companies` — id, name, email (unique), phone, password_hash, address, status (`pending`/`approved`/`suspended`), approved_by (admin FK), timestamps
+- `riders` — id, company_id (FK), full_name, phone (unique), email, password_hash, vehicle_type, zone_id (FK), status (`available`/`on_delivery`/`unavailable`/`inactive`), timestamps
+- `delivery_zones` — id, name, state, city, timestamps
+- `delivery_jobs` — id, order_id (FK), order_item_id (FK, nullable), seller_id (FK), buyer_id (FK), rider_id (FK, nullable), company_id (FK, nullable), pickup_address, dropoff_address, zone_id (FK), status (`pending`/`assigned`/`picked_up`/`in_transit`/`delivered`/`failed`/`cancelled`), failure_reason, delivery_fee_kobo, assigned_at, delivered_at, assigned_by (`auto`/admin FK), timestamps
+- `delivery_status_history` — id, delivery_job_id (FK), status, note, actor_type (`rider`/`admin`/`system`), actor_id, created_at
+- Extend `orders`: ensure `delivery_fee_kobo` is populated by the real calculator (L-D).
+- Extend `payouts`: allow `payee_type` (`seller`/`logistics_company`) so companies reuse the payout flow.
 
 ---
 
 ## 8. API Conventions
 
 - Base path: `/api/v1`.
-- Buyer routes (built): `auth/*`, `me`, `products`, `products/:id`, `cart/*`, `orders`, `orders/:id`, `payments/*`.
-- Seller routes (built): `seller/*`.
-- Admin routes (this phase), all under admin auth + permission guard:
-  - `POST /api/v1/admin/login` . `GET /api/v1/admin/dashboard` . `GET /api/v1/admin/me`
-  - `GET  /api/v1/admin/sellers?status=pending` . `GET /api/v1/admin/sellers/:id` . `PATCH /api/v1/admin/sellers/:id/verification`
-  - `GET/POST/PATCH/DELETE /api/v1/admin/categories` (+ `/categories/:id`) . `GET /api/v1/admin/category-requests` (P1)
-  - `GET/POST/PATCH/DELETE /api/v1/admin/vehicle-taxonomy` (+ `/vehicle-taxonomy/:id`)
-  - `GET /api/v1/admin/users` . `PATCH /api/v1/admin/users/:id/status` . `GET /api/v1/admin/orders` . `PATCH /api/v1/admin/orders/:id/status`
-  - `GET /api/v1/admin/payouts` . `PATCH /api/v1/admin/payouts/:id` . `GET/PATCH /api/v1/admin/config`
-  - `GET /api/v1/admin/disputes` . `PATCH /api/v1/admin/disputes/:id` . `GET /api/v1/admin/audit-logs`
-- Protected routes require `Authorization: Bearer <token>`; admin routes also pass the permission-guard middleware for the specific permission key.
-- Correct HTTP status codes (200, 201, 400, 401, 403, 404, 409, 422, 500). Use 403 when an admin lacks the required permission.
-- Paginate all list endpoints; never return unbounded result sets.
+- Existing: `auth/*`, `me`, `products*`, `cart/*`, `orders*`, `payments/*`, `seller/*`, `admin/*`.
+- Logistics routes (this phase):
+  - Company (auth + `logistics_company` role): `POST /logistics/register` . `POST /logistics/login` . `GET /logistics/me`
+    . `POST/GET/PATCH /logistics/riders` (+ `/riders/:id`) . `GET /logistics/jobs` . `GET /logistics/earnings` . `POST /logistics/payouts`
+  - Rider (auth + `rider` role): `POST /rider/login` . `GET /rider/me` . `PATCH /rider/availability`
+    . `GET /rider/jobs` . `GET /rider/jobs/:id` . `PATCH /rider/jobs/:id/status`
+  - Admin (existing permission guard): `GET /admin/logistics/companies` . `PATCH /admin/logistics/companies/:id/status`
+    . `GET /admin/logistics/riders` . `GET /admin/delivery-jobs?status=pending` . `PATCH /admin/delivery-jobs/:id/assign`
+- Protected routes require `Authorization: Bearer <token>`; role-restricted routes pass the role guard; admin routes pass the permission guard.
+- Correct HTTP status codes. Use 403 for wrong role / missing permission, 409 for an invalid status transition.
+- Paginate all list endpoints.
 
 ---
 
 ## 9. Testing (required)
 
-- **jest** unit tests: services, utils, the permission-guard logic. Mock the repository layer.
-- **mocha + chai + supertest** integration tests against a test database. Grow the happy path: add the admin path (super_admin login -> approve a pending seller -> create a category -> approve a payout), and add negative tests (an admin WITHOUT a permission gets 403).
+- **jest** unit tests: the assignment service (nearest-available-rider logic, and the no-rider-found fallback path), the delivery-fee calculator, and status-transition validation. Mock the repository layer.
+- **mocha + chai + supertest** integration tests: the **full end-to-end path** — buyer orders & pays -> seller marks ready -> job auto-created & assigned -> rider picks up -> in transit -> delivered -> order shows `delivered`.
+- Add negative tests: an invalid status transition returns 409; a rider cannot touch another rider's job; a company cannot manage another company's riders.
 - Every new service function gets a unit test; every new endpoint gets at least one integration test.
 - No external network calls in tests — mock Paystack, Dojah, and file storage.
-- npm scripts: `test`, `test:unit`, `test:integration`.
-- A feature is not "done" until its tests pass, including the buyer/seller tests affected when a stub is replaced.
+- A feature is not "done" until its tests pass, INCLUDING the existing buyer/seller/admin tests affected when a `// LOGISTICS-STUB` is replaced.
 
 ---
 
@@ -224,7 +226,7 @@ Money in kobo. Buyer + seller tables already exist. Admin flow adds the followin
 npm run dev               # nodemon
 npm start                 # start server
 npm run migrate           # run pending SQL migrations
-npm run seed              # seed dev data (incl. super_admin + roles/permissions)
+npm run seed              # seed dev data (incl. zones, a test company + riders)
 npm test                  # all tests
 npm run test:unit         # jest
 npm run test:integration  # mocha
@@ -252,37 +254,41 @@ UPLOAD_DIR=./uploads
 DOJAH_BASE_URL=https://api.dojah.io
 DOJAH_APP_ID=
 DOJAH_API_KEY=
-SUPER_ADMIN_EMAIL=         # seeded super admin (dev)
-SUPER_ADMIN_PASSWORD=      # seeded super admin (dev)
+SUPER_ADMIN_EMAIL=
+SUPER_ADMIN_PASSWORD=
+DELIVERY_BASE_FEE_KOBO=100000      # base fee before distance/weight
+DELIVERY_PER_KM_KOBO=5000          # per-km component
+LOGISTICS_PLATFORM_MARGIN_PCT=10   # platform's cut of the delivery fee
 ```
 
-(XAMPP default MySQL: user `root`, empty password, port 3306 — adjust port to 3307 if XAMPP reports that.)
+(XAMPP default MySQL: user `root`, empty password, port 3306 — adjust to 3307 if XAMPP reports that.)
 
 ---
 
 ## 12. Security & Non-Functional Rules (PRD section 6)
 
-- HTTPS only in production; JWT auth on all protected routes; permission guard on every admin route.
-- **Least privilege:** admins only get the permissions their role needs; `super_admin` is the only all-access role.
-- **No card data stored** — Paystack handles payments; store only references/status.
-- Hash passwords with bcrypt; never log passwords, tokens, or full payment/verification payloads.
-- **Audit everything sensitive:** approvals, rejections, bans, payout decisions, and config/commission changes must write an `audit_logs` row.
-- Validate uploaded files: restrict type, cap size, never trust the original filename.
-- Rate-limit auth (including admin login) endpoints.
-- Validate and sanitise all input.
+- HTTPS only in production; JWT on all protected routes; role guard on company/rider routes; permission guard on admin routes.
+- **Enforce ownership everywhere:** a rider only sees/updates their OWN assigned jobs; a company only manages its OWN riders and jobs.
+- **Validate status transitions** — never allow an illegal jump (e.g. `pending -> delivered`). Return 409 on an invalid transition.
+- **Audit sensitive logistics actions:** company approval/suspension, manual job assignment, and payout decisions all write `audit_logs` rows.
+- **No card data stored** — Paystack handles payments.
+- Hash all passwords (riders and companies included) with bcrypt; never log passwords or tokens.
+- Rate-limit all login endpoints (rider and company login included).
+- Validate and sanitise all input; validate uploaded rider documents (type, size).
 - Currency NGN; money in kobo (integers).
-- Index columns used in admin queries (verification_status, order status, payout status, audit target).
+- Index columns used in assignment and lookup (rider status, zone_id, delivery_job status, order_id).
 - Keep services stateless; use a DB connection pool.
 
 ---
 
 ## 13. How Codex Should Work Here
 
-- Before building, restate the task and which milestone (Section 0 / 6C) it belongs to.
-- Build one milestone at a time, in order. Do not jump ahead to Logistics.
+- Before building, restate the task and which milestone (Section 0 / 6D) it belongs to.
+- Build one milestone at a time, in order.
 - Build recipe per unit of work: migration (if needed) -> repository -> service -> validator -> controller -> route -> tests. Then confirm tests pass.
-- Reuse existing utils/middleware before writing new ones (esp. auth, response envelope, pagination, upload, and the audit writer once it exists).
-- When replacing a stub (seeded categories, payout/commission `// ADMIN-STUB`), update the dependent buyer/seller code and re-run their tests to confirm nothing broke.
-- After each milestone: update the README with new endpoints, run all tests, and update Section 0 (move the item to Completed, set the next task). Then stop for review.
+- Reuse existing utils/middleware before writing new ones (auth, response envelope, pagination, upload, audit writer, payout pattern, permission guard).
+- When replacing a `// LOGISTICS-STUB`, update the dependent buyer/seller/admin code and re-run their tests to confirm nothing broke.
+- Keep the assignment logic isolated in `assignmentService` — it is the piece most likely to change later.
+- After each milestone: update the README with new endpoints, run ALL tests, and update Section 0 (move the item to Completed, set the next task). Then stop for review.
 - If a requirement is ambiguous, make the smallest reasonable assumption, state it in your output, and continue — do not block.
-- Never add a new dependency without noting why; prefer the stack already listed here.
+- Never add a new dependency without noting why. Do NOT add map/geolocation SDKs — this phase is status-updates only.

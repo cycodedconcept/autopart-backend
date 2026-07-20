@@ -10,6 +10,8 @@ const { createInMemoryBuyerAddressesRepository } = require('./support/in-memory-
 const { createInMemoryCartsRepository } = require('./support/in-memory-carts-repository');
 const { createInMemoryCommerceStore } = require('./support/in-memory-commerce-store');
 const { createFakePaystackClient } = require('./support/fake-paystack-client');
+const { createInMemoryDeliveryJobsRepository } = require('./support/in-memory-delivery-jobs-repository');
+const { createInMemoryLogisticsRepository } = require('./support/in-memory-logistics-repository');
 const { createInMemoryOrdersRepository } = require('./support/in-memory-orders-repository');
 const { createInMemoryPaymentsRepository } = require('./support/in-memory-payments-repository');
 const { createInMemoryProductsRepository } = require('./support/in-memory-products-repository');
@@ -132,9 +134,22 @@ describe('Seller orders API integration', () => {
     const sellersRepository = createInMemorySellersRepository({ usersRepository });
     const productsRepository = createInMemoryProductsRepository();
     const commerceStore = createInMemoryCommerceStore();
+    const logisticsRepository = createInMemoryLogisticsRepository({
+      store: commerceStore,
+      usersRepository
+    });
+    const deliveryJobsRepository = createInMemoryDeliveryJobsRepository({
+      logisticsRepository,
+      productsRepository,
+      sellersRepository,
+      store: commerceStore,
+      usersRepository
+    });
 
     uploadDirectory = path.join(os.tmpdir(), `autoparts-seller-orders-${Date.now()}`);
     app = createApp({
+      deliveryJobsRepository,
+      logisticsRepository,
       usersRepository,
       sellersRepository,
       productsRepository,

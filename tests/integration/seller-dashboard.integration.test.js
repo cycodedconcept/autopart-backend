@@ -10,6 +10,8 @@ const { createInMemoryBuyerAddressesRepository } = require('./support/in-memory-
 const { createInMemoryCartsRepository } = require('./support/in-memory-carts-repository');
 const { createInMemoryCommerceStore } = require('./support/in-memory-commerce-store');
 const { createFakePaystackClient } = require('./support/fake-paystack-client');
+const { createInMemoryDeliveryJobsRepository } = require('./support/in-memory-delivery-jobs-repository');
+const { createInMemoryLogisticsRepository } = require('./support/in-memory-logistics-repository');
 const { createInMemoryOrdersRepository } = require('./support/in-memory-orders-repository');
 const { createInMemoryPaymentsRepository } = require('./support/in-memory-payments-repository');
 const { createInMemoryPlatformConfigRepository } = require('./support/in-memory-platform-config-repository');
@@ -17,6 +19,10 @@ const { createInMemoryProductsRepository } = require('./support/in-memory-produc
 const { createInMemorySellerFinanceRepository } = require('./support/in-memory-seller-finance-repository');
 const { createInMemorySellersRepository } = require('./support/in-memory-sellers-repository');
 const { createInMemoryUsersRepository } = require('./support/in-memory-users-repository');
+const {
+  progressDeliveryJob,
+  registerAndLoginLogistics
+} = require('./support/logistics-test-helpers');
 
 const { expect } = chai;
 
@@ -141,9 +147,22 @@ describe('Seller dashboard API integration', () => {
     const productsRepository = createInMemoryProductsRepository();
     const commerceStore = createInMemoryCommerceStore();
     const platformConfigRepository = createInMemoryPlatformConfigRepository();
+    const logisticsRepository = createInMemoryLogisticsRepository({
+      store: commerceStore,
+      usersRepository
+    });
+    const deliveryJobsRepository = createInMemoryDeliveryJobsRepository({
+      logisticsRepository,
+      productsRepository,
+      sellersRepository,
+      store: commerceStore,
+      usersRepository
+    });
 
     uploadDirectory = path.join(os.tmpdir(), `autoparts-seller-dashboard-${Date.now()}`);
     app = createApp({
+      deliveryJobsRepository,
+      logisticsRepository,
       usersRepository,
       sellersRepository,
       productsRepository,
@@ -205,6 +224,15 @@ describe('Seller dashboard API integration', () => {
       address: '12 Sapara Williams Close, Victoria Island, Lagos',
       cacNumber: 'RC-323500'
     });
+    const logistics = await registerAndLoginLogistics(app, {
+      fullName: 'Alex Rider',
+      email: 'logistics-dashboard@example.com',
+      phone: '08012345002',
+      password: 'Password123',
+      providerName: 'Swift Dispatch',
+      vehicleType: 'van',
+      plateNumber: 'LAG-502XY'
+    });
     const productId = await createSellerListing(app, sellerToken, {
       title: 'Front Brake Disc',
       description: 'Premium brake disc for Toyota Camry sedans.',
@@ -239,6 +267,22 @@ describe('Seller dashboard API integration', () => {
         reference: initializeResponse.body.data.payment.reference
       })
       .expect(200);
+
+    const sellerOrdersResponse = await request(app)
+      .get('/api/v1/seller/orders')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .expect(200);
+    const orderItemId = sellerOrdersResponse.body.data.orders[0].items[0].id;
+
+    await request(app)
+      .patch(`/api/v1/seller/orders/${orderItemId}/status`)
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({
+        itemStatus: 'ready_for_pickup'
+      })
+      .expect(200);
+
+    await progressDeliveryJob(app, logistics.token, orderItemId);
 
     const today = new Date().toISOString().slice(0, 10);
     const response = await request(app)
@@ -396,13 +440,13 @@ describe('Seller dashboard API integration', () => {
       paidOrders: 1,
       unpaidOrders: 0,
       totalCustomers: 1,
-      pendingOrders: 1,
+      pendingOrders: 0,
       sellerLineItems: 1,
       totalItems: 2,
-      pendingLineItems: 1,
+      pendingLineItems: 0,
       readyForPickupLineItems: 0,
       pickedUpLineItems: 0,
-      deliveredLineItems: 0,
+      deliveredLineItems: 1,
       cancelledLineItems: 0
     });
     expect(data.sales).to.deep.equal({

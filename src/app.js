@@ -11,14 +11,18 @@ const { createProductsRepository } = require('./repositories/products.repository
 const { createBuyerAddressesRepository } = require('./repositories/buyer-addresses.repository');
 const { createCartsRepository } = require('./repositories/carts.repository');
 const { createDisputesRepository } = require('./repositories/disputes.repository');
+const { createDeliveryJobsRepository } = require('./repositories/delivery-jobs.repository');
+const { createLogisticsRepository } = require('./repositories/logistics.repository');
 const { createOrdersRepository } = require('./repositories/orders.repository');
 const { createPaymentsRepository } = require('./repositories/payments.repository');
 const { createSellerFinanceRepository } = require('./repositories/seller-finance.repository');
 const { createSellersRepository } = require('./repositories/sellers.repository');
 const { createAdminService } = require('./services/admin.service');
 const { createAdminDashboardService } = require('./services/admin-dashboard.service');
+const { createAssignmentService } = require('./services/assignment.service');
 const { createAuthService } = require('./services/auth.service');
 const { createCartService } = require('./services/cart.service');
+const { createLogisticsService } = require('./services/logistics.service');
 const { createOrdersService } = require('./services/orders.service');
 const { createPaymentsService } = require('./services/payments.service');
 const { createProductsService } = require('./services/products.service');
@@ -30,6 +34,7 @@ const { createAdminController } = require('./controllers/admin.controller');
 const { createAdminDashboardController } = require('./controllers/admin-dashboard.controller');
 const { createAuthController } = require('./controllers/auth.controller');
 const { createCartController } = require('./controllers/cart.controller');
+const { createLogisticsController } = require('./controllers/logistics.controller');
 const { createMeController } = require('./controllers/me.controller');
 const { createOrdersController } = require('./controllers/orders.controller');
 const { createPaymentsController } = require('./controllers/payments.controller');
@@ -40,20 +45,28 @@ const { createSellerController } = require('./controllers/seller.controller');
 const { createSellerInventoryController } = require('./controllers/seller-inventory.controller');
 const { createSellerOrdersController } = require('./controllers/seller-orders.controller');
 const { createSellerProductsController } = require('./controllers/seller-products.controller');
+const { createRiderController } = require('./controllers/rider.controller');
 const { createAdminRouter } = require('./routes/admin.routes');
 const { createAuthRouter } = require('./routes/auth.routes');
 const { createCartRouter } = require('./routes/cart.routes');
+const { createLogisticsRouter } = require('./routes/logistics.routes');
 const { createMeRouter } = require('./routes/me.routes');
 const { createOrdersRouter } = require('./routes/orders.routes');
 const { createPaymentsRouter } = require('./routes/payments.routes');
 const { createProductsRouter } = require('./routes/products.routes');
+const { createRiderRouter } = require('./routes/rider.routes');
 const { createSellerDashboardRouter } = require('./routes/seller-dashboard.routes');
 const { createSellerFinanceRouter } = require('./routes/seller-finance.routes');
 const { createSellerInventoryRouter } = require('./routes/seller-inventory.routes');
 const { createSellerOrdersRouter } = require('./routes/seller-orders.routes');
 const { createSellerRouter } = require('./routes/seller.routes');
 const { createSellerProductsRouter } = require('./routes/seller-products.routes');
-const { createAdminAuthMiddleware, createAuthMiddleware } = require('./middleware/auth.middleware');
+const {
+  createAdminAuthMiddleware,
+  createAuthMiddleware,
+  createLogisticsCompanyAuthMiddleware,
+  createRiderAuthMiddleware
+} = require('./middleware/auth.middleware');
 const { createErrorMiddleware } = require('./middleware/error.middleware');
 const env = require('./config/env');
 const jwtUtils = require('./utils/jwt');
@@ -98,6 +111,12 @@ function createDependencies(overrides = {}) {
   const disputesRepository = overrides.disputesRepository || createDisputesRepository({
     db: resolveDb()
   });
+  const deliveryJobsRepository = overrides.deliveryJobsRepository || createDeliveryJobsRepository({
+    db: resolveDb()
+  });
+  const logisticsRepository = overrides.logisticsRepository || createLogisticsRepository({
+    db: resolveDb()
+  });
   const ordersRepository = overrides.ordersRepository || createOrdersRepository({
     db: resolveDb()
   });
@@ -126,11 +145,18 @@ function createDependencies(overrides = {}) {
     passwordResetUtils: overrides.passwordResetUtils || passwordResetUtils,
     env: appEnv
   });
+  const assignmentService = overrides.assignmentService || createAssignmentService({
+    deliveryJobsRepository,
+    logisticsRepository
+  });
   const adminService = overrides.adminService || createAdminService({
+    assignmentService,
     env: appEnv,
     adminRepository,
     auditLogRepository,
+    deliveryJobsRepository,
     disputesRepository,
+    logisticsRepository,
     platformConfigRepository,
     productsRepository,
     sellerFinanceRepository,
@@ -152,9 +178,20 @@ function createDependencies(overrides = {}) {
     cartsRepository,
     productsRepository
   });
+  const logisticsService = overrides.logisticsService || createLogisticsService({
+    deliveryJobsRepository,
+    env: appEnv,
+    jwtUtils: overrides.jwtUtils || jwtUtils,
+    logisticsRepository,
+    passwordUtils: overrides.passwordUtils || passwordUtils,
+    sellerFinanceRepository
+  });
   const ordersService = overrides.ordersService || createOrdersService({
+    assignmentService,
     buyerAddressesRepository,
     cartsRepository,
+    deliveryJobsRepository,
+    env: appEnv,
     ordersRepository,
     sellersRepository
   });
@@ -194,6 +231,9 @@ function createDependencies(overrides = {}) {
       || createAdminDashboardController({ adminDashboardService }),
     authController: overrides.authController || createAuthController({ authService }),
     cartController: overrides.cartController || createCartController({ cartService }),
+    logisticsController: overrides.logisticsController
+      || createLogisticsController({ logisticsService }),
+    riderController: overrides.riderController || createRiderController({ logisticsService }),
     meController: overrides.meController || createMeController(),
     ordersController: overrides.ordersController || createOrdersController({ ordersService }),
     paymentsController: overrides.paymentsController || createPaymentsController({ paymentsService }),
@@ -211,6 +251,9 @@ function createDependencies(overrides = {}) {
       || createSellerProductsController({ productsService }),
     adminAuthMiddleware: overrides.adminAuthMiddleware || createAdminAuthMiddleware({ adminService }),
     authMiddleware: overrides.authMiddleware || createAuthMiddleware({ authService }),
+    logisticsCompanyAuthMiddleware: overrides.logisticsCompanyAuthMiddleware
+      || createLogisticsCompanyAuthMiddleware({ logisticsService }),
+    riderAuthMiddleware: overrides.riderAuthMiddleware || createRiderAuthMiddleware({ logisticsService }),
     errorMiddleware: overrides.errorMiddleware || createErrorMiddleware({ logger: appLogger }),
     env: appEnv,
     logger: appLogger
@@ -261,6 +304,16 @@ function createApp(overrides = {}) {
   app.use('/api/v1/cart', createCartRouter({
     authMiddleware: dependencies.authMiddleware,
     cartController: dependencies.cartController
+  }));
+
+  app.use('/api/v1/logistics', createLogisticsRouter({
+    logisticsCompanyAuthMiddleware: dependencies.logisticsCompanyAuthMiddleware,
+    logisticsController: dependencies.logisticsController
+  }));
+
+  app.use('/api/v1/rider', createRiderRouter({
+    riderAuthMiddleware: dependencies.riderAuthMiddleware,
+    riderController: dependencies.riderController
   }));
 
   app.use('/api/v1/orders', createOrdersRouter({

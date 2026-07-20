@@ -5,6 +5,7 @@ const {
   DISPUTE_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
+  PAYOUT_PAYEE_TYPES,
   PAYOUT_STATUSES,
   SELLER_VERIFICATION_STATUSES,
   USER_ACCOUNT_STATUSES,
@@ -50,6 +51,11 @@ const adminPaymentStatuses = [
 const adminPayoutStatuses = [
   'all',
   ...Object.values(PAYOUT_STATUSES)
+];
+
+const adminPayoutPayeeTypes = [
+  'all',
+  ...Object.values(PAYOUT_PAYEE_TYPES)
 ];
 
 const adminDisputeStatuses = [
@@ -227,8 +233,10 @@ const listAdminPayoutsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
   query: Joi.object({
+    payeeType: Joi.string().valid(...adminPayoutPayeeTypes).default('all'),
     status: Joi.string().valid(...adminPayoutStatuses).default('all'),
     sellerId: Joi.number().integer().positive().optional(),
+    companyId: Joi.number().integer().positive().optional(),
     search: Joi.string().trim().max(120).allow('', null).optional(),
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(50).default(10)

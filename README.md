@@ -1,6 +1,6 @@
 # AutoParts Marketplace Backend
 
-Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, and Admin Milestones `A-A` through `A-F`. This repository currently implements the buyer flow, seller flow, and the full admin operations slice: buyer authentication, catalogue browsing, cart management, checkout order creation, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus CAC verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, and dedicated admin auth with dashboard overview, seller verification, catalogue management, user and order oversight, payout review, platform configuration RBAC, disputes review, and audit-log access.
+Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-A` through `S-E`, Admin Milestones `A-A` through `A-F`, and Logistics Milestones `L-A` through `L-E`. This repository currently implements the buyer flow, seller flow, the full admin operations slice, and the full logistics slice: buyer authentication, catalogue browsing, cart management, checkout order creation with calculated delivery fees, Paystack-backed payment initialization and verification, buyer order tracking/history, seller registration plus CAC verification onboarding, seller-owned listing management, seller-side order management, the seller inventory dashboard, seller sales plus payout request workflows, dedicated admin auth with dashboard overview, seller verification, catalogue management, user and order oversight, payout review, platform configuration RBAC, disputes review, audit-log access, plus logistics company registration, delivery zones, company-managed riders, rider authentication, nearest-rider delivery-job auto-assignment, admin manual assignment fallback, rider-driven delivery progression, failed-delivery recovery, delivery-fee settlement, logistics-company payout reuse, company dashboard summaries, and admin logistics delivery metrics.
 
 ## Implemented Milestone
 
@@ -11,7 +11,7 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Product catalogue schema and seed data for categories, products, images, compatibility, and vehicle taxonomy
 - Public catalogue browsing with filtering, pagination, and single-product detail
 - Authenticated buyer cart management with quantity updates and removal
-- Buyer checkout order creation with saved-or-inline delivery address support
+- Buyer checkout order creation with saved-or-inline delivery address support plus calculated delivery fees
 - Paystack payment initialization for paystack, bank transfer, and USSD checkout methods
 - Paystack payment verification via callback and webhook, including order confirmation on successful verification
 - Buyer order history listing, single-order detail, current status/history, and receipt responses
@@ -24,7 +24,7 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Seller-protected `GET /api/v1/seller/me` profile and verification-status response
 - Seller CRUD for owned product listings with multipart photo upload and compatibility records
 - Seller-scoped incoming order views with pagination and order-item ownership enforcement
-- Seller order-item updates to `ready_for_pickup` or `cancelled`, with `// LOGISTICS-STUB` handoff for downstream dispatch/refund workflows
+- Seller order-item updates to `ready_for_pickup` or `cancelled`, with automatic delivery-job creation when the seller hands an item over for dispatch
 - Seller inventory dashboard with seller-scoped stock levels, low-stock flags, and summary counts
 - Automatic stock decrement when a buyer payment confirms an order for the first time
 - Seller CSV bulk upload for creating multiple listings in one request
@@ -41,18 +41,32 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Admin-protected buyer and seller oversight listing with search, pagination, and seller-profile summaries behind `users.manage`
 - Admin-controlled buyer/seller account statuses (`active`, `suspended`, `banned`) enforced at login and on protected routes
 - Admin-protected platform-wide order oversight list with search, payment filters, and controlled order-status intervention behind `orders.manage`
-- Admin-protected payout review queue with seller/order-item detail plus approve, reject, and mark-paid transitions behind `payouts.approve`
+- Admin-protected payout review queue with seller or logistics-company detail plus approve, reject, and mark-paid transitions behind `payouts.approve`
 - Admin-owned platform config reads and updates for default commission, category overrides, seller-tier overrides, and platform settings behind `config.manage`
 - Admin-protected disputes queue with buyer/order/seller context plus resolve-or-reject actions behind `disputes.resolve`
 - Admin-protected audit-log list endpoint behind `audit_logs.read`
 - Audit-log writes for seller verification, user status changes, order interventions, payout decisions, dispute decisions, and platform config changes
+- Logistics company registration and login with dedicated company-scoped JWT access
+- Delivery-zone records for rider onboarding and later assignment/fee matching
+- Company-owned rider creation, listing, update, and ownership enforcement
+- Rider login, rider profile access, and availability updates
+- Company and rider delivery-job views with explicit `pending -> assigned -> picked_up -> in_transit -> delivered` progression plus rider-side `failed` handling that advances buyer-visible order tracking
+- Failed delivery jobs now capture a required reason, release the rider back to `available`, return the item to `ready_for_pickup`, and stay visible for manual reassignment
+- Delivery-fee calculation now uses a shared base-plus-distance-plus-weight calculator that persists per-order and per-job fees in kobo
+- Delivered jobs now record the platform logistics margin and the logistics-company share for settlement
+- Logistics companies now have earnings summaries plus payout-request creation through the shared payouts workflow
+- Logistics company job views now include dashboard-ready job-status totals plus rider performance summaries
+- Admin logistics company approval or suspension plus rider oversight behind `logistics.manage`
+- Admin delivery-job queue review plus manual rider assignment behind `logistics.manage`
+- Admin logistics oversight now includes cross-company company or rider summary counts, unassigned-job visibility, filterable delivery-job reviews, and delivery metrics
+- Seller payout eligibility now unlocks only after delivered logistics jobs, not just paid orders
 - Seller compatibility payloads now validate against admin-managed vehicle taxonomy entries
 - Seller commission reads now resolve from admin-owned platform config with `PLATFORM_COMMISSION_RATE_PERCENT` retained as a bootstrap fallback in development and test
 - Buyer order detail now includes per-item `itemStatus` alongside the existing order-level status history
 - Buyer catalogue, cart, and order reads now project seller business metadata from real seller profiles instead of the old product-level seller stub
 - Joi request validation, auth rate limiting, central error handling
-- MySQL migration and seed scaffolding for buyer-flow tables plus seller onboarding, payout, and admin-role tables
-- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, admin seller verification, admin catalogue management, and admin user/order oversight
+- MySQL migration and seed scaffolding for buyer-flow tables plus seller onboarding, payout, admin-role, logistics company or rider tables, and delivery settlement fields
+- Unit and integration test suites for auth, catalogue browsing, cart, checkout, payments, buyer order history, seller onboarding, seller listing management, seller order management, seller inventory, seller finance, logistics company and rider delivery flows, admin seller verification, admin catalogue management, admin user or order oversight, admin logistics oversight, delivery-fee settlement, and the super admin dashboard
 
 ## Project Structure
 
@@ -87,6 +101,7 @@ Seller onboarding uses:
 - `UPLOAD_DIR` for local document storage in development
 - `DOJAH_BASE_URL`, `DOJAH_APP_ID`, and `DOJAH_API_KEY` for CAC lookups during seller registration
 - `PLATFORM_COMMISSION_RATE_PERCENT` as the bootstrap fallback commission rate before admin-managed config is changed in development and test
+- `DELIVERY_BASE_FEE_KOBO`, `DELIVERY_PER_KM_KOBO`, and `LOGISTICS_PLATFORM_MARGIN_PCT` for shared delivery-fee and settlement calculations
 
 Local admin review uses:
 
@@ -162,6 +177,29 @@ npm run lint
 - `POST /api/v1/seller/payouts`
 - `GET /api/v1/seller/payouts`
 
+### Logistics
+
+- `POST /api/v1/logistics/register`
+- `POST /api/v1/logistics/login`
+- `GET /api/v1/logistics/me`
+- `GET /api/v1/logistics/zones`
+- `POST /api/v1/logistics/riders`
+- `GET /api/v1/logistics/riders`
+- `GET /api/v1/logistics/riders/:id`
+- `PATCH /api/v1/logistics/riders/:id`
+- `GET /api/v1/logistics/jobs`
+- `GET /api/v1/logistics/earnings`
+- `POST /api/v1/logistics/payouts`
+
+### Rider
+
+- `POST /api/v1/rider/login`
+- `GET /api/v1/rider/me`
+- `PATCH /api/v1/rider/availability`
+- `GET /api/v1/rider/jobs`
+- `GET /api/v1/rider/jobs/:id`
+- `PATCH /api/v1/rider/jobs/:id/status`
+
 ### Admin
 
 - `POST /api/v1/admin/login`
@@ -172,6 +210,11 @@ npm run lint
 - `PATCH /api/v1/admin/sellers/:id/verification`
 - `GET /api/v1/admin/users`
 - `PATCH /api/v1/admin/users/:id/status`
+- `GET /api/v1/admin/logistics/companies`
+- `PATCH /api/v1/admin/logistics/companies/:id/status`
+- `GET /api/v1/admin/logistics/riders`
+- `GET /api/v1/admin/delivery-jobs`
+- `PATCH /api/v1/admin/delivery-jobs/:id/assign`
 - `GET /api/v1/admin/categories`
 - `POST /api/v1/admin/categories`
 - `GET /api/v1/admin/categories/:id`
@@ -593,8 +636,8 @@ GET /api/v1/orders/1/receipt?format=html
 - The `sellerRating` catalogue filter is treated as a minimum public seller rating threshold.
 - Cart responses return `{ id, items, summary }`.
 - Checkout currently supports `paystack`, `bank_transfer`, and `ussd` as payment-method selections.
-- For Milestone C, delivery fees are stored as `0` kobo until logistics pricing is introduced.
-- `POST /api/v1/orders` accepts either a saved `deliveryAddressId` or an inline `deliveryAddress` object, and stores an address snapshot on the order.
+- Delivery fees are now calculated in kobo from the shared base-fee, inferred-distance, and shipment-weight rules used by the logistics settlement flow.
+- `POST /api/v1/orders` accepts either a saved `deliveryAddressId` or an inline `deliveryAddress` object, stores an address snapshot on the order, and persists the computed delivery fee on both the order and each order item.
 - `GET /api/v1/orders` returns `{ orders, pagination }` and supports optional filtering by buyer order `status`.
 - `GET /api/v1/orders/:id` returns the order detail, item lines with per-item `itemStatus`, the delivery snapshot, and status history for the authenticated buyer.
 - `GET /api/v1/orders/:id/status` returns the current buyer-visible order status plus the status history timeline.
@@ -607,18 +650,37 @@ GET /api/v1/orders/1/receipt?format=html
 - Low-stock alerts use a fixed threshold of `5` units for Milestone S-D.
 - `POST /api/v1/seller/inventory/bulk` currently treats each csv row as one listing with one compatibility entry; `imageUrls` should be pipe-separated when multiple image URLs are provided.
 - `GET /api/v1/seller/orders` returns only the authenticated seller's slice of each order and supports optional filtering by seller `itemStatus`.
-- `PATCH /api/v1/seller/orders/:id/status` operates on the seller-owned `order_items.id` and currently allows `ready_for_pickup` and `cancelled` after payment has been confirmed.
+- `PATCH /api/v1/seller/orders/:id/status` operates on the seller-owned `order_items.id`; moving an item to `ready_for_pickup` now creates a delivery job and immediately tries nearest-rider auto-assignment.
 - `GET /api/v1/seller/dashboard` returns seller profile basics plus UI-ready overview cards, monthly revenue chart data, product-status counts, featured products, customer leaderboard entries, and the existing seller-scoped inventory, order, sales, and payout summaries. It accepts the same optional `dateFrom` plus `dateTo` query pair as the seller sales endpoint.
 - `GET /api/v1/seller/sales` returns `{ period, commissionRatePercent, sales, payouts }` and supports optional `dateFrom` plus `dateTo` filtering in `YYYY-MM-DD` format.
-- `POST /api/v1/seller/payouts` currently creates one payout request for all eligible paid, non-cancelled seller order items that are not already tied to an open payout record.
+- `POST /api/v1/seller/payouts` currently creates one payout request for all eligible delivered seller order items that are not already tied to an open payout record.
 - `GET /api/v1/seller/payouts` returns `{ payouts, pagination }` and supports optional payout `status` filtering.
-- Seller payout eligibility currently treats paid, non-cancelled seller order items as completed sales until the logistics delivery lifecycle is finalized.
+- `POST /api/v1/logistics/register` provisions a new logistics company and returns the company profile plus a company-scoped access token.
+- `POST /api/v1/logistics/login` authenticates a logistics company with the registered email and password.
+- `GET /api/v1/logistics/zones` returns the delivery zones available for rider onboarding.
+- `POST /api/v1/logistics/riders` creates a rider for the authenticated company; `zoneId` must reference an existing delivery zone.
+- `GET /api/v1/logistics/riders` returns `{ riders, pagination, filters }` and supports `status`, `search`, `page`, and `limit`.
+- `PATCH /api/v1/logistics/riders/:id` lets a company update only its own rider records.
+- `GET /api/v1/logistics/jobs` returns `{ jobs, pagination, filters, summary }` for the authenticated company and supports `status`, `search`, `page`, and `limit`; `summary.jobsByStatus` exposes company-wide job counts, and `summary.riderPerformance` exposes rider availability plus per-rider delivery outcomes.
+- `GET /api/v1/logistics/earnings` returns delivered-job earnings, current payout balances, and settlement totals for the authenticated company.
+- `POST /api/v1/logistics/payouts` creates one payout request for all eligible delivered jobs that are not already attached to an open logistics-company payout.
+- `POST /api/v1/rider/login` returns a rider-scoped token for the delivery execution routes.
+- `PATCH /api/v1/rider/availability` accepts `available`, `unavailable`, or `on_delivery`.
+- `GET /api/v1/rider/jobs` returns only the authenticated rider's own jobs and supports `status`, `search`, `page`, and `limit`.
+- `GET /api/v1/rider/jobs/:id` returns the job detail with seller, buyer, order, item, assignee, and delivery-job status history only when the job belongs to the authenticated rider.
+- `PATCH /api/v1/rider/jobs/:id/status` enforces `assigned -> picked_up -> in_transit -> delivered` and also allows `assigned|picked_up|in_transit -> failed`; only the assigned rider can update the job, and `failureReason` is required for `failed`.
+- Seller payout eligibility now depends on delivered logistics jobs instead of raw payment confirmation alone.
+- `GET /api/v1/admin/logistics/companies` returns `{ companies, pagination, filters, summary }` and supports `status`, `search`, `page`, and `limit`.
+- `PATCH /api/v1/admin/logistics/companies/:id/status` accepts `approved` or `suspended` for admin review decisions.
+- `GET /api/v1/admin/logistics/riders` returns `{ riders, pagination, filters, summary }` and supports `companyId`, `status`, `search`, `page`, and `limit`.
+- `GET /api/v1/admin/delivery-jobs` returns `{ jobs, pagination, filters, summary }` and supports `status`, `companyId`, `riderId`, `search`, `page`, and `limit`; `summary.jobsByStatus` exposes the queue mix, and `summary.deliveryMetrics` exposes unassigned volume, completion rate, and delivered-fee totals.
+- `PATCH /api/v1/admin/delivery-jobs/:id/assign` assigns a pending job, or reassigns a failed one, to a rider and records an audit-log entry for the manual intervention.
 - `GET /api/v1/admin/sellers` returns `{ sellers, pagination, filters }` and supports `status=all|pending|verified|rejected`, defaulting to `pending`.
 - `GET /api/v1/admin/dashboard` returns UI-ready summary data for the admin home screen, including alerts, overview cards, operational cards, seller verification and payout queue previews, dispute and order previews, top sellers, recent audit activity, and platform-health metrics.
 - `GET /api/v1/admin/sellers/:id` returns the seller account, uploaded documents, and the stored CAC lookup response from Dojah.
 - `PATCH /api/v1/admin/sellers/:id/verification` accepts `verified` or `rejected`; `rejectionReason` is required when rejecting.
-- `GET /api/v1/admin/payouts` returns `{ payouts, pagination, filters }` and supports `status`, `sellerId`, `search`, `page`, and `limit`.
-- `PATCH /api/v1/admin/payouts/:id` accepts `approved`, `rejected`, or `paid`; `rejectionReason` is required when rejecting, and only `requested -> approved|rejected` plus `approved -> paid` are allowed.
+- `GET /api/v1/admin/payouts` returns `{ payouts, pagination, filters }` and supports `status`, `payeeType`, `sellerId`, `companyId`, `search`, `page`, and `limit`.
+- `PATCH /api/v1/admin/payouts/:id` accepts `approved`, `rejected`, or `paid`; `rejectionReason` is required when rejecting, and only `requested -> approved|rejected` plus `approved -> paid` are allowed for both seller and logistics-company payout requests.
 - `GET /api/v1/admin/config` returns the current admin-owned platform config for commissions and other operational settings.
 - `PATCH /api/v1/admin/config` accepts any combination of `commissionRateDefault`, `commissionRatesByCategory`, `commissionRatesBySellerTier`, and `platformSettings`.
 - `GET /api/v1/admin/disputes` returns `{ disputes, pagination, filters }` and supports `status`, `raisedBy`, `search`, `page`, and `limit`.
@@ -630,5 +692,5 @@ GET /api/v1/orders/1/receipt?format=html
 
 - Money values are stored in kobo.
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
-- Run `npm run seed` to load the sample catalogue data plus the dev admin user for local review flows.
-- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, seller payout, admin RBAC, `platform_config`, `audit_logs`, and `disputes` data needed through Admin Milestone `A-F`.
+- Run `npm run seed` to load the sample catalogue data, delivery zones, and the dev admin user for local review flows.
+- The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, seller payout, admin RBAC, `platform_config`, `audit_logs`, `disputes`, `logistics_companies`, `riders`, `delivery_zones`, delivery-job lifecycle data, and payout-settlement fields needed through Logistics Milestone `L-E`.

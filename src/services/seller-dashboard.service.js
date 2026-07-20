@@ -234,8 +234,6 @@ function createSellerDashboardService({
           commissionRatePercent,
           year: revenueChartYear
         }),
-        // LOGISTICS-STUB: payout eligibility currently uses paid, non-cancelled seller items
-        // until delivered-item settlement rules land with the logistics module.
         sellerFinanceRepository.summarizeSellerPayoutBalances({
           sellerId,
           commissionRatePercent

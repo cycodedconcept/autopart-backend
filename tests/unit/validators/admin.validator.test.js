@@ -292,6 +292,7 @@ describe('admin validator', () => {
 
     expect(error).toBeUndefined();
     expect(value.query).toEqual({
+      payeeType: 'all',
       status: 'requested',
       sellerId: 101,
       search: 'uche@example.com',

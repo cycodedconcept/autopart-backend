@@ -1,6 +1,9 @@
 const USER_ROLES = {
   ADMIN: 'admin',
   BUYER: 'buyer',
+  LOGISTICS: 'logistics',
+  LOGISTICS_COMPANY: 'logistics_company',
+  RIDER: 'rider',
   SELLER: 'seller'
 };
 
@@ -12,6 +15,8 @@ const USER_ACCOUNT_STATUSES = {
 
 const TOKEN_SUBJECT_TYPES = {
   ADMIN: 'admin',
+  LOGISTICS_COMPANY: 'logistics_company',
+  RIDER: 'rider',
   USER: 'user'
 };
 
@@ -25,6 +30,7 @@ const ADMIN_PERMISSION_KEYS = {
   READ_DASHBOARD: 'dashboard.read',
   MANAGE_CATEGORIES: 'categories.manage',
   MANAGE_CONFIG: 'config.manage',
+  MANAGE_LOGISTICS: 'logistics.manage',
   MANAGE_ORDERS: 'orders.manage',
   MANAGE_USERS: 'users.manage',
   READ_AUDIT_LOGS: 'audit_logs.read',
@@ -65,6 +71,10 @@ const ADMIN_PERMISSION_DEFINITIONS = [
   {
     key: ADMIN_PERMISSION_KEYS.MANAGE_CONFIG,
     description: 'Update global platform configuration values.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS,
+    description: 'Review logistics companies and riders, and manage company access.'
   },
   {
     key: ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES,
@@ -138,6 +148,29 @@ const ORDER_ITEM_STATUSES = {
   READY_FOR_PICKUP: 'ready_for_pickup'
 };
 
+const DELIVERY_JOB_STATUSES = {
+  ASSIGNED: 'assigned',
+  CANCELLED: 'cancelled',
+  DELIVERED: 'delivered',
+  FAILED: 'failed',
+  IN_TRANSIT: 'in_transit',
+  PENDING: 'pending',
+  PICKED_UP: 'picked_up'
+};
+
+const LOGISTICS_COMPANY_STATUSES = {
+  APPROVED: 'approved',
+  PENDING: 'pending',
+  SUSPENDED: 'suspended'
+};
+
+const RIDER_STATUSES = {
+  AVAILABLE: 'available',
+  INACTIVE: 'inactive',
+  ON_DELIVERY: 'on_delivery',
+  UNAVAILABLE: 'unavailable'
+};
+
 const PAYMENT_METHODS = {
   BANK_TRANSFER: 'bank_transfer',
   PAYSTACK: 'paystack',
@@ -156,6 +189,11 @@ const PAYOUT_STATUSES = {
   PAID: 'paid',
   REQUESTED: 'requested',
   REJECTED: 'rejected'
+};
+
+const PAYOUT_PAYEE_TYPES = {
+  LOGISTICS_COMPANY: 'logistics_company',
+  SELLER: 'seller'
 };
 
 const DISPUTE_RAISED_BY = {
@@ -199,16 +237,20 @@ module.exports = {
   ADMIN_ROLE_DEFINITIONS,
   ADMIN_ROLE_NAMES,
   CATEGORY_STATUSES,
+  DELIVERY_JOB_STATUSES,
   DISPUTE_RAISED_BY,
   DISPUTE_STATUSES,
+  LOGISTICS_COMPANY_STATUSES,
   ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
+  PAYOUT_PAYEE_TYPES,
   PAYOUT_STATUSES,
   PLATFORM_CONFIG_KEYS,
   PRODUCT_STATUSES,
   CAC_VERIFICATION_OUTCOMES,
+  RIDER_STATUSES,
   SELLER_DOCUMENT_TYPES,
   SELLER_VERIFICATION_STATUSES,
   TOKEN_SUBJECT_TYPES,

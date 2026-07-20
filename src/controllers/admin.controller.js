@@ -135,6 +135,39 @@ function createAdminController({ adminService }) {
       });
     },
 
+    async listLogisticsCompanies(req, res) {
+      const result = await adminService.listLogisticsCompanies({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Logistics companies fetched successfully.'
+      });
+    },
+
+    async listLogisticsRiders(req, res) {
+      const result = await adminService.listLogisticsRiders({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Logistics riders fetched successfully.'
+      });
+    },
+
+    async listDeliveryJobs(req, res) {
+      const result = await adminService.listDeliveryJobs({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Delivery jobs fetched successfully.'
+      });
+    },
+
     async listDisputes(req, res) {
       const result = await adminService.listDisputes({
         query: req.query
@@ -242,6 +275,33 @@ function createAdminController({ adminService }) {
       return sendSuccess(res, {
         data: result,
         message: 'Order status updated successfully.'
+      });
+    },
+
+    async updateLogisticsCompanyStatus(req, res) {
+      const result = await adminService.updateLogisticsCompanyStatus({
+        adminId: req.admin.id,
+        companyId: req.params.id,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Logistics company status updated successfully.'
+      });
+    },
+
+    async assignDeliveryJob(req, res) {
+      const result = await adminService.assignDeliveryJob({
+        adminId: req.admin.id,
+        jobId: req.params.id,
+        riderId: req.body.riderId,
+        note: req.body.note
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Delivery job assigned successfully.'
       });
     },
 

@@ -34,6 +34,13 @@ const {
   updateUserStatusSchema,
   updateVehicleTaxonomySchema
 } = require('../validators/admin.validator');
+const {
+  assignAdminDeliveryJobSchema,
+  listAdminLogisticsCompaniesSchema,
+  listAdminDeliveryJobsSchema,
+  listAdminLogisticsRidersSchema,
+  updateAdminLogisticsCompanyStatusSchema
+} = require('../validators/logistics.validator');
 
 function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboardController }) {
   const router = express.Router();
@@ -164,6 +171,41 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_USERS),
     validateRequest(updateUserStatusSchema),
     asyncHandler(adminController.updateUserStatus)
+  );
+
+  router.get(
+    '/logistics/companies',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS),
+    validateRequest(listAdminLogisticsCompaniesSchema),
+    asyncHandler(adminController.listLogisticsCompanies)
+  );
+
+  router.patch(
+    '/logistics/companies/:id/status',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS),
+    validateRequest(updateAdminLogisticsCompanyStatusSchema),
+    asyncHandler(adminController.updateLogisticsCompanyStatus)
+  );
+
+  router.get(
+    '/logistics/riders',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS),
+    validateRequest(listAdminLogisticsRidersSchema),
+    asyncHandler(adminController.listLogisticsRiders)
+  );
+
+  router.get(
+    '/delivery-jobs',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS),
+    validateRequest(listAdminDeliveryJobsSchema),
+    asyncHandler(adminController.listDeliveryJobs)
+  );
+
+  router.patch(
+    '/delivery-jobs/:id/assign',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS),
+    validateRequest(assignAdminDeliveryJobSchema),
+    asyncHandler(adminController.assignDeliveryJob)
   );
 
   router.get(

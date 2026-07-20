@@ -2,6 +2,7 @@ const {
   ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
+  PAYOUT_PAYEE_TYPES,
   PAYOUT_STATUSES
 } = require('../../../src/config/constants');
 const {
@@ -39,11 +40,15 @@ function mapAdminPayoutItem(store, payoutItem) {
   const order = orderItem
     ? store.orders.find((entry) => entry.id === orderItem.orderId)
     : null;
+  const deliveryJob = payoutItem.deliveryJobId
+    ? store.deliveryJobs.find((entry) => entry.id === payoutItem.deliveryJobId)
+    : null;
 
   return {
     id: payoutItem.id,
     payoutId: payoutItem.payoutId,
     orderItemId: payoutItem.orderItemId,
+    deliveryJobId: payoutItem.deliveryJobId || null,
     orderId: orderItem ? orderItem.orderId : null,
     productId: orderItem ? orderItem.productId : null,
     quantity: orderItem ? Number(orderItem.quantity) : 0,
@@ -51,6 +56,7 @@ function mapAdminPayoutItem(store, payoutItem) {
     commissionAmountKobo: Number(payoutItem.commissionAmountKobo),
     netAmountKobo: Number(payoutItem.netAmountKobo),
     orderStatus: order ? order.status : null,
+    deliveryJobStatus: deliveryJob ? deliveryJob.status : null,
     paidAt: orderItem ? findPaidAtForStore(store, orderItem.orderId) : null,
     createdAt: payoutItem.createdAt,
     updatedAt: payoutItem.updatedAt
@@ -74,7 +80,7 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
     return findPaidAtForStore(store, orderId);
   }
 
-  function isAllocatedToOpenPayout(orderItemId) {
+  function isAllocatedToOpenSellerPayout(orderItemId) {
     return store.payoutItems.some((entry) => {
       if (entry.orderItemId !== orderItemId) {
         return false;
@@ -82,7 +88,29 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
 
       const payout = store.payouts.find((record) => record.id === entry.payoutId);
 
-      return payout ? PAYOUT_HOLD_STATUSES.has(payout.status) : false;
+      return payout
+        ? (
+          payout.payeeType === PAYOUT_PAYEE_TYPES.SELLER
+          && PAYOUT_HOLD_STATUSES.has(payout.status)
+        )
+        : false;
+    });
+  }
+
+  function isAllocatedToOpenLogisticsPayout(deliveryJobId) {
+    return store.payoutItems.some((entry) => {
+      if (entry.deliveryJobId !== deliveryJobId) {
+        return false;
+      }
+
+      const payout = store.payouts.find((record) => record.id === entry.payoutId);
+
+      return payout
+        ? (
+          payout.payeeType === PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY
+          && PAYOUT_HOLD_STATUSES.has(payout.status)
+        )
+        : false;
     });
   }
 
@@ -119,7 +147,12 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
 
   function buildEligiblePayoutItems(sellerId, commissionRatePercent) {
     return buildPaidSellerItems(sellerId)
-      .filter((item) => !isAllocatedToOpenPayout(item.orderItemId))
+      .filter((item) => {
+        const orderItem = store.orderItems.find((entry) => entry.id === item.orderItemId);
+
+        return orderItem && orderItem.itemStatus === ORDER_ITEM_STATUSES.DELIVERED;
+      })
+      .filter((item) => !isAllocatedToOpenSellerPayout(item.orderItemId))
       .map((item) => ({
         ...item,
         commissionAmountKobo: calculateCommissionAmountKobo(
@@ -130,9 +163,40 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
       }));
   }
 
+  function buildEligibleLogisticsPayoutJobs(companyId) {
+    return store.deliveryJobs
+      .filter((job) => (
+        job.companyId === Number(companyId)
+        && job.status === 'delivered'
+        && Number(job.companyShareKobo || 0) > 0
+      ))
+      .filter((job) => {
+        const order = store.orders.find((entry) => entry.id === job.orderId);
+        const paidAt = findPaidAt(job.orderId);
+
+        return (
+          order
+          && paidAt
+          && order.paymentStatus === PAYMENT_STATUSES.PAID
+          && order.status !== ORDER_STATUSES.CANCELLED
+        );
+      })
+      .filter((job) => !isAllocatedToOpenLogisticsPayout(job.id))
+      .map((job) => ({
+        deliveryJobId: job.id,
+        orderItemId: job.orderItemId,
+        grossAmountKobo: Number(job.deliveryFeeKobo || 0),
+        commissionAmountKobo: Number(job.platformMarginKobo || 0),
+        netAmountKobo: Number(job.companyShareKobo || 0)
+      }));
+  }
+
   async function buildAdminPayout(payout) {
     const sellerAccount = sellersRepository
       ? await sellersRepository.findBySellerId(Number(payout.sellerId))
+      : null;
+    const logisticsCompany = payout.logisticsCompanyId
+      ? store.logisticsCompanies.find((entry) => entry.id === Number(payout.logisticsCompanyId)) || null
       : null;
 
     return {
@@ -147,6 +211,16 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
           fullName: sellerAccount.user.fullName,
           email: sellerAccount.user.email,
           phone: sellerAccount.user.phone
+        }
+        : null,
+      logisticsCompany: logisticsCompany
+        ? {
+          id: logisticsCompany.id,
+          name: logisticsCompany.name,
+          email: logisticsCompany.email,
+          phone: logisticsCompany.phone,
+          address: logisticsCompany.address,
+          status: logisticsCompany.status
         }
         : null,
       items: store.payoutItems
@@ -255,11 +329,49 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
     },
 
     async summarizeSellerPayoutBalances({ commissionRatePercent, sellerId }) {
-      const payouts = store.payouts.filter((entry) => entry.sellerId === Number(sellerId));
+      const payouts = store.payouts.filter((entry) => (
+        entry.payeeType === PAYOUT_PAYEE_TYPES.SELLER
+        && entry.sellerId === Number(sellerId)
+      ));
 
       return {
         pendingKobo: buildEligiblePayoutItems(sellerId, commissionRatePercent)
           .reduce((sum, item) => sum + item.netAmountKobo, 0),
+        requestedKobo: payouts
+          .filter((entry) => entry.status === PAYOUT_STATUSES.REQUESTED)
+          .reduce((sum, entry) => sum + Number(entry.amountKobo), 0),
+        approvedKobo: payouts
+          .filter((entry) => entry.status === PAYOUT_STATUSES.APPROVED)
+          .reduce((sum, entry) => sum + Number(entry.amountKobo), 0),
+        paidKobo: payouts
+          .filter((entry) => entry.status === PAYOUT_STATUSES.PAID)
+          .reduce((sum, entry) => sum + Number(entry.amountKobo), 0)
+      };
+    },
+
+    async getLogisticsCompanyEarningsSummary({ companyId }) {
+      const deliveredJobs = store.deliveryJobs.filter((job) => (
+        job.companyId === Number(companyId)
+        && job.status === 'delivered'
+      ));
+
+      return {
+        completedJobsCount: deliveredJobs.length,
+        deliveryFeesKobo: deliveredJobs.reduce((sum, job) => sum + Number(job.deliveryFeeKobo || 0), 0),
+        platformMarginKobo: deliveredJobs.reduce((sum, job) => sum + Number(job.platformMarginKobo || 0), 0),
+        companyShareKobo: deliveredJobs.reduce((sum, job) => sum + Number(job.companyShareKobo || 0), 0)
+      };
+    },
+
+    async summarizeLogisticsCompanyPayoutBalances({ companyId }) {
+      const payouts = store.payouts.filter((entry) => (
+        entry.payeeType === PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY
+        && entry.logisticsCompanyId === Number(companyId)
+      ));
+
+      return {
+        pendingKobo: buildEligibleLogisticsPayoutJobs(companyId)
+          .reduce((sum, job) => sum + job.netAmountKobo, 0),
         requestedKobo: payouts
           .filter((entry) => entry.status === PAYOUT_STATUSES.REQUESTED)
           .reduce((sum, entry) => sum + Number(entry.amountKobo), 0),
@@ -282,7 +394,9 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
       const now = new Date().toISOString();
       const payout = {
         id: store.counters.payoutId,
+        payeeType: PAYOUT_PAYEE_TYPES.SELLER,
         sellerId: Number(sellerId),
+        logisticsCompanyId: null,
         grossAmountKobo: eligibleItems.reduce((sum, item) => sum + item.grossAmountKobo, 0),
         commissionAmountKobo: eligibleItems.reduce((sum, item) => sum + item.commissionAmountKobo, 0),
         amountKobo: eligibleItems.reduce((sum, item) => sum + item.netAmountKobo, 0),
@@ -302,6 +416,7 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
           id: store.counters.payoutItemId,
           payoutId: payout.id,
           orderItemId: item.orderItemId,
+          deliveryJobId: null,
           grossAmountKobo: item.grossAmountKobo,
           commissionAmountKobo: item.commissionAmountKobo,
           netAmountKobo: item.netAmountKobo,
@@ -314,10 +429,56 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
       return mapPayout(store, payout);
     },
 
+    async createLogisticsCompanyPayoutRequest({ bankAccountRef, companyId }) {
+      const eligibleJobs = buildEligibleLogisticsPayoutJobs(companyId);
+
+      if (!eligibleJobs.length) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const payout = {
+        id: store.counters.payoutId,
+        payeeType: PAYOUT_PAYEE_TYPES.LOGISTICS_COMPANY,
+        sellerId: null,
+        logisticsCompanyId: Number(companyId),
+        grossAmountKobo: eligibleJobs.reduce((sum, job) => sum + job.grossAmountKobo, 0),
+        commissionAmountKobo: eligibleJobs.reduce((sum, job) => sum + job.commissionAmountKobo, 0),
+        amountKobo: eligibleJobs.reduce((sum, job) => sum + job.netAmountKobo, 0),
+        status: PAYOUT_STATUSES.REQUESTED,
+        bankAccountRef,
+        requestedAt: now,
+        settledAt: null,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      store.payouts.push(payout);
+      store.counters.payoutId += 1;
+
+      for (const job of eligibleJobs) {
+        store.payoutItems.push({
+          id: store.counters.payoutItemId,
+          payoutId: payout.id,
+          orderItemId: job.orderItemId,
+          deliveryJobId: job.deliveryJobId,
+          grossAmountKobo: job.grossAmountKobo,
+          commissionAmountKobo: job.commissionAmountKobo,
+          netAmountKobo: job.netAmountKobo,
+          createdAt: now,
+          updatedAt: now
+        });
+        store.counters.payoutItemId += 1;
+      }
+
+      return mapPayout(store, payout);
+    },
+
     async listSellerPayouts({ limit, offset, sellerId, status }) {
       const matchedPayouts = store.payouts
         .filter((entry) => (
-          entry.sellerId === Number(sellerId)
+          entry.payeeType === PAYOUT_PAYEE_TYPES.SELLER
+          && entry.sellerId === Number(sellerId)
           && (!status || entry.status === status)
         ))
         .sort((left, right) => new Date(right.requestedAt) - new Date(left.requestedAt) || right.id - left.id);
@@ -330,7 +491,7 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
       };
     },
 
-    async listPayoutsForAdmin({ limit, offset, search, sellerId, status }) {
+    async listPayoutsForAdmin({ companyId, limit, offset, payeeType, search, sellerId, status }) {
       const normalizedSearch = typeof search === 'string' ? search.trim().toLowerCase() : '';
       const matchedPayouts = [];
 
@@ -339,17 +500,32 @@ function createInMemorySellerFinanceRepository({ sellersRepository, store }) {
           continue;
         }
 
+        if (payeeType && payeeType !== 'all' && payout.payeeType !== payeeType) {
+          continue;
+        }
+
         if (sellerId && payout.sellerId !== Number(sellerId)) {
           continue;
         }
 
+        if (companyId && payout.logisticsCompanyId !== Number(companyId)) {
+          continue;
+        }
+
         const sellerAccount = sellersRepository
+          && payout.sellerId
           ? await sellersRepository.findBySellerId(Number(payout.sellerId))
+          : null;
+        const logisticsCompany = payout.logisticsCompanyId
+          ? store.logisticsCompanies.find((entry) => entry.id === Number(payout.logisticsCompanyId)) || null
           : null;
         const searchableText = [
           sellerAccount && sellerAccount.sellerProfile.businessName,
           sellerAccount && sellerAccount.user.fullName,
           sellerAccount && sellerAccount.user.email,
+          logisticsCompany && logisticsCompany.name,
+          logisticsCompany && logisticsCompany.email,
+          logisticsCompany && logisticsCompany.phone,
           payout.bankAccountRef
         ]
           .filter(Boolean)
