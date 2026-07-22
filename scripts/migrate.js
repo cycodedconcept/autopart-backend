@@ -48,25 +48,22 @@ async function run() {
   const connection = await pool.getConnection();
 
   try {
-    await connection.beginTransaction();
-    await ensureMigrationsTable(connection);
-    const pendingMigrations = await getPendingMigrations(connection, migrationsDirectory);
+  await ensureMigrationsTable(connection);
+  const pendingMigrations = await getPendingMigrations(connection, migrationsDirectory);
 
-    for (const filename of pendingMigrations) {
-      logger.info(`Applying migration ${filename}`);
-      await applyMigration(connection, migrationsDirectory, filename);
-    }
-
-    await connection.commit();
-    logger.info('Migrations completed successfully.');
-  } catch (error) {
-    await connection.rollback();
-    logger.error('Migration failed.', error.message);
-    process.exitCode = 1;
-  } finally {
-    connection.release();
-    await pool.end();
+  for (const filename of pendingMigrations) {
+    logger.info(`Applying migration ${filename}`);
+    await applyMigration(connection, migrationsDirectory, filename);
   }
+
+  logger.info('Migrations completed successfully.');
+} catch (error) {
+  logger.error('Migration failed.', error.message);
+  process.exit(1);
+} finally {
+  connection.release();
+  await pool.end();
+}
 }
 
 run();
