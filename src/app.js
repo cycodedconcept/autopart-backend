@@ -264,6 +264,8 @@ function createApp(overrides = {}) {
   const dependencies = createDependencies(overrides);
   const app = express();
 
+  app.set('trust proxy', 1);
+
   app.use(express.json({
     verify: (req, _res, buffer) => {
       req.rawBody = buffer && buffer.length ? buffer.toString('utf8') : '';
