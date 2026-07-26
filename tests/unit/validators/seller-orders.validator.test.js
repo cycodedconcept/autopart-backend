@@ -21,7 +21,8 @@ describe('seller orders validator', () => {
     expect(value.query).toEqual({
       itemStatus: 'pending',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 

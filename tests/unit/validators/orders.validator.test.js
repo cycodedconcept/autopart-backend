@@ -69,7 +69,8 @@ describe('orders validator', () => {
     expect(value.query).toEqual({
       status: 'confirmed',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 

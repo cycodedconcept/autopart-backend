@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 const {
   CATEGORY_STATUSES,
   DISPUTE_RAISED_BY,
@@ -90,13 +91,11 @@ const getAdminDashboardSchema = Joi.object({
 const listSellerVerificationQueueSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string()
       .valid(...queueStatuses)
-      .default(SELLER_VERIFICATION_STATUSES.PENDING),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+      .default(SELLER_VERIFICATION_STATUSES.PENDING)
+  })
 });
 
 const getSellerVerificationCandidateSchema = Joi.object({
@@ -179,13 +178,11 @@ const deleteCategorySchema = Joi.object({
 const listUsersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     role: Joi.string().valid(...managedUserRoles).default('all'),
     status: Joi.string().valid(...managedUserStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const updateUserStatusSchema = Joi.object({
@@ -207,13 +204,11 @@ const updateUserStatusSchema = Joi.object({
 const listAdminOrdersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string().valid(...adminOrderStatuses).default('all'),
     paymentStatus: Joi.string().valid(...adminPaymentStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const updateAdminOrderStatusSchema = Joi.object({
@@ -232,27 +227,23 @@ const updateAdminOrderStatusSchema = Joi.object({
 const listAdminPayoutsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     payeeType: Joi.string().valid(...adminPayoutPayeeTypes).default('all'),
     status: Joi.string().valid(...adminPayoutStatuses).default('all'),
     sellerId: Joi.number().integer().positive().optional(),
     companyId: Joi.number().integer().positive().optional(),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const listAdminDisputesSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string().valid(...adminDisputeStatuses).default('all'),
     raisedBy: Joi.string().valid(...adminDisputeRaisedByValues).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const updateAdminPayoutStatusSchema = Joi.object({
@@ -311,14 +302,12 @@ const getPlatformConfigSchema = Joi.object({
 const listAuditLogsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     adminId: Joi.number().integer().positive().optional(),
     action: Joi.string().trim().min(3).max(120).optional(),
     targetType: Joi.string().trim().min(3).max(120).optional(),
-    targetId: Joi.number().integer().positive().optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    targetId: Joi.number().integer().positive().optional()
+  })
 });
 
 const updatePlatformConfigSchema = Joi.object({
@@ -352,12 +341,10 @@ const updatePlatformConfigSchema = Joi.object({
 const listVehicleTaxonomySchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     make: Joi.string().trim().min(2).max(80).optional(),
-    model: Joi.string().trim().min(1).max(80).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    model: Joi.string().trim().min(1).max(80).optional()
+  })
 });
 
 const getVehicleTaxonomySchema = Joi.object({

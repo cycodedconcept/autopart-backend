@@ -66,7 +66,8 @@ describe('admin validator', () => {
     expect(value.query).toEqual({
       status: 'pending',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 
@@ -158,7 +159,8 @@ describe('admin validator', () => {
       status: 'suspended',
       search: 'uche@example.com',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 
@@ -233,7 +235,8 @@ describe('admin validator', () => {
     expect(value.query).toEqual({
       make: 'Toyota',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 
@@ -256,7 +259,8 @@ describe('admin validator', () => {
       paymentStatus: 'paid',
       search: 'bola@example.com',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 
@@ -297,7 +301,8 @@ describe('admin validator', () => {
       sellerId: 101,
       search: 'uche@example.com',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 
@@ -320,7 +325,8 @@ describe('admin validator', () => {
       raisedBy: 'seller',
       search: 'damaged',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 
@@ -435,7 +441,8 @@ describe('admin validator', () => {
       targetType: 'payout',
       targetId: 901,
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 

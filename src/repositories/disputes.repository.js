@@ -1,3 +1,5 @@
+const { sanitizeLimitOffset } = require('./pagination.repository');
+
 function toNumber(value) {
   return value === null || value === undefined ? null : Number(value);
 }
@@ -240,6 +242,7 @@ function createDisputesRepository({ db }) {
     },
 
     async listDisputesForAdmin(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const disputeFilters = buildDisputeFilters(filters);
       const [countRows] = await db.execute(
         `
@@ -297,9 +300,9 @@ function createDisputesRepository({ db }) {
           LEFT JOIN admins resolved_admin ON resolved_admin.id = d.resolved_by
           ${disputeFilters.whereSql}
           ORDER BY d.created_at DESC, d.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...disputeFilters.params, filters.limit, filters.offset]
+        disputeFilters.params
       );
       const orderIds = rows.map((row) => row.order_id);
       const sellersByOrderId = await findOrderSellersByOrderIdsWithExecutor(db, orderIds);

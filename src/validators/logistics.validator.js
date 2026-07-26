@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 const {
   DELIVERY_JOB_STATUSES,
   LOGISTICS_COMPANY_STATUSES,
@@ -103,12 +104,10 @@ const createRiderSchema = Joi.object({
 const listLogisticsRidersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string().valid(...riderListStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const getLogisticsRiderSchema = Joi.object({
@@ -139,12 +138,10 @@ const updateLogisticsRiderSchema = Joi.object({
 const listLogisticsJobsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string().valid(...logisticsJobStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const getLogisticsEarningsSchema = Joi.object({
@@ -164,12 +161,10 @@ const createLogisticsPayoutSchema = Joi.object({
 const listAdminLogisticsCompaniesSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string().valid(...logisticsCompanyStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const updateAdminLogisticsCompanyStatusSchema = Joi.object({
@@ -190,26 +185,22 @@ const updateAdminLogisticsCompanyStatusSchema = Joi.object({
 const listAdminLogisticsRidersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     companyId: Joi.number().integer().positive().optional(),
     status: Joi.string().valid(...riderListStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const listAdminDeliveryJobsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     companyId: Joi.number().integer().positive().optional(),
     riderId: Joi.number().integer().positive().optional(),
     status: Joi.string().valid(...logisticsJobStatuses).default('all'),
-    search: Joi.string().trim().max(120).allow('', null).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  })
 });
 
 const assignAdminDeliveryJobSchema = Joi.object({

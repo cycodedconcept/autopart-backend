@@ -1,3 +1,5 @@
+const { sanitizeLimitOffset } = require('./pagination.repository');
+
 function mapCategoryRow(row) {
   if (!row) {
     return null;
@@ -637,6 +639,7 @@ function createProductsRepository({ db }) {
     },
 
     async listVehicleTaxonomy(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const whereClauses = [];
       const params = [];
 
@@ -672,9 +675,9 @@ function createProductsRepository({ db }) {
           FROM vehicles_taxonomy
           ${whereSql}
           ORDER BY make ASC, model ASC, year_from ASC, year_to ASC, id ASC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {
@@ -841,6 +844,7 @@ function createProductsRepository({ db }) {
     },
 
     async listProducts(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const { whereSql, params } = buildPublicProductFilterQuery(filters);
       const [countRows] = await db.execute(
         `
@@ -861,9 +865,9 @@ function createProductsRepository({ db }) {
           INNER JOIN seller_profiles sp ON sp.id = p.seller_id
           WHERE ${whereSql}
           ORDER BY p.created_at DESC, p.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {
@@ -873,6 +877,7 @@ function createProductsRepository({ db }) {
     },
 
     async listSellerProducts(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const { whereSql, params } = buildSellerProductFilterQuery(filters);
       const [countRows] = await db.execute(
         `
@@ -891,9 +896,9 @@ function createProductsRepository({ db }) {
           INNER JOIN seller_profiles sp ON sp.id = p.seller_id
           WHERE ${whereSql}
           ORDER BY p.created_at DESC, p.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {

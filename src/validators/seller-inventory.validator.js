@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 
 const sellerInventoryCsvRowSchema = Joi.object({
   title: Joi.string().trim().min(3).max(255).required(),
@@ -23,12 +24,10 @@ const sellerInventoryCsvRowSchema = Joi.object({
 const listSellerInventorySchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string().valid('all', 'active', 'inactive').default('all'),
-    lowStockOnly: Joi.boolean().truthy('true').truthy('1').falsy('false').falsy('0').default(false),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    lowStockOnly: Joi.boolean().truthy('true').truthy('1').falsy('false').falsy('0').default(false)
+  })
 });
 
 const bulkUploadSellerInventorySchema = Joi.object({

@@ -1,3 +1,5 @@
+const { sanitizeLimitOffset } = require('./pagination.repository');
+
 function mapUserRow(row) {
   if (!row) {
     return null;
@@ -214,6 +216,7 @@ function createUsersRepository({ db }) {
     },
 
     async listManagedUsers(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const whereClauses = ['role <> ?'];
       const params = ['admin'];
 
@@ -267,9 +270,9 @@ function createUsersRepository({ db }) {
           FROM users
           WHERE ${whereClauses.join(' AND ')}
           ORDER BY created_at DESC, id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {

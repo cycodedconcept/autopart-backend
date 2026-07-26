@@ -4,6 +4,7 @@ const {
   ORDER_STATUSES,
   RIDER_STATUSES
 } = require('../config/constants');
+const { sanitizeLimitOffset } = require('./pagination.repository');
 
 function toNumber(value) {
   return value === null || value === undefined ? null : Number(value);
@@ -661,6 +662,7 @@ function createDeliveryJobsRepository({ db }) {
     },
 
     async listJobs(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const builtFilters = buildJobFilters(filters);
       const [countRows] = await db.execute(
         `
@@ -689,9 +691,9 @@ function createDeliveryJobsRepository({ db }) {
             END ASC,
             dj.created_at DESC,
             dj.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...builtFilters.params, filters.limit, filters.offset]
+        builtFilters.params
       );
 
       return {

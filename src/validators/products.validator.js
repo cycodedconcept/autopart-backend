@@ -1,9 +1,10 @@
 const Joi = require('joi');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 
 const listProductsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     partName: Joi.string().trim().min(1).optional(),
     vehicleMake: Joi.string().trim().min(1).optional(),
     vehicleModel: Joi.string().trim().min(1).optional(),
@@ -20,10 +21,8 @@ const listProductsSchema = Joi.object({
     }),
     location: Joi.string().trim().min(1).optional(),
     sellerRating: Joi.number().min(0).max(5).optional(),
-    sellerBusinessName: Joi.string().trim().min(1).optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+    sellerBusinessName: Joi.string().trim().min(1).optional()
+  })
 });
 
 const getProductByIdSchema = Joi.object({

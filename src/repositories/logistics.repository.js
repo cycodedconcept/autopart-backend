@@ -1,3 +1,5 @@
+const { sanitizeLimitOffset } = require('./pagination.repository');
+
 function toNumber(value) {
   return value === null || value === undefined ? null : Number(value);
 }
@@ -271,6 +273,7 @@ function createLogisticsRepository({ db }) {
     },
 
     async listCompanies(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const builtFilters = buildCompanyFilters(filters);
       const [countRows] = await db.execute(
         `
@@ -286,9 +289,9 @@ function createLogisticsRepository({ db }) {
           FROM logistics_companies lc
           ${builtFilters.whereSql}
           ORDER BY lc.created_at DESC, lc.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...builtFilters.params, filters.limit, filters.offset]
+        builtFilters.params
       );
 
       return {
@@ -428,6 +431,7 @@ function createLogisticsRepository({ db }) {
     },
 
     async listRiders(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const builtFilters = buildRiderFilters(filters);
       const [countRows] = await db.execute(
         `
@@ -447,9 +451,9 @@ function createLogisticsRepository({ db }) {
           INNER JOIN delivery_zones dz ON dz.id = r.zone_id
           ${builtFilters.whereSql}
           ORDER BY r.created_at DESC, r.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...builtFilters.params, filters.limit, filters.offset]
+        builtFilters.params
       );
 
       return {

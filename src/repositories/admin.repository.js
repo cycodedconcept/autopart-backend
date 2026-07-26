@@ -1,3 +1,5 @@
+const { sanitizeLimitOffset } = require('./pagination.repository');
+
 function mapAdminRow(row) {
   if (!row) {
     return null;
@@ -331,9 +333,9 @@ function createAdminRepository({ db }) {
     },
 
     async listSellerVerificationQueue({ limit, offset, status }) {
+      const pagination = sanitizeLimitOffset({ limit, offset });
       const statusFilter = buildStatusFilter(status);
       const countParams = [...statusFilter.params];
-      const rowParams = [...statusFilter.params, limit, offset];
       const [countRows] = await db.execute(
         `
           SELECT COUNT(*) AS total
@@ -386,9 +388,9 @@ function createAdminRepository({ db }) {
           )
           ${statusFilter.clause}
           ORDER BY sp.updated_at ASC, sp.id ASC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        rowParams
+        statusFilter.params
       );
       const sellerIds = rows.map((row) => row.seller_id);
       const documentsBySellerId = await findDocumentsBySellerIds(sellerIds);

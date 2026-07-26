@@ -6,6 +6,7 @@ const {
   PAYOUT_PAYEE_TYPES,
   PAYOUT_STATUSES
 } = require('../config/constants');
+const { sanitizeLimitOffset } = require('./pagination.repository');
 
 const PAYOUT_HOLD_STATUSES = [
   PAYOUT_STATUSES.REQUESTED,
@@ -952,6 +953,7 @@ function createSellerFinanceRepository({ db }) {
     },
 
     async listSellerPayouts({ limit, offset, sellerId, status }) {
+      const pagination = sanitizeLimitOffset({ limit, offset });
       const filters = [sellerId, PAYOUT_PAYEE_TYPES.SELLER];
       let statusClause = '';
 
@@ -994,9 +996,9 @@ function createSellerFinanceRepository({ db }) {
           WHERE p.seller_id = ? AND p.payee_type = ?
           ${statusClause}
           ORDER BY p.requested_at DESC, p.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...filters, limit, offset]
+        filters
       );
 
       return {
@@ -1006,6 +1008,7 @@ function createSellerFinanceRepository({ db }) {
     },
 
     async listPayoutsForAdmin({ companyId, limit, offset, payeeType, search, sellerId, status }) {
+      const pagination = sanitizeLimitOffset({ limit, offset });
       const filters = buildAdminPayoutFilters({
         companyId,
         payeeType,
@@ -1066,9 +1069,9 @@ function createSellerFinanceRepository({ db }) {
           LEFT JOIN logistics_companies lc ON lc.id = p.logistics_company_id
           ${filters.clause}
           ORDER BY p.requested_at DESC, p.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...filters.params, limit, offset]
+        filters.params
       );
       const payoutIds = rows.map((row) => row.id);
       const itemsByPayoutId = await findPayoutItemsByPayoutIdsWithConnection(db, payoutIds);

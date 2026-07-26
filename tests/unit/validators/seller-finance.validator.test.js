@@ -66,7 +66,8 @@ describe('seller finance validator', () => {
     expect(value.query).toEqual({
       status: 'requested',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 });

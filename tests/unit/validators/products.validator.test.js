@@ -43,7 +43,8 @@ describe('products validator', () => {
       sellerRating: 4.5,
       sellerBusinessName: 'Prime',
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 

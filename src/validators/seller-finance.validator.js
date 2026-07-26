@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { PAYOUT_STATUSES } = require('../config/constants');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 
 const dateOnlySchema = Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -31,13 +32,11 @@ const createSellerPayoutSchema = Joi.object({
 const listSellerPayoutsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string()
       .valid(...Object.values(PAYOUT_STATUSES))
-      .optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+      .optional()
+  })
 });
 
 module.exports = {

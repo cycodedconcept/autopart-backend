@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 
 const compatibilityEntrySchema = Joi.object({
   make: Joi.string().trim().min(1).max(80).required(),
@@ -48,11 +49,9 @@ const updateSellerProductSchema = Joi.object({
 const listSellerProductsSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
-    status: Joi.string().valid('all', 'active', 'inactive').default('all'),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+  query: buildPaginationQuerySchema({
+    status: Joi.string().valid('all', 'active', 'inactive').default('all')
+  })
 });
 
 const deleteSellerProductSchema = Joi.object({

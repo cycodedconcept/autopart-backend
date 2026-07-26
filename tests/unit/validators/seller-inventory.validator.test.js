@@ -24,7 +24,8 @@ describe('seller inventory validator', () => {
       status: 'active',
       lowStockOnly: true,
       page: 2,
-      limit: 5
+      limit: 5,
+      offset: 5
     });
   });
 

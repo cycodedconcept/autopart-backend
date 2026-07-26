@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { ORDER_STATUSES, PAYMENT_METHODS } = require('../config/constants');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 const { isValidNigerianPhone } = require('../utils/phone');
 
 function nigerianPhoneRule(value, helpers) {
@@ -37,13 +38,11 @@ const orderIdParamsSchema = Joi.object({
 const listOrdersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     status: Joi.string()
       .valid(...Object.values(ORDER_STATUSES))
-      .optional(),
-    page: Joi.number().integer().positive().optional(),
-    limit: Joi.number().integer().positive().max(50).optional()
-  }).default({})
+      .optional()
+  })
 });
 
 const getOrderByIdSchema = Joi.object({

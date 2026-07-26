@@ -6,6 +6,7 @@ const {
   SELLER_VERIFICATION_STATUSES,
   USER_ACCOUNT_STATUSES
 } = require('../config/constants');
+const { sanitizeLimit } = require('./pagination.repository');
 
 function toNumber(value) {
   return value === null || value === undefined ? 0 : Number(value);
@@ -393,6 +394,7 @@ function createAdminDashboardRepository({ db }) {
     },
 
     async listRecentOrders({ limit }) {
+      const sanitizedLimit = sanitizeLimit(limit);
       const [countRows] = await db.execute(
         `
           SELECT COUNT(*) AS total
@@ -419,9 +421,8 @@ function createAdminDashboardRepository({ db }) {
             o.total_kobo,
             o.created_at
           ORDER BY o.created_at DESC, o.id DESC
-          LIMIT ?
-        `,
-        [limit]
+          LIMIT ${sanitizedLimit}
+        `
       );
 
       return {
@@ -431,6 +432,7 @@ function createAdminDashboardRepository({ db }) {
     },
 
     async listTopSellers({ limit }) {
+      const sanitizedLimit = sanitizeLimit(limit);
       const [countRows] = await db.execute(
         `
           SELECT COUNT(*) AS total
@@ -482,14 +484,13 @@ function createAdminDashboardRepository({ db }) {
             u.email,
             u.phone
           ORDER BY gross_sales_kobo DESC, total_orders DESC, sp.id ASC
-          LIMIT ?
+          LIMIT ${sanitizedLimit}
         `,
         [
           PAYMENT_STATUSES.PAID,
           ORDER_STATUSES.CANCELLED,
           ORDER_ITEM_STATUSES.CANCELLED,
-          USER_ACCOUNT_STATUSES.ACTIVE,
-          limit
+          USER_ACCOUNT_STATUSES.ACTIVE
         ]
       );
 
@@ -500,6 +501,7 @@ function createAdminDashboardRepository({ db }) {
     },
 
     async listPayoutQueue({ limit }) {
+      const sanitizedLimit = sanitizeLimit(limit);
       const [countRows] = await db.execute(
         `
           SELECT
@@ -528,9 +530,9 @@ function createAdminDashboardRepository({ db }) {
           INNER JOIN users u ON u.id = sp.user_id
           WHERE p.status IN (?, ?)
           ORDER BY p.requested_at DESC, p.id DESC
-          LIMIT ?
+          LIMIT ${sanitizedLimit}
         `,
-        [PAYOUT_STATUSES.REQUESTED, PAYOUT_STATUSES.APPROVED, limit]
+        [PAYOUT_STATUSES.REQUESTED, PAYOUT_STATUSES.APPROVED]
       );
 
       return {

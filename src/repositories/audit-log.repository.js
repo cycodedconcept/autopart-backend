@@ -1,3 +1,5 @@
+const { sanitizeLimitOffset } = require('./pagination.repository');
+
 function parseJsonColumn(value) {
   if (!value) {
     return null;
@@ -89,6 +91,7 @@ function createAuditLogRepository({ db }) {
     },
 
     async listAuditLogs(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const auditLogFilters = buildAuditLogFilters(filters);
       const [countRows] = await db.execute(
         `
@@ -115,9 +118,9 @@ function createAuditLogRepository({ db }) {
           INNER JOIN admins a ON a.id = al.admin_id
           ${auditLogFilters.whereSql}
           ORDER BY al.created_at DESC, al.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...auditLogFilters.params, filters.limit, filters.offset]
+        auditLogFilters.params
       );
 
       return {

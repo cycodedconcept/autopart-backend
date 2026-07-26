@@ -3,6 +3,7 @@ const {
   ORDER_STATUSES,
   PAYMENT_STATUSES
 } = require('../config/constants');
+const { sanitizeLimit, sanitizeLimitOffset } = require('./pagination.repository');
 
 function mapOrderRow(row) {
   if (!row) {
@@ -382,6 +383,7 @@ function createOrdersRepository({ db }) {
     },
 
     async listOrdersForBuyer(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const whereClauses = ['buyer_id = ?'];
       const params = [filters.buyerId];
 
@@ -426,9 +428,9 @@ function createOrdersRepository({ db }) {
           FROM orders o
           WHERE ${whereClauses.map((clause) => `o.${clause}`).join(' AND ')}
           ORDER BY o.created_at DESC, o.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {
@@ -438,6 +440,7 @@ function createOrdersRepository({ db }) {
     },
 
     async listOrdersForSeller(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const whereClauses = ['oi.seller_id = ?'];
       const params = [filters.sellerId];
 
@@ -506,9 +509,9 @@ function createOrdersRepository({ db }) {
             o.created_at,
             o.updated_at
           ORDER BY o.created_at DESC, o.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {
@@ -518,6 +521,7 @@ function createOrdersRepository({ db }) {
     },
 
     async listOrdersForAdmin(filters) {
+      const pagination = sanitizeLimitOffset(filters);
       const whereClauses = [];
       const params = [];
 
@@ -615,9 +619,9 @@ function createOrdersRepository({ db }) {
             o.created_at,
             o.updated_at
           ORDER BY o.created_at DESC, o.id DESC
-          LIMIT ? OFFSET ?
+          LIMIT ${pagination.limit} OFFSET ${pagination.offset}
         `,
-        [...params, filters.limit, filters.offset]
+        params
       );
 
       return {
@@ -714,6 +718,7 @@ function createOrdersRepository({ db }) {
     },
 
     async listSellerTopCustomers({ limit, sellerId }) {
+      const sanitizedLimit = sanitizeLimit(limit);
       const [rows] = await db.execute(
         `
           SELECT
@@ -733,14 +738,13 @@ function createOrdersRepository({ db }) {
             AND oi.item_status <> ?
           GROUP BY o.buyer_id, u.full_name, u.email, u.phone
           ORDER BY total_spent_kobo DESC, total_orders DESC, o.buyer_id ASC
-          LIMIT ?
+          LIMIT ${sanitizedLimit}
         `,
         [
           sellerId,
           PAYMENT_STATUSES.PAID,
           ORDER_STATUSES.CANCELLED,
-          ORDER_ITEM_STATUSES.CANCELLED,
-          limit
+          ORDER_ITEM_STATUSES.CANCELLED
         ]
       );
 

@@ -1,16 +1,15 @@
 const Joi = require('joi');
 const { ORDER_ITEM_STATUSES } = require('../config/constants');
+const { buildPaginationQuerySchema } = require('./pagination.validator');
 
 const listSellerOrdersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
-  query: Joi.object({
+  query: buildPaginationQuerySchema({
     itemStatus: Joi.string()
       .valid(...Object.values(ORDER_ITEM_STATUSES))
-      .optional(),
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(50).default(10)
-  }).default({})
+      .optional()
+  })
 });
 
 const updateSellerOrderItemStatusSchema = Joi.object({
