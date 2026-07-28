@@ -24,6 +24,7 @@ const envSchema = Joi.object({
   PAYSTACK_SECRET_KEY: Joi.string().allow('').required(),
   PAYSTACK_PUBLIC_KEY: Joi.string().allow('').required(),
   UPLOAD_DIR: Joi.string().default('./uploads'),
+  CORS_ALLOWED_ORIGINS: Joi.string().allow('').default(''),
   DOJAH_BASE_URL: Joi.string().uri().default('https://api.dojah.io'),
   DOJAH_APP_ID: Joi.string().allow('').default(''),
   DOJAH_API_KEY: Joi.string().allow('').default(''),

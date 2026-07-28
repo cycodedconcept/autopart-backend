@@ -3,6 +3,7 @@ require('../setup/mocha');
 const chai = require('chai');
 const request = require('supertest');
 const { createApp } = require('../../src/app');
+const env = require('../../src/config/env');
 const { createInMemoryUsersRepository } = require('./support/in-memory-users-repository');
 
 const { expect } = chai;
@@ -59,6 +60,49 @@ describe('Auth API integration', () => {
     expect(meResponse.body.success).to.equal(true);
     expect(meResponse.body.data.fullName).to.equal('Tunde Adebayo');
     expect(meResponse.body.data.phone).to.equal('+2348012345678');
+  });
+
+  it('responds to browser preflight requests for an allowed frontend origin', async () => {
+    const corsApp = createApp({
+      env: {
+        ...env,
+        CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:5500,http://localhost:3000'
+      },
+      usersRepository: createInMemoryUsersRepository()
+    });
+
+    const response = await request(corsApp)
+      .options('/api/v1/auth/login')
+      .set('Origin', 'http://127.0.0.1:5500')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type');
+
+    expect(response.status).to.equal(204);
+    expect(response.headers['access-control-allow-origin']).to.equal('http://127.0.0.1:5500');
+    expect(response.headers['access-control-allow-methods']).to.include('POST');
+    expect(response.headers['access-control-allow-headers']).to.equal('content-type');
+  });
+
+  it('adds CORS headers to auth responses for an allowed frontend origin', async () => {
+    const corsApp = createApp({
+      env: {
+        ...env,
+        CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:5500'
+      },
+      usersRepository: createInMemoryUsersRepository()
+    });
+
+    const response = await request(corsApp)
+      .post('/api/v1/auth/register')
+      .set('Origin', 'http://127.0.0.1:5500')
+      .send({
+        fullName: 'CORS Test User',
+        email: 'cors@example.com',
+        password: 'Password123'
+      });
+
+    expect(response.status).to.equal(201);
+    expect(response.headers['access-control-allow-origin']).to.equal('http://127.0.0.1:5500');
   });
 
   it('rejects duplicate registrations', async () => {

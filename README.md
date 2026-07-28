@@ -99,6 +99,7 @@ Copy `.env.example` to `.env` and fill in the required values.
 Seller onboarding uses:
 
 - `UPLOAD_DIR` for local document storage in development
+- `CORS_ALLOWED_ORIGINS` as an optional comma-separated frontend allowlist for browser requests; leave it blank to allow any origin during local development
 - `DOJAH_BASE_URL`, `DOJAH_APP_ID`, and `DOJAH_API_KEY` for CAC lookups during seller registration
 - `PLATFORM_COMMISSION_RATE_PERCENT` as the bootstrap fallback commission rate before admin-managed config is changed in development and test
 - `DELIVERY_BASE_FEE_KOBO`, `DELIVERY_PER_KM_KOBO`, and `LOGISTICS_PLATFORM_MARGIN_PCT` for shared delivery-fee and settlement calculations

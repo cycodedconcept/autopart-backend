@@ -67,6 +67,7 @@ const {
   createLogisticsCompanyAuthMiddleware,
   createRiderAuthMiddleware
 } = require('./middleware/auth.middleware');
+const { createCorsMiddleware } = require('./middleware/cors.middleware');
 const { createErrorMiddleware } = require('./middleware/error.middleware');
 const env = require('./config/env');
 const jwtUtils = require('./utils/jwt');
@@ -266,6 +267,7 @@ function createApp(overrides = {}) {
 
   app.set('trust proxy', 1);
 
+  app.use(createCorsMiddleware({ env: dependencies.env }));
   app.use(express.json({
     verify: (req, _res, buffer) => {
       req.rawBody = buffer && buffer.length ? buffer.toString('utf8') : '';
