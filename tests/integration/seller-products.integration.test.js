@@ -137,6 +137,8 @@ describe('Seller products API integration', () => {
     expect(createResponse.body.data.status).to.equal('active');
     expect(createResponse.body.data.photos).to.have.length(2);
     expect(createResponse.body.data.compatibility).to.have.length(1);
+    expect(createResponse.body.data.photos[0].url).to.match(/^https:\/\/res\.cloudinary\.com\//);
+    expect(createResponse.body.data.primaryImageUrl).to.match(/^https:\/\/res\.cloudinary\.com\//);
 
     const productId = createResponse.body.data.id;
 
@@ -183,6 +185,7 @@ describe('Seller products API integration', () => {
     expect(updateResponse.body.data.stockQty).to.equal(9);
     expect(updateResponse.body.data.photos).to.have.length(1);
     expect(updateResponse.body.data.compatibility[0].yearFrom).to.equal(2008);
+    expect(updateResponse.body.data.photos[0].url).to.match(/^https:\/\/res\.cloudinary\.com\//);
 
     const publicDetailResponse = await request(app)
       .get(`/api/v1/products/${productId}`);
