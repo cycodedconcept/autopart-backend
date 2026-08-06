@@ -374,6 +374,149 @@ describe('Logistics API integration', () => {
     expect(response.body.error.code).to.equal('NOT_FOUND');
   });
 
+  it('suspends a rider, reassigns queued jobs, and restores access on reactivation', async () => {
+    const sellerToken = await registerAndLoginSeller(app, {
+      fullName: 'Uche Okafor',
+      email: 'seller-logistics-suspend@example.com',
+      phone: '08012345655',
+      password: 'Password123',
+      businessName: 'Prime Auto Hub',
+      contactEmail: 'sales-suspend@primeautohub.ng',
+      contactPhone: '08012345655',
+      address: '12 Sapara Williams Close, Victoria Island, Lagos',
+      cacNumber: 'RC-900055'
+    });
+    const logistics = await registerAndLoginLogistics(app, {
+      fullName: 'Alex Rider',
+      email: 'suspend-primary@example.com',
+      phone: '08012345055',
+      password: 'Password123',
+      providerName: 'Swift Dispatch',
+      vehicleType: 'bike'
+    });
+    const secondRiderResponse = await request(app)
+      .post('/api/v1/logistics/riders')
+      .set('Authorization', `Bearer ${logistics.companyToken}`)
+      .send({
+        fullName: 'Musa Bello',
+        email: 'suspend-secondary@example.com',
+        phone: '08012345056',
+        password: 'Password123',
+        vehicleType: 'van',
+        zoneId: logistics.zoneId,
+        status: 'available'
+      })
+      .expect(201);
+    const secondRiderLoginResponse = await request(app)
+      .post('/api/v1/rider/login')
+      .send({
+        identifier: 'suspend-secondary@example.com',
+        password: 'Password123'
+      })
+      .expect(200);
+    const secondRiderId = secondRiderResponse.body.data.rider.id;
+    const secondRiderToken = secondRiderLoginResponse.body.data.token;
+    const productId = await createSellerListing(app, sellerToken, {
+      title: 'Alternator Belt',
+      description: 'Durable alternator belt for quick delivery tests.',
+      categoryId: 1002,
+      partNumber: 'BELT-LGS-055',
+      condition: 'new',
+      priceKobo: 1500000,
+      stockQty: 10,
+      location: 'Lagos',
+      compatibility: [
+        {
+          make: 'Toyota',
+          model: 'Camry',
+          yearFrom: 2007,
+          yearTo: 2011
+        }
+      ]
+    });
+    const buyerToken = await registerBuyer(app, 'logistics-suspend-buyer@example.com');
+    const orderId = await createOrder(app, buyerToken, productId, 1);
+
+    const initializeResponse = await request(app)
+      .post('/api/v1/payments/initialize')
+      .set('Authorization', `Bearer ${buyerToken}`)
+      .send({
+        orderId
+      })
+      .expect(200);
+
+    await request(app)
+      .get('/api/v1/payments/callback')
+      .query({
+        reference: initializeResponse.body.data.payment.reference
+      })
+      .expect(200);
+
+    const sellerOrdersResponse = await request(app)
+      .get('/api/v1/seller/orders')
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .expect(200);
+    const orderItemId = sellerOrdersResponse.body.data.orders[0].items[0].id;
+
+    await request(app)
+      .patch(`/api/v1/seller/orders/${orderItemId}/status`)
+      .set('Authorization', `Bearer ${sellerToken}`)
+      .send({
+        itemStatus: 'ready_for_pickup'
+      })
+      .expect(200);
+
+    const originallyAssignedJob = await getDeliveryJobByOrderItemId(app, logistics.token, orderItemId);
+
+    expect(originallyAssignedJob.assignedRider.id).to.equal(logistics.riderId);
+
+    const suspendResponse = await request(app)
+      .patch(`/api/v1/logistics/riders/${logistics.riderId}/suspend`)
+      .set('Authorization', `Bearer ${logistics.companyToken}`)
+      .expect(200);
+
+    expect(suspendResponse.body.data.rider.accountStatus).to.equal('suspended');
+    expect(suspendResponse.body.data.reassignment.reassignedJobs).to.have.length(1);
+    expect(suspendResponse.body.data.reassignment.returnedToQueueJobs).to.have.length(0);
+    expect(suspendResponse.body.data.reassignment.manualHandlingJobs).to.have.length(0);
+    expect(suspendResponse.body.data.reassignment.reassignedJobs[0].id).to.equal(originallyAssignedJob.id);
+    expect(suspendResponse.body.data.reassignment.reassignedJobs[0].assignedRider.id).to.equal(secondRiderId);
+
+    const suspendedRiderMeResponse = await request(app)
+      .get('/api/v1/rider/me')
+      .set('Authorization', `Bearer ${logistics.token}`)
+      .expect(403);
+
+    expect(suspendedRiderMeResponse.body.error.code).to.equal('FORBIDDEN');
+    expect(suspendedRiderMeResponse.body.error.message).to.equal('This rider account has been suspended.');
+
+    const reassignedJobsResponse = await request(app)
+      .get('/api/v1/rider/jobs')
+      .set('Authorization', `Bearer ${secondRiderToken}`)
+      .query({
+        status: 'assigned'
+      })
+      .expect(200);
+
+    expect(reassignedJobsResponse.body.data.jobs).to.have.length(1);
+    expect(reassignedJobsResponse.body.data.jobs[0].id).to.equal(originallyAssignedJob.id);
+    expect(reassignedJobsResponse.body.data.jobs[0].orderItemId).to.equal(orderItemId);
+
+    const reactivateResponse = await request(app)
+      .patch(`/api/v1/logistics/riders/${logistics.riderId}/reactivate`)
+      .set('Authorization', `Bearer ${logistics.companyToken}`)
+      .expect(200);
+
+    expect(reactivateResponse.body.data.rider.accountStatus).to.equal('active');
+
+    const reactivatedRiderMeResponse = await request(app)
+      .get('/api/v1/rider/me')
+      .set('Authorization', `Bearer ${logistics.token}`)
+      .expect(200);
+
+    expect(reactivatedRiderMeResponse.body.data.rider.accountStatus).to.equal('active');
+  });
+
   it('creates delivery jobs from seller handoff and lets a rider complete the delivery flow', async () => {
     const sellerToken = await registerAndLoginSeller(app, {
       fullName: 'Uche Okafor',

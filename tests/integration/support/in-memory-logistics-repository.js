@@ -51,6 +51,7 @@ function createInMemoryLogisticsRepository({ store }) {
 
     return clone({
       ...rider,
+      accountStatus: rider.accountStatus || 'active',
       zone,
       company
     });
@@ -185,6 +186,7 @@ function createInMemoryLogisticsRepository({ store }) {
         passwordHash: payload.passwordHash,
         vehicleType: payload.vehicleType,
         status: payload.status,
+        accountStatus: payload.accountStatus || 'active',
         createdAt: now,
         updatedAt: now
       };
@@ -312,6 +314,10 @@ function createInMemoryLogisticsRepository({ store }) {
             return false;
           }
 
+          if (entry.accountStatus === 'suspended') {
+            return false;
+          }
+
           const company = store.logisticsCompanies.find((companyEntry) => (
             companyEntry.id === entry.companyId
           ));
@@ -365,6 +371,19 @@ function createInMemoryLogisticsRepository({ store }) {
         rider.status = payload.status;
       }
 
+      rider.updatedAt = new Date().toISOString();
+
+      return buildRider(rider);
+    },
+
+    async updateRiderAccountStatus(riderId, accountStatus) {
+      const rider = store.riders.find((entry) => entry.id === Number(riderId)) || null;
+
+      if (!rider) {
+        return null;
+      }
+
+      rider.accountStatus = accountStatus;
       rider.updatedAt = new Date().toISOString();
 
       return buildRider(rider);

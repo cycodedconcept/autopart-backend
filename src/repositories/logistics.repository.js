@@ -52,7 +52,8 @@ function mapRiderRow(row) {
     email: row.rider_email,
     passwordHash: row.rider_password_hash,
     vehicleType: row.rider_vehicle_type,
-    status: row.rider_status,
+    status: row.rider_availability_status,
+    accountStatus: row.rider_account_status || 'active',
     createdAt: row.rider_created_at,
     updatedAt: row.rider_updated_at,
     zone: row.zone_id ? mapDeliveryZoneRow(row) : null,
@@ -84,7 +85,8 @@ const riderSelectSql = `
   r.email AS rider_email,
   r.password_hash AS rider_password_hash,
   r.vehicle_type AS rider_vehicle_type,
-  r.status AS rider_status,
+  r.availability_status AS rider_availability_status,
+  r.status AS rider_account_status,
   r.created_at AS rider_created_at,
   r.updated_at AS rider_updated_at,
   dz.id AS zone_id,
@@ -144,7 +146,7 @@ function buildRiderFilters(filters = {}, options = {}) {
   }
 
   if (!options.ignoreStatus && filters.status && filters.status !== 'all') {
-    whereClauses.push('r.status = ?');
+    whereClauses.push('r.availability_status = ?');
     params.push(filters.status);
   }
 
@@ -347,7 +349,7 @@ function createLogisticsRepository({ db }) {
             email,
             password_hash,
             vehicle_type,
-            status
+            availability_status
           )
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
@@ -470,10 +472,10 @@ function createLogisticsRepository({ db }) {
         `
           SELECT
             COUNT(*) AS total_riders_count,
-            COALESCE(SUM(CASE WHEN r.status = 'available' THEN 1 ELSE 0 END), 0) AS available_count,
-            COALESCE(SUM(CASE WHEN r.status = 'on_delivery' THEN 1 ELSE 0 END), 0) AS on_delivery_count,
-            COALESCE(SUM(CASE WHEN r.status = 'unavailable' THEN 1 ELSE 0 END), 0) AS unavailable_count,
-            COALESCE(SUM(CASE WHEN r.status = 'inactive' THEN 1 ELSE 0 END), 0) AS inactive_count
+            COALESCE(SUM(CASE WHEN r.availability_status = 'available' THEN 1 ELSE 0 END), 0) AS available_count,
+            COALESCE(SUM(CASE WHEN r.availability_status = 'on_delivery' THEN 1 ELSE 0 END), 0) AS on_delivery_count,
+            COALESCE(SUM(CASE WHEN r.availability_status = 'unavailable' THEN 1 ELSE 0 END), 0) AS unavailable_count,
+            COALESCE(SUM(CASE WHEN r.availability_status = 'inactive' THEN 1 ELSE 0 END), 0) AS inactive_count
           FROM riders r
           INNER JOIN logistics_companies lc ON lc.id = r.company_id
           INNER JOIN delivery_zones dz ON dz.id = r.zone_id
@@ -492,7 +494,7 @@ function createLogisticsRepository({ db }) {
           FROM riders r
           INNER JOIN logistics_companies lc ON lc.id = r.company_id
           INNER JOIN delivery_zones dz ON dz.id = r.zone_id
-          WHERE r.status = ? AND lc.status <> ?
+          WHERE r.availability_status = ? AND r.status <> ? AND lc.status <> ?
           ORDER BY
             CASE lc.status
               WHEN 'approved' THEN 1
@@ -501,7 +503,7 @@ function createLogisticsRepository({ db }) {
             r.updated_at ASC,
             r.id ASC
         `,
-        ['available', 'suspended']
+        ['available', 'suspended', 'suspended']
       );
 
       return rows.map(mapRiderRow);
@@ -537,7 +539,7 @@ function createLogisticsRepository({ db }) {
       }
 
       if (payload.status !== undefined) {
-        updateClauses.push('status = ?');
+        updateClauses.push('availability_status = ?');
         params.push(payload.status);
       }
 
@@ -554,6 +556,21 @@ function createLogisticsRepository({ db }) {
           WHERE id = ?
         `,
         [...params, riderId]
+      );
+
+      return this.findRiderById(riderId);
+    },
+
+    async updateRiderAccountStatus(riderId, accountStatus) {
+      await db.execute(
+        `
+          UPDATE riders
+          SET
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [accountStatus, riderId]
       );
 
       return this.findRiderById(riderId);

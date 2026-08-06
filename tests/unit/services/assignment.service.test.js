@@ -164,6 +164,36 @@ describe('assignment service', () => {
     expect(result.status).toBe('assigned');
   });
 
+  it('rejects manually assigning a suspended rider', async () => {
+    deliveryJobsRepository.findJobById.mockResolvedValue({
+      id: 95,
+      status: 'pending',
+      assignedRider: null
+    });
+    logisticsRepository.findRiderById.mockResolvedValue({
+      id: 18,
+      companyId: 4,
+      fullName: 'Suspended Rider',
+      status: 'available',
+      accountStatus: 'suspended',
+      company: {
+        id: 4,
+        status: 'approved'
+      }
+    });
+
+    await expect(assignmentService.assignJobToRider({
+      jobId: 95,
+      riderId: 18
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'CONFLICT',
+      message: 'Suspended riders cannot be assigned to a delivery job.'
+    });
+
+    expect(deliveryJobsRepository.assignJob).not.toHaveBeenCalled();
+  });
+
   it('lets admin reassign a failed delivery job to a new available rider', async () => {
     deliveryJobsRepository.findJobById.mockResolvedValue({
       id: 94,

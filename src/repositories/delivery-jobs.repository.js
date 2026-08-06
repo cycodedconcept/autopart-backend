@@ -42,6 +42,7 @@ function mapAssignedRider(row, assignedCompany) {
     email: row.assigned_rider_email,
     vehicleType: row.assigned_rider_vehicle_type,
     status: row.assigned_rider_status,
+    accountStatus: row.assigned_rider_account_status || 'active',
     createdAt: row.assigned_rider_created_at,
     updatedAt: row.assigned_rider_updated_at,
     company: assignedCompany
@@ -301,6 +302,7 @@ function mapPerformanceRiderRow(row) {
     email: row.rider_email,
     vehicleType: row.rider_vehicle_type,
     status: row.rider_status,
+    accountStatus: row.rider_account_status || 'active',
     createdAt: row.rider_created_at,
     updatedAt: row.rider_updated_at,
     zone: mapPerformanceZone(row),
@@ -336,7 +338,8 @@ const riderPerformanceSelectSql = `
   r.phone AS rider_phone,
   r.email AS rider_email,
   r.vehicle_type AS rider_vehicle_type,
-  r.status AS rider_status,
+  r.availability_status AS rider_status,
+  r.status AS rider_account_status,
   r.created_at AS rider_created_at,
   r.updated_at AS rider_updated_at,
   dz.id AS zone_id,
@@ -419,7 +422,8 @@ const jobSelectSql = `
   assigned.phone AS assigned_rider_phone,
   assigned.email AS assigned_rider_email,
   assigned.vehicle_type AS assigned_rider_vehicle_type,
-  assigned.status AS assigned_rider_status,
+  assigned.availability_status AS assigned_rider_status,
+  assigned.status AS assigned_rider_account_status,
   assigned.created_at AS assigned_rider_created_at,
   assigned.updated_at AS assigned_rider_updated_at,
   assigned_company.id AS assigned_company_id,
@@ -829,6 +833,35 @@ function createDeliveryJobsRepository({ db }) {
       return rows.map(mapRiderPerformanceRow);
     },
 
+    async listActiveJobsForRider({ riderId }) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            ${jobSelectSql}
+          ${jobJoinsSql}
+          WHERE dj.rider_id = ?
+            AND dj.status IN (?, ?, ?)
+          ORDER BY
+            CASE dj.status
+              WHEN 'assigned' THEN 1
+              WHEN 'picked_up' THEN 2
+              WHEN 'in_transit' THEN 3
+              ELSE 4
+            END ASC,
+            dj.created_at ASC,
+            dj.id ASC
+        `,
+        [
+          riderId,
+          DELIVERY_JOB_STATUSES.ASSIGNED,
+          DELIVERY_JOB_STATUSES.PICKED_UP,
+          DELIVERY_JOB_STATUSES.IN_TRANSIT
+        ]
+      );
+
+      return rows.map(mapDeliveryJobRow);
+    },
+
     async findJobById(jobId) {
       return findJobByIdWithExecutor(db, jobId);
     },
@@ -851,6 +884,110 @@ function createDeliveryJobsRepository({ db }) {
       );
 
       return rows.map(mapStatusHistoryRow);
+    },
+
+    async unassignJob({ jobId, note }) {
+      const connection = await db.getConnection();
+
+      try {
+        await connection.beginTransaction();
+
+        const existingJob = await findJobByIdWithExecutor(connection, jobId);
+
+        if (!existingJob) {
+          await connection.rollback();
+
+          return null;
+        }
+
+        await connection.execute(
+          `
+            UPDATE delivery_jobs
+            SET
+              company_id = NULL,
+              rider_id = NULL,
+              status = ?,
+              failure_reason = NULL,
+              assigned_at = NULL,
+              picked_up_at = NULL,
+              in_transit_at = NULL,
+              delivered_at = NULL,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+          [DELIVERY_JOB_STATUSES.PENDING, jobId]
+        );
+
+        await insertDeliveryJobStatusHistoryWithConnection(connection, {
+          deliveryJobId: jobId,
+          status: DELIVERY_JOB_STATUSES.PENDING,
+          note
+        });
+
+        const nextOrderStatus = await resolveNextOrderStatusWithConnection(
+          connection,
+          existingJob.orderId
+        );
+
+        if (existingJob.order.status !== nextOrderStatus) {
+          await connection.execute(
+            `
+              UPDATE orders
+              SET status = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `,
+            [nextOrderStatus, existingJob.orderId]
+          );
+
+          await insertOrderStatusHistoryWithConnection(connection, {
+            orderId: existingJob.orderId,
+            status: nextOrderStatus,
+            note: resolveOrderStatusHistoryNote(nextOrderStatus)
+          });
+        }
+
+        const updatedJob = await findJobByIdWithExecutor(connection, jobId);
+        await connection.commit();
+
+        return updatedJob;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
+
+    async flagJobForManualHandling({ jobId, note }) {
+      const connection = await db.getConnection();
+
+      try {
+        await connection.beginTransaction();
+
+        const existingJob = await findJobByIdWithExecutor(connection, jobId);
+
+        if (!existingJob) {
+          await connection.rollback();
+
+          return null;
+        }
+
+        await insertDeliveryJobStatusHistoryWithConnection(connection, {
+          deliveryJobId: jobId,
+          status: existingJob.status,
+          note
+        });
+
+        const updatedJob = await findJobByIdWithExecutor(connection, jobId);
+        await connection.commit();
+
+        return updatedJob;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
     },
 
     async assignJob({ jobId, riderId, companyId, note }) {
@@ -907,7 +1044,7 @@ function createDeliveryJobsRepository({ db }) {
           `
             UPDATE riders
             SET
-              status = ?,
+              availability_status = ?,
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `,
@@ -1033,7 +1170,7 @@ function createDeliveryJobsRepository({ db }) {
             `
               UPDATE riders
               SET
-                status = ?,
+                availability_status = ?,
                 updated_at = CURRENT_TIMESTAMP
               WHERE id = ?
             `,
@@ -1057,7 +1194,7 @@ function createDeliveryJobsRepository({ db }) {
             `
               UPDATE riders
               SET
-                status = ?,
+                availability_status = ?,
                 updated_at = CURRENT_TIMESTAMP
               WHERE id = ?
             `,
@@ -1079,7 +1216,7 @@ function createDeliveryJobsRepository({ db }) {
             `
               UPDATE riders
               SET
-                status = ?,
+                availability_status = ?,
                 updated_at = CURRENT_TIMESTAMP
               WHERE id = ?
             `,

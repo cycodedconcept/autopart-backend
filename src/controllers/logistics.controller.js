@@ -100,6 +100,30 @@ function createLogisticsController({ logisticsService }) {
       });
     },
 
+    async suspendRider(req, res) {
+      const result = await logisticsService.suspendRider({
+        companyId: req.user.id,
+        riderId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Rider suspended successfully.'
+      });
+    },
+
+    async reactivateRider(req, res) {
+      const result = await logisticsService.reactivateRider({
+        companyId: req.user.id,
+        riderId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Rider reactivated successfully.'
+      });
+    },
+
     async listJobs(req, res) {
       const result = await logisticsService.listCompanyJobs({
         companyId: req.user.id,

@@ -180,6 +180,7 @@ function createDependencies(overrides = {}) {
     productsRepository
   });
   const logisticsService = overrides.logisticsService || createLogisticsService({
+    assignmentService,
     deliveryJobsRepository,
     env: appEnv,
     jwtUtils: overrides.jwtUtils || jwtUtils,

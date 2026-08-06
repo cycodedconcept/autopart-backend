@@ -2,6 +2,7 @@ const {
   DELIVERY_JOB_STATUSES,
   ERROR_CODES,
   LOGISTICS_COMPANY_STATUSES,
+  RIDER_ACCOUNT_STATUSES,
   RIDER_STATUSES
 } = require('../config/constants');
 const AppError = require('../utils/app-error');
@@ -60,6 +61,13 @@ function createAssignmentService({
   function ensureRiderCanReceiveAssignment(rider) {
     if (rider.status !== RIDER_STATUSES.AVAILABLE) {
       throw new AppError('Only available riders can be assigned to a delivery job.', {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+
+    if (rider.accountStatus === RIDER_ACCOUNT_STATUSES.SUSPENDED) {
+      throw new AppError('Suspended riders cannot be assigned to a delivery job.', {
         statusCode: 409,
         code: ERROR_CODES.CONFLICT
       });

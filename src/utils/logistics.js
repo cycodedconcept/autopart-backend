@@ -45,6 +45,7 @@ function sanitizeRider(rider) {
     email: rider.email,
     vehicleType: rider.vehicleType,
     status: rider.status,
+    accountStatus: rider.accountStatus || 'active',
     createdAt: rider.createdAt,
     updatedAt: rider.updatedAt,
     zone: sanitizeDeliveryZone(rider.zone || null)

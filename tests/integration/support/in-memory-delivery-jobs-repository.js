@@ -490,6 +490,111 @@ function createInMemoryDeliveryJobsRepository({
       return buildStatusHistory(jobId);
     },
 
+    async listActiveJobsForRider({ riderId }) {
+      const jobs = [];
+
+      for (const jobRecord of store.deliveryJobs) {
+        if (jobRecord.riderId !== Number(riderId)) {
+          continue;
+        }
+
+        if (
+          jobRecord.status !== DELIVERY_JOB_STATUSES.ASSIGNED
+          && jobRecord.status !== DELIVERY_JOB_STATUSES.PICKED_UP
+          && jobRecord.status !== DELIVERY_JOB_STATUSES.IN_TRANSIT
+        ) {
+          continue;
+        }
+
+        const job = await buildJob(jobRecord);
+
+        if (job) {
+          jobs.push(job);
+        }
+      }
+
+      jobs.sort((left, right) => {
+        const statusRank = {
+          assigned: 1,
+          picked_up: 2,
+          in_transit: 3
+        };
+
+        return (
+          (statusRank[left.status] || 99) - (statusRank[right.status] || 99)
+          || new Date(left.createdAt) - new Date(right.createdAt)
+          || left.id - right.id
+        );
+      });
+
+      return jobs.map((job) => clone(job));
+    },
+
+    async unassignJob({ jobId, note }) {
+      const jobRecord = store.deliveryJobs.find((entry) => entry.id === Number(jobId)) || null;
+
+      if (!jobRecord) {
+        return null;
+      }
+
+      const order = store.orders.find((entry) => entry.id === jobRecord.orderId) || null;
+      const now = new Date().toISOString();
+
+      jobRecord.companyId = null;
+      jobRecord.riderId = null;
+      jobRecord.status = DELIVERY_JOB_STATUSES.PENDING;
+      jobRecord.failureReason = null;
+      jobRecord.assignedAt = null;
+      jobRecord.pickedUpAt = null;
+      jobRecord.inTransitAt = null;
+      jobRecord.deliveredAt = null;
+      jobRecord.updatedAt = now;
+
+      store.deliveryJobStatusHistory.push({
+        id: store.counters.deliveryJobStatusHistoryId,
+        deliveryJobId: jobRecord.id,
+        status: DELIVERY_JOB_STATUSES.PENDING,
+        note,
+        createdAt: now,
+        updatedAt: now
+      });
+      store.counters.deliveryJobStatusHistoryId += 1;
+
+      if (order) {
+        const nextOrderStatus = resolveNextOrderStatus(order.id);
+
+        if (order.status !== nextOrderStatus) {
+          order.status = nextOrderStatus;
+          order.updatedAt = now;
+          recordOrderStatus(order.id, nextOrderStatus, resolveOrderStatusHistoryNote(nextOrderStatus));
+        }
+      }
+
+      return buildJob(jobRecord);
+    },
+
+    async flagJobForManualHandling({ jobId, note }) {
+      const jobRecord = store.deliveryJobs.find((entry) => entry.id === Number(jobId)) || null;
+
+      if (!jobRecord) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+
+      store.deliveryJobStatusHistory.push({
+        id: store.counters.deliveryJobStatusHistoryId,
+        deliveryJobId: jobRecord.id,
+        status: jobRecord.status,
+        note,
+        createdAt: now,
+        updatedAt: now
+      });
+      store.counters.deliveryJobStatusHistoryId += 1;
+
+      return buildJob(jobRecord);
+    },
+
     async assignJob({ companyId, jobId, note, riderId }) {
       const jobRecord = store.deliveryJobs.find((entry) => entry.id === Number(jobId)) || null;
       const riderRecord = store.riders.find((entry) => entry.id === Number(riderId)) || null;

@@ -3,6 +3,7 @@ require('../../setup/jest');
 const { createLogisticsService } = require('../../../src/services/logistics.service');
 
 describe('logistics service', () => {
+  let assignmentService;
   let deliveryJobsRepository;
   let jwtUtils;
   let logisticsRepository;
@@ -11,12 +12,18 @@ describe('logistics service', () => {
   let logisticsService;
 
   beforeEach(() => {
+    assignmentService = {
+      attemptAutoAssignJob: jest.fn()
+    };
     deliveryJobsRepository = {
+      flagJobForManualHandling: jest.fn(),
       findJobById: jest.fn(),
       findStatusHistoryByJobId: jest.fn(),
+      listActiveJobsForRider: jest.fn(),
       listCompanyRiderPerformance: jest.fn(),
       listJobs: jest.fn(),
       summarizeJobs: jest.fn(),
+      unassignJob: jest.fn(),
       updateJobStatus: jest.fn()
     };
     jwtUtils = {
@@ -39,7 +46,8 @@ describe('logistics service', () => {
       summarizeRiders: jest.fn(),
       listZones: jest.fn(),
       updateCompanyStatus: jest.fn(),
-      updateRider: jest.fn()
+      updateRider: jest.fn(),
+      updateRiderAccountStatus: jest.fn()
     };
     passwordUtils = {
       comparePassword: jest.fn(async () => true),
@@ -52,6 +60,7 @@ describe('logistics service', () => {
     };
 
     logisticsService = createLogisticsService({
+      assignmentService,
       deliveryJobsRepository,
       env: {
         DELIVERY_BASE_FEE_KOBO: 100000,
@@ -174,6 +183,192 @@ describe('logistics service', () => {
       status: 'available'
     });
     expect(result.rider.company.name).toBe('Swift Dispatch');
+  });
+
+  it('rejects suspended riders during rider authentication', async () => {
+    jwtUtils.verifyAccessToken.mockReturnValue({
+      sub: 12,
+      actorType: 'rider'
+    });
+    logisticsRepository.findRiderById.mockResolvedValue({
+      id: 12,
+      companyId: 3,
+      zoneId: 7,
+      fullName: 'Alex Rider',
+      phone: '+2348012345679',
+      email: 'alex@swift.ng',
+      vehicleType: 'bike',
+      status: 'available',
+      accountStatus: 'suspended',
+      company: {
+        id: 3,
+        status: 'approved'
+      }
+    });
+
+    await expect(logisticsService.getAuthenticatedRider('rider-token')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FORBIDDEN',
+      message: 'This rider account has been suspended.'
+    });
+  });
+
+  it('suspends a rider, reassigns jobs awaiting pickup, and flags in-flight jobs for manual handling', async () => {
+    logisticsRepository.findRiderByIdForCompany.mockResolvedValue({
+      id: 14,
+      companyId: 3,
+      zoneId: 7,
+      fullName: 'Alex Rider',
+      phone: '+2348012345679',
+      email: 'alex@swift.ng',
+      vehicleType: 'bike',
+      status: 'on_delivery',
+      accountStatus: 'active',
+      company: {
+        id: 3,
+        name: 'Swift Dispatch',
+        status: 'approved'
+      }
+    });
+    deliveryJobsRepository.listActiveJobsForRider.mockResolvedValue([
+      {
+        id: 91,
+        status: 'assigned',
+        assignedRider: {
+          id: 14
+        }
+      },
+      {
+        id: 93,
+        status: 'assigned',
+        assignedRider: {
+          id: 14
+        }
+      },
+      {
+        id: 92,
+        status: 'picked_up',
+        assignedRider: {
+          id: 14
+        }
+      }
+    ]);
+    logisticsRepository.updateRiderAccountStatus.mockResolvedValue({
+      id: 14,
+      companyId: 3,
+      zoneId: 7,
+      fullName: 'Alex Rider',
+      phone: '+2348012345679',
+      email: 'alex@swift.ng',
+      vehicleType: 'bike',
+      status: 'on_delivery',
+      accountStatus: 'suspended',
+      company: {
+        id: 3,
+        name: 'Swift Dispatch',
+        status: 'approved'
+      }
+    });
+    deliveryJobsRepository.unassignJob
+      .mockResolvedValueOnce({
+        id: 91,
+        status: 'pending',
+        assignedRider: null
+      })
+      .mockResolvedValueOnce({
+        id: 93,
+        status: 'pending',
+        assignedRider: null
+      });
+    assignmentService.attemptAutoAssignJob
+      .mockResolvedValueOnce({
+      id: 91,
+      status: 'assigned',
+      assignedRider: {
+        id: 20,
+        companyId: 3,
+        zoneId: 7,
+        fullName: 'Musa Bello',
+        phone: '+2348012345680',
+        email: 'musa@swift.ng',
+        vehicleType: 'van',
+        status: 'on_delivery',
+        accountStatus: 'active',
+        company: {
+          id: 3,
+          name: 'Swift Dispatch',
+          status: 'approved'
+        }
+      },
+      assignedCompany: {
+        id: 3,
+        name: 'Swift Dispatch',
+        status: 'approved'
+      }
+    })
+      .mockResolvedValueOnce({
+        id: 93,
+        status: 'pending',
+        assignedRider: null
+      });
+    deliveryJobsRepository.flagJobForManualHandling.mockResolvedValue({
+      id: 92,
+      status: 'picked_up',
+      assignedRider: {
+        id: 14,
+        companyId: 3,
+        zoneId: 7,
+        fullName: 'Alex Rider',
+        phone: '+2348012345679',
+        email: 'alex@swift.ng',
+        vehicleType: 'bike',
+        status: 'on_delivery',
+        accountStatus: 'suspended',
+        company: {
+          id: 3,
+          name: 'Swift Dispatch',
+          status: 'approved'
+        }
+      },
+      assignedCompany: {
+        id: 3,
+        name: 'Swift Dispatch',
+        status: 'approved'
+      }
+    });
+
+    const result = await logisticsService.suspendRider({
+      companyId: 3,
+      riderId: 14
+    });
+
+    expect(logisticsRepository.updateRider).not.toHaveBeenCalled();
+    expect(logisticsRepository.updateRiderAccountStatus).toHaveBeenCalledWith(14, 'suspended');
+    expect(deliveryJobsRepository.unassignJob).toHaveBeenCalledWith({
+      jobId: 91,
+      note: 'Rider was suspended before pickup, so this delivery job returned to the queue.'
+    });
+    expect(deliveryJobsRepository.unassignJob).toHaveBeenCalledWith({
+      jobId: 93,
+      note: 'Rider was suspended before pickup, so this delivery job returned to the queue.'
+    });
+    expect(assignmentService.attemptAutoAssignJob).toHaveBeenNthCalledWith(1, {
+      jobId: 91
+    });
+    expect(assignmentService.attemptAutoAssignJob).toHaveBeenNthCalledWith(2, {
+      jobId: 93
+    });
+    expect(deliveryJobsRepository.flagJobForManualHandling).toHaveBeenCalledWith({
+      jobId: 92,
+      note: 'Manual handling required because the assigned rider was suspended after pickup started.'
+    });
+    expect(result.rider.accountStatus).toBe('suspended');
+    expect(result.reassignment.reassignedJobs).toHaveLength(1);
+    expect(result.reassignment.returnedToQueueJobs).toHaveLength(1);
+    expect(result.reassignment.manualHandlingJobs).toHaveLength(1);
+    expect(result.reassignment.reassignedJobs[0].assignedRider.id).toBe(20);
+    expect(result.reassignment.returnedToQueueJobs[0].id).toBe(93);
+    expect(result.reassignment.manualHandlingJobs[0].id).toBe(92);
   });
 
   it('returns company earnings and payout balances', async () => {

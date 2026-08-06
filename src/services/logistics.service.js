@@ -5,6 +5,7 @@ const {
   ORDER_STATUSES,
   PAYMENT_STATUSES,
   PAYOUT_PAYEE_TYPES,
+  RIDER_ACCOUNT_STATUSES,
   RIDER_STATUSES,
   TOKEN_SUBJECT_TYPES,
   USER_ROLES
@@ -271,6 +272,7 @@ function createUnauthorizedTokenError() {
 }
 
 function createLogisticsService({
+  assignmentService,
   deliveryJobsRepository,
   env,
   jwtUtils,
@@ -352,6 +354,29 @@ function createLogisticsService({
     }
 
     return rider;
+  }
+
+  function ensureRiderAccountNotSuspended(rider) {
+    if (rider.accountStatus === RIDER_ACCOUNT_STATUSES.SUSPENDED) {
+      throw new AppError('This rider account has been suspended.', {
+        statusCode: 403,
+        code: ERROR_CODES.FORBIDDEN
+      });
+    }
+
+    return rider;
+  }
+
+  function resolveSuspendedRiderAvailabilityStatus(rider, manualHandlingJobs) {
+    if (manualHandlingJobs.length > 0) {
+      return RIDER_STATUSES.ON_DELIVERY;
+    }
+
+    if (rider.status === RIDER_STATUSES.INACTIVE) {
+      return RIDER_STATUSES.INACTIVE;
+    }
+
+    return RIDER_STATUSES.UNAVAILABLE;
   }
 
   async function findCompanyByIdentifier(identifier) {
@@ -465,6 +490,7 @@ function createLogisticsService({
       throw createUnauthorizedTokenError();
     }
 
+    ensureRiderAccountNotSuspended(rider);
     ensureRiderIsActive(rider);
     ensureCompanyNotSuspended(rider.company);
 
@@ -692,6 +718,105 @@ function createLogisticsService({
       };
     },
 
+    async suspendRider(payload) {
+      const rider = await ensureCompanyOwnsRider(payload.companyId, payload.riderId);
+      const activeJobs = typeof deliveryJobsRepository.listActiveJobsForRider === 'function'
+        ? await deliveryJobsRepository.listActiveJobsForRider({
+          riderId: rider.id
+        })
+        : [];
+      const jobsAwaitingPickup = activeJobs.filter((job) => (
+        job.status === DELIVERY_JOB_STATUSES.ASSIGNED
+      ));
+      const jobsNeedingManualHandling = activeJobs.filter((job) => (
+        job.status === DELIVERY_JOB_STATUSES.PICKED_UP
+        || job.status === DELIVERY_JOB_STATUSES.IN_TRANSIT
+      ));
+      const nextAvailabilityStatus = resolveSuspendedRiderAvailabilityStatus(
+        rider,
+        jobsNeedingManualHandling
+      );
+      const availabilityUpdatedRider = nextAvailabilityStatus !== rider.status
+        ? await logisticsRepository.updateRider(rider.id, {
+          status: nextAvailabilityStatus
+        })
+        : rider;
+      const suspendedRider = typeof logisticsRepository.updateRiderAccountStatus === 'function'
+        ? await logisticsRepository.updateRiderAccountStatus(
+          availabilityUpdatedRider.id,
+          RIDER_ACCOUNT_STATUSES.SUSPENDED
+        )
+        : {
+          ...availabilityUpdatedRider,
+          accountStatus: RIDER_ACCOUNT_STATUSES.SUSPENDED
+        };
+      const reassignedJobs = [];
+      const returnedToQueueJobs = [];
+      const manualHandlingJobs = [];
+
+      for (const job of jobsAwaitingPickup) {
+        const pendingJob = await deliveryJobsRepository.unassignJob({
+          jobId: job.id,
+          note: 'Rider was suspended before pickup, so this delivery job returned to the queue.'
+        });
+        const nextJob = assignmentService
+          && typeof assignmentService.attemptAutoAssignJob === 'function'
+          ? await assignmentService.attemptAutoAssignJob({
+            jobId: job.id
+          })
+          : pendingJob;
+
+        if (nextJob && nextJob.assignedRider) {
+          reassignedJobs.push(mapDeliveryJob(nextJob));
+        } else if (nextJob) {
+          returnedToQueueJobs.push(mapDeliveryJob(nextJob));
+        }
+      }
+
+      for (const job of jobsNeedingManualHandling) {
+        const flaggedJob = typeof deliveryJobsRepository.flagJobForManualHandling === 'function'
+          ? await deliveryJobsRepository.flagJobForManualHandling({
+            jobId: job.id,
+            note: 'Manual handling required because the assigned rider was suspended after pickup started.'
+          })
+          : job;
+
+        manualHandlingJobs.push(mapDeliveryJob(flaggedJob || job));
+      }
+
+      return {
+        rider: {
+          ...sanitizeRider(suspendedRider),
+          company: sanitizeLogisticsCompany(suspendedRider.company)
+        },
+        reassignment: {
+          reassignedJobs,
+          returnedToQueueJobs,
+          manualHandlingJobs
+        }
+      };
+    },
+
+    async reactivateRider(payload) {
+      const rider = await ensureCompanyOwnsRider(payload.companyId, payload.riderId);
+      const updatedRider = typeof logisticsRepository.updateRiderAccountStatus === 'function'
+        ? await logisticsRepository.updateRiderAccountStatus(
+          rider.id,
+          RIDER_ACCOUNT_STATUSES.ACTIVE
+        )
+        : {
+          ...rider,
+          accountStatus: RIDER_ACCOUNT_STATUSES.ACTIVE
+        };
+
+      return {
+        rider: {
+          ...sanitizeRider(updatedRider),
+          company: sanitizeLogisticsCompany(updatedRider.company)
+        }
+      };
+    },
+
     async listCompanyJobs(payload) {
       await ensureCompanyExists(payload.companyId);
 
@@ -815,6 +940,7 @@ function createLogisticsService({
         });
       }
 
+      ensureRiderAccountNotSuspended(rider);
       ensureRiderIsActive(rider);
       ensureCompanyNotSuspended(rider.company);
 
@@ -836,6 +962,7 @@ function createLogisticsService({
     async getRiderProfile(riderId) {
       const rider = await ensureRiderExists(riderId);
 
+      ensureRiderAccountNotSuspended(rider);
       ensureRiderIsActive(rider);
       ensureCompanyNotSuspended(rider.company);
 
@@ -850,6 +977,7 @@ function createLogisticsService({
     async updateRiderAvailability(payload) {
       const rider = await ensureRiderExists(payload.riderId);
 
+      ensureRiderAccountNotSuspended(rider);
       ensureRiderIsActive(rider);
       ensureCompanyNotSuspended(rider.company);
 
@@ -868,6 +996,7 @@ function createLogisticsService({
     async listRiderJobs(payload) {
       const rider = await ensureRiderExists(payload.riderId);
 
+      ensureRiderAccountNotSuspended(rider);
       ensureRiderIsActive(rider);
       ensureCompanyNotSuspended(rider.company);
 
@@ -902,6 +1031,7 @@ function createLogisticsService({
     async getRiderJobById(payload) {
       const rider = await ensureRiderExists(payload.riderId);
 
+      ensureRiderAccountNotSuspended(rider);
       ensureRiderIsActive(rider);
       ensureCompanyNotSuspended(rider.company);
 
@@ -934,6 +1064,7 @@ function createLogisticsService({
     async updateRiderJobStatus(payload) {
       const rider = await ensureRiderExists(payload.riderId);
 
+      ensureRiderAccountNotSuspended(rider);
       ensureRiderIsActive(rider);
       ensureCompanyNotSuspended(rider.company);
 

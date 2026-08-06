@@ -15,6 +15,7 @@ const {
   listLogisticsRidersSchema,
   logisticsLoginSchema,
   logisticsRegisterSchema,
+  manageLogisticsRiderAccountSchema,
   riderLoginSchema,
   updateAdminLogisticsCompanyStatusSchema,
   updateDeliveryJobStatusSchema,
@@ -102,6 +103,17 @@ describe('logistics validator', () => {
     });
 
     expect(error).toBeUndefined();
+  });
+
+  it('accepts a valid logistics rider suspension envelope', () => {
+    const { error, value } = manageLogisticsRiderAccountSchema.validate({
+      params: {
+        id: '17'
+      }
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.params.id).toBe(17);
   });
 
   it('accepts admin logistics company and rider list filters', () => {

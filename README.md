@@ -188,6 +188,8 @@ npm run lint
 - `GET /api/v1/logistics/riders`
 - `GET /api/v1/logistics/riders/:id`
 - `PATCH /api/v1/logistics/riders/:id`
+- `PATCH /api/v1/logistics/riders/:id/suspend`
+- `PATCH /api/v1/logistics/riders/:id/reactivate`
 - `GET /api/v1/logistics/jobs`
 - `GET /api/v1/logistics/earnings`
 - `POST /api/v1/logistics/payouts`
@@ -662,6 +664,8 @@ GET /api/v1/orders/1/receipt?format=html
 - `POST /api/v1/logistics/riders` creates a rider for the authenticated company; `zoneId` must reference an existing delivery zone.
 - `GET /api/v1/logistics/riders` returns `{ riders, pagination, filters }` and supports `status`, `search`, `page`, and `limit`.
 - `PATCH /api/v1/logistics/riders/:id` lets a company update only its own rider records.
+- `PATCH /api/v1/logistics/riders/:id/suspend` suspends one company-owned rider, reassigns not-yet-picked-up jobs, and flags in-progress jobs for manual handling.
+- `PATCH /api/v1/logistics/riders/:id/reactivate` restores one company-owned rider account after a suspension.
 - `GET /api/v1/logistics/jobs` returns `{ jobs, pagination, filters, summary }` for the authenticated company and supports `status`, `search`, `page`, and `limit`; `summary.jobsByStatus` exposes company-wide job counts, and `summary.riderPerformance` exposes rider availability plus per-rider delivery outcomes.
 - `GET /api/v1/logistics/earnings` returns delivered-job earnings, current payout balances, and settlement totals for the authenticated company.
 - `POST /api/v1/logistics/payouts` creates one payout request for all eligible delivered jobs that are not already attached to an open logistics-company payout.

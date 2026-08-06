@@ -118,6 +118,14 @@ const getLogisticsRiderSchema = Joi.object({
   query: Joi.object({}).default({})
 });
 
+const manageLogisticsRiderAccountSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
 const updateLogisticsRiderSchema = Joi.object({
   body: Joi.object({
     fullName: Joi.string().trim().min(2).max(160).optional(),
@@ -269,6 +277,7 @@ const updateDeliveryJobStatusSchema = Joi.object({
 });
 
 module.exports = {
+  assignAdminDeliveryJobSchema,
   createLogisticsPayoutSchema,
   createRiderSchema,
   getDeliveryJobSchema,
@@ -276,7 +285,7 @@ module.exports = {
   getLogisticsMeSchema,
   getLogisticsRiderSchema,
   getRiderMeSchema,
-  assignAdminDeliveryJobSchema,
+  manageLogisticsRiderAccountSchema,
   listAdminLogisticsCompaniesSchema,
   listAdminDeliveryJobsSchema,
   listAdminLogisticsRidersSchema,

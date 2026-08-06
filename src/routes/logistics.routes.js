@@ -15,6 +15,7 @@ const {
   listLogisticsRidersSchema,
   logisticsLoginSchema,
   logisticsRegisterSchema,
+  manageLogisticsRiderAccountSchema,
   updateLogisticsRiderSchema
 } = require('../validators/logistics.validator');
 
@@ -73,6 +74,18 @@ function createLogisticsRouter({ logisticsCompanyAuthMiddleware, logisticsContro
     '/riders/:id',
     validateRequest(updateLogisticsRiderSchema),
     asyncHandler(logisticsController.updateRider)
+  );
+
+  router.patch(
+    '/riders/:id/suspend',
+    validateRequest(manageLogisticsRiderAccountSchema),
+    asyncHandler(logisticsController.suspendRider)
+  );
+
+  router.patch(
+    '/riders/:id/reactivate',
+    validateRequest(manageLogisticsRiderAccountSchema),
+    asyncHandler(logisticsController.reactivateRider)
   );
 
   router.get(
