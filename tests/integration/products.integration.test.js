@@ -48,14 +48,14 @@ describe('Products API integration', () => {
     const response = await request(app)
       .get('/api/v1/products')
       .query({
-        condition: 'refurbished'
+        condition: 'OEM'
       });
 
     expect(response.status).to.equal(200);
     expect(response.body.success).to.equal(true);
     expect(response.body.data.products).to.have.length(1);
     expect(response.body.data.products[0].id).to.equal(4004);
-    expect(response.body.data.products[0].condition).to.equal('refurbished');
+    expect(response.body.data.products[0].condition).to.equal('OEM');
   });
 
   it('returns a single product detail with photos and compatibility', async () => {

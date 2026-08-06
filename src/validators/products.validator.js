@@ -14,7 +14,7 @@ const listProductsSchema = Joi.object({
       Joi.string().trim().min(1)
     ).optional(),
     partNumber: Joi.string().trim().min(1).optional(),
-    condition: Joi.string().valid('new', 'used', 'refurbished').optional(),
+    condition: Joi.string().valid('new', 'used', 'OEM').optional(),
     minPriceKobo: Joi.number().integer().min(0).optional(),
     maxPriceKobo: Joi.number().integer().min(Joi.ref('minPriceKobo')).optional().messages({
       'number.min': 'maxPriceKobo must be greater than or equal to minPriceKobo'

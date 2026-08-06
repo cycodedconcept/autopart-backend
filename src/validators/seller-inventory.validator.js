@@ -6,7 +6,7 @@ const sellerInventoryCsvRowSchema = Joi.object({
   description: Joi.string().trim().min(10).max(5000).required(),
   categoryId: Joi.number().integer().positive().required(),
   partNumber: Joi.string().trim().min(2).max(100).required(),
-  condition: Joi.string().valid('new', 'used', 'refurbished').required(),
+  condition: Joi.string().valid('new', 'used', 'OEM').required(),
   priceKobo: Joi.number().integer().min(0).required(),
   stockQty: Joi.number().integer().min(0).required(),
   location: Joi.string().trim().min(2).max(120).required(),
