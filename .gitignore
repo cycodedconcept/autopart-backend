@@ -3,16 +3,5 @@ node_modules/
 .env.example
 .DS_Store
 uploads/
-db/
-!src/db/
-src/db/**
-!src/db/migrations/
-src/db/migrations/**
-!src/db/migrations/021_create_payouts_tables.sql
-!src/db/migrations/022_add_admin_role_to_users.sql
-!src/db/migrations/024_add_seller_verification_metadata.sql
-!src/db/seeds/
-src/db/seeds/**
-!src/db/seeds/002d_seed_admin_users.sql
 inventory.csv
 postman/
