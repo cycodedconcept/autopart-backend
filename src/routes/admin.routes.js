@@ -8,23 +8,45 @@ const { createAuthRateLimiter } = require('../middleware/rate-limit.middleware')
 const { validateRequest } = require('../middleware/validate.middleware');
 const {
   adminLoginSchema,
+  createAdminBlogCategorySchema,
+  createAdminBlogPostSchema,
+  createAdminBlogTagSchema,
   createCategorySchema,
   createVehicleTaxonomySchema,
+  deleteAdminBlogCategorySchema,
+  deleteAdminBlogPostSchema,
+  deleteAdminBlogTagSchema,
   deleteCategorySchema,
   deleteVehicleTaxonomySchema,
+  exportAdminNewsletterSubscribersSchema,
   getAdminDashboardSchema,
+  getAdminBlogCategorySchema,
+  getAdminBlogPostSchema,
+  getAdminBlogTagSchema,
   getCategorySchema,
   getPlatformConfigSchema,
   getSellerVerificationCandidateSchema,
+  listAdminBlogCategoriesSchema,
+  listAdminBlogCommentsSchema,
+  listAdminBlogPostsSchema,
+  listAdminBlogTagsSchema,
   listAdminDisputesSchema,
+  listAdminNewsletterSubscribersSchema,
   listAdminOrdersSchema,
   listAdminPayoutsSchema,
   listAuditLogsSchema,
+  publishAdminBlogPostSchema,
+  reconcilePendingPaymentsSchema,
   getVehicleTaxonomySchema,
   listCategoriesSchema,
   listSellerVerificationQueueSchema,
   listUsersSchema,
   listVehicleTaxonomySchema,
+  unpublishAdminBlogPostSchema,
+  updateAdminBlogCategorySchema,
+  updateAdminBlogCommentSchema,
+  updateAdminBlogPostSchema,
+  updateAdminBlogTagSchema,
   updateAdminDisputeSchema,
   updateAdminOrderStatusSchema,
   updateAdminPayoutStatusSchema,
@@ -101,6 +123,153 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_CATEGORIES),
     validateRequest(deleteCategorySchema),
     asyncHandler(adminController.deleteCategory)
+  );
+
+  router.get(
+    '/blog/categories',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_CATEGORIES),
+    validateRequest(listAdminBlogCategoriesSchema),
+    asyncHandler(adminController.listBlogCategories)
+  );
+
+  router.post(
+    '/blog/categories',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_CATEGORIES),
+    validateRequest(createAdminBlogCategorySchema),
+    asyncHandler(adminController.createBlogCategory)
+  );
+
+  router.get(
+    '/blog/categories/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_CATEGORIES),
+    validateRequest(getAdminBlogCategorySchema),
+    asyncHandler(adminController.getBlogCategory)
+  );
+
+  router.patch(
+    '/blog/categories/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_CATEGORIES),
+    validateRequest(updateAdminBlogCategorySchema),
+    asyncHandler(adminController.updateBlogCategory)
+  );
+
+  router.delete(
+    '/blog/categories/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_CATEGORIES),
+    validateRequest(deleteAdminBlogCategorySchema),
+    asyncHandler(adminController.deleteBlogCategory)
+  );
+
+  router.get(
+    '/blog/tags',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_TAGS),
+    validateRequest(listAdminBlogTagsSchema),
+    asyncHandler(adminController.listBlogTags)
+  );
+
+  router.post(
+    '/blog/tags',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_TAGS),
+    validateRequest(createAdminBlogTagSchema),
+    asyncHandler(adminController.createBlogTag)
+  );
+
+  router.get(
+    '/blog/tags/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_TAGS),
+    validateRequest(getAdminBlogTagSchema),
+    asyncHandler(adminController.getBlogTag)
+  );
+
+  router.patch(
+    '/blog/tags/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_TAGS),
+    validateRequest(updateAdminBlogTagSchema),
+    asyncHandler(adminController.updateBlogTag)
+  );
+
+  router.delete(
+    '/blog/tags/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_TAGS),
+    validateRequest(deleteAdminBlogTagSchema),
+    asyncHandler(adminController.deleteBlogTag)
+  );
+
+  router.get(
+    '/blog/posts',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(listAdminBlogPostsSchema),
+    asyncHandler(adminController.listBlogPosts)
+  );
+
+  router.post(
+    '/blog/posts',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(createAdminBlogPostSchema),
+    asyncHandler(adminController.createBlogPost)
+  );
+
+  router.get(
+    '/blog/posts/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(getAdminBlogPostSchema),
+    asyncHandler(adminController.getBlogPost)
+  );
+
+  router.patch(
+    '/blog/posts/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(updateAdminBlogPostSchema),
+    asyncHandler(adminController.updateBlogPost)
+  );
+
+  router.post(
+    '/blog/posts/:id/publish',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(publishAdminBlogPostSchema),
+    asyncHandler(adminController.publishBlogPost)
+  );
+
+  router.post(
+    '/blog/posts/:id/unpublish',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(unpublishAdminBlogPostSchema),
+    asyncHandler(adminController.unpublishBlogPost)
+  );
+
+  router.delete(
+    '/blog/posts/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    validateRequest(deleteAdminBlogPostSchema),
+    asyncHandler(adminController.deleteBlogPost)
+  );
+
+  router.get(
+    '/blog/comments',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_COMMENTS),
+    validateRequest(listAdminBlogCommentsSchema),
+    asyncHandler(adminController.listBlogComments)
+  );
+
+  router.patch(
+    '/blog/comments/:id',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_COMMENTS),
+    validateRequest(updateAdminBlogCommentSchema),
+    asyncHandler(adminController.updateBlogComment)
+  );
+
+  router.get(
+    '/newsletter/subscribers/export',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.READ_NEWSLETTER_SUBSCRIBERS),
+    validateRequest(exportAdminNewsletterSubscribersSchema),
+    asyncHandler(adminController.exportNewsletterSubscribers)
+  );
+
+  router.get(
+    '/newsletter/subscribers',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.READ_NEWSLETTER_SUBSCRIBERS),
+    validateRequest(listAdminNewsletterSubscribersSchema),
+    asyncHandler(adminController.listNewsletterSubscribers)
   );
 
   router.get(
@@ -213,6 +382,13 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_ORDERS),
     validateRequest(listAdminOrdersSchema),
     asyncHandler(adminController.listOrders)
+  );
+
+  router.post(
+    '/payments/reconcile-pending',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_ORDERS),
+    validateRequest(reconcilePendingPaymentsSchema),
+    asyncHandler(adminController.reconcilePendingPayments)
   );
 
   router.patch(

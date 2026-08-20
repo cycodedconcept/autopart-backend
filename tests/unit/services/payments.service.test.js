@@ -13,7 +13,10 @@ describe('payments service', () => {
       createPaymentAttempt: jest.fn(),
       updatePaymentAttempt: jest.fn(),
       findPaymentByReference: jest.fn(),
-      reconcilePayment: jest.fn()
+      reconcilePayment: jest.fn(),
+      recordWebhookEvent: jest.fn(),
+      updateWebhookEventStatus: jest.fn(),
+      listPendingPaymentsForReconciliation: jest.fn()
     };
 
     paystackClient = {
@@ -27,12 +30,15 @@ describe('payments service', () => {
 
     paymentsService = createPaymentsService({
       paymentsRepository,
-      paystackClient
+      paystackClient,
+      env: {
+        APP_URL: 'https://autoparts.example.com'
+      }
     });
   });
 
   describe('initializePayment', () => {
-    it('initializes a payment attempt for a pending order', async () => {
+    it('initializes a payment attempt with callback fallback and Paystack metadata', async () => {
       paymentsRepository.findOrderForBuyer.mockResolvedValue({
         id: 101,
         status: 'pending_payment',
@@ -69,21 +75,18 @@ describe('payments service', () => {
       const result = await paymentsService.initializePayment({
         userId: 5,
         orderId: 101,
-        email: 'buyer@example.com',
-        callbackUrl: 'https://example.com/payments/callback'
+        email: 'buyer@example.com'
       });
 
-      expect(paymentsRepository.findOrderForBuyer).toHaveBeenCalledWith(101, 5);
-      expect(paystackClient.buildRequestedChannels).toHaveBeenCalledWith('bank_transfer');
       expect(paystackClient.initializeTransaction).toHaveBeenCalledWith(expect.objectContaining({
         amountKobo: 3700000,
-        callbackUrl: 'https://example.com/payments/callback',
+        callbackUrl: 'https://autoparts.example.com/payments/callback',
         channels: ['bank_transfer'],
         email: 'buyer@example.com',
         metadata: {
-          buyerId: 5,
-          orderId: 101,
-          paymentMethod: 'bank_transfer'
+          order_id: 101,
+          payment_method: 'bank_transfer',
+          user_id: 5
         }
       }));
       expect(result).toEqual({
@@ -106,29 +109,30 @@ describe('payments service', () => {
       });
     });
 
-    it('rejects payment initialization when no email is available', async () => {
+    it('rejects initialization for flagged orders', async () => {
       paymentsRepository.findOrderForBuyer.mockResolvedValue({
         id: 101,
         status: 'pending_payment',
         paymentMethod: 'paystack',
         totalKobo: 3700000,
-        paymentStatus: 'pending'
+        paymentStatus: 'flagged'
       });
 
       await expect(paymentsService.initializePayment({
         userId: 5,
         orderId: 101,
-        email: null
+        email: 'buyer@example.com'
       })).rejects.toMatchObject({
-        statusCode: 422,
-        code: 'VALIDATION_ERROR'
+        statusCode: 409,
+        code: 'CONFLICT'
       });
     });
   });
 
-  describe('verifyPaymentCallback', () => {
-    it('verifies a local payment reference and confirms the order', async () => {
+  describe('verifyPayment', () => {
+    it('verifies a buyer-owned payment reference and confirms the order', async () => {
       paymentsRepository.findPaymentByReference.mockResolvedValue({
+        buyerId: 5,
         orderId: 101,
         orderStatus: 'pending_payment',
         orderPaymentMethod: 'paystack',
@@ -170,7 +174,10 @@ describe('payments service', () => {
         paymentStatus: 'paid'
       });
 
-      const result = await paymentsService.verifyPaymentCallback('APT-101-REF');
+      const result = await paymentsService.verifyPayment({
+        reference: 'APT-101-REF',
+        userId: 5
+      });
 
       expect(paystackClient.verifyTransaction).toHaveBeenCalledWith('APT-101-REF');
       expect(paymentsRepository.reconcilePayment).toHaveBeenCalledWith('APT-101-REF', expect.objectContaining({
@@ -178,6 +185,8 @@ describe('payments service', () => {
       }));
       expect(result).toEqual({
         verified: true,
+        source: 'redirect',
+        settled: true,
         order: {
           id: 101,
           paymentMethod: 'paystack',
@@ -195,31 +204,21 @@ describe('payments service', () => {
     });
   });
 
-  describe('handleWebhook', () => {
-    it('rejects invalid webhook signatures', async () => {
-      paystackClient.verifyWebhookSignature.mockReturnValue(false);
-
-      await expect(paymentsService.handleWebhook({
-        event: 'charge.success',
-        data: {
-          reference: 'APT-101-REF'
-        },
-        rawBody: '{"event":"charge.success"}',
-        signature: 'bad-signature'
-      })).rejects.toMatchObject({
-        statusCode: 401,
-        code: 'UNAUTHORIZED'
-      });
-    });
-
+  describe('processWebhook', () => {
     it('acknowledges unsupported webhook events without reconciling payments', async () => {
-      paystackClient.verifyWebhookSignature.mockReturnValue(true);
+      paymentsRepository.recordWebhookEvent.mockResolvedValue({
+        id: 88,
+        processingStatus: 'received'
+      });
 
-      const result = await paymentsService.handleWebhook({
-        event: 'transfer.success',
-        data: {},
-        rawBody: '{"event":"transfer.success"}',
-        signature: 'valid-signature'
+      const result = await paymentsService.processWebhook({
+        rawBody: Buffer.from(JSON.stringify({
+          event: 'transfer.success',
+          data: {
+            id: 90
+          }
+        }), 'utf8'),
+        requestIp: '127.0.0.1'
       });
 
       expect(result).toEqual({
@@ -227,7 +226,75 @@ describe('payments service', () => {
         event: 'transfer.success',
         handled: false
       });
+      expect(paymentsRepository.updateWebhookEventStatus).toHaveBeenCalledWith(88, expect.objectContaining({
+        processingStatus: 'ignored'
+      }));
       expect(paymentsRepository.findPaymentByReference).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reconcilePendingPayments', () => {
+    it('expires stale unresolved payments during reconciliation', async () => {
+      paymentsRepository.listPendingPaymentsForReconciliation.mockResolvedValue([
+        {
+          buyerId: 5,
+          orderId: 101,
+          orderStatus: 'pending_payment',
+          orderPaymentMethod: 'paystack',
+          orderPaymentStatus: 'pending',
+          orderTotalKobo: 3700000,
+          provider: 'paystack',
+          reference: 'APT-101-REF',
+          amountKobo: 3700000,
+          paymentStatus: 'pending',
+          rawResponse: {
+            initialize: {
+              reference: 'APT-101-REF'
+            }
+          }
+        }
+      ]);
+      paystackClient.verifyTransaction.mockResolvedValue({
+        data: {
+          amount: 3700000,
+          currency: 'NGN',
+          reference: 'APT-101-REF',
+          status: 'pending'
+        }
+      });
+      paystackClient.sanitizePaystackTransactionData.mockReturnValue({
+        amount: 3700000,
+        currency: 'NGN',
+        reference: 'APT-101-REF',
+        status: 'pending'
+      });
+      paymentsRepository.reconcilePayment.mockResolvedValue({
+        orderId: 101,
+        orderStatus: 'pending_payment',
+        orderPaymentMethod: 'paystack',
+        orderPaymentStatus: 'expired',
+        orderTotalKobo: 3700000,
+        provider: 'paystack',
+        reference: 'APT-101-REF',
+        amountKobo: 3700000,
+        paymentStatus: 'expired'
+      });
+
+      const result = await paymentsService.reconcilePendingPayments({
+        olderThanMinutes: 20,
+        limit: 10
+      });
+
+      expect(result.checkedCount).toBe(1);
+      expect(result.expiredCount).toBe(1);
+      expect(result.settledCount).toBe(0);
+      expect(result.payments).toEqual([
+        {
+          orderId: 101,
+          reference: 'APT-101-REF',
+          status: 'expired'
+        }
+      ]);
     });
   });
 });

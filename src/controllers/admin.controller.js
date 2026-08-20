@@ -42,6 +42,288 @@ function createAdminController({ adminService }) {
       });
     },
 
+    async listBlogCategories(req, res) {
+      const result = await adminService.listBlogCategories({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog categories fetched successfully.'
+      });
+    },
+
+    async getBlogCategory(req, res) {
+      const result = await adminService.getBlogCategory({
+        categoryId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog category fetched successfully.'
+      });
+    },
+
+    async createBlogCategory(req, res) {
+      const result = await adminService.createBlogCategory({
+        adminId: req.admin.id,
+        name: req.body.name,
+        slug: req.body.slug,
+        description: req.body.description,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        statusCode: 201,
+        data: result,
+        message: 'Blog category created successfully.'
+      });
+    },
+
+    async updateBlogCategory(req, res) {
+      const result = await adminService.updateBlogCategory({
+        adminId: req.admin.id,
+        categoryId: req.params.id,
+        name: req.body.name,
+        slug: req.body.slug,
+        description: req.body.description,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog category updated successfully.'
+      });
+    },
+
+    async deleteBlogCategory(req, res) {
+      const result = await adminService.deleteBlogCategory({
+        adminId: req.admin.id,
+        categoryId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog category archived successfully.'
+      });
+    },
+
+    async listBlogTags(req, res) {
+      const result = await adminService.listBlogTags({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog tags fetched successfully.'
+      });
+    },
+
+    async getBlogTag(req, res) {
+      const result = await adminService.getBlogTag({
+        tagId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog tag fetched successfully.'
+      });
+    },
+
+    async createBlogTag(req, res) {
+      const result = await adminService.createBlogTag({
+        adminId: req.admin.id,
+        name: req.body.name,
+        slug: req.body.slug,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        statusCode: 201,
+        data: result,
+        message: 'Blog tag created successfully.'
+      });
+    },
+
+    async updateBlogTag(req, res) {
+      const result = await adminService.updateBlogTag({
+        adminId: req.admin.id,
+        tagId: req.params.id,
+        name: req.body.name,
+        slug: req.body.slug,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog tag updated successfully.'
+      });
+    },
+
+    async deleteBlogTag(req, res) {
+      const result = await adminService.deleteBlogTag({
+        adminId: req.admin.id,
+        tagId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog tag archived successfully.'
+      });
+    },
+
+    async listBlogPosts(req, res) {
+      const result = await adminService.listBlogPosts({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog posts fetched successfully.'
+      });
+    },
+
+    async getBlogPost(req, res) {
+      const result = await adminService.getBlogPost({
+        postId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog post fetched successfully.'
+      });
+    },
+
+    async createBlogPost(req, res) {
+      const result = await adminService.createBlogPost({
+        adminId: req.admin.id,
+        categoryId: req.body.categoryId,
+        title: req.body.title,
+        slug: req.body.slug,
+        excerpt: req.body.excerpt,
+        body: req.body.body,
+        featuredImageUrl: req.body.featuredImageUrl,
+        featuredImageAlt: req.body.featuredImageAlt,
+        authorDisplayName: req.body.authorDisplayName,
+        authorAvatarUrl: req.body.authorAvatarUrl,
+        status: req.body.status,
+        publishedAt: req.body.publishedAt,
+        tagIds: req.body.tagIds
+      });
+
+      return sendSuccess(res, {
+        statusCode: 201,
+        data: result,
+        message: 'Blog post created successfully.'
+      });
+    },
+
+    async updateBlogPost(req, res) {
+      const result = await adminService.updateBlogPost({
+        adminId: req.admin.id,
+        postId: req.params.id,
+        categoryId: req.body.categoryId,
+        title: req.body.title,
+        slug: req.body.slug,
+        excerpt: req.body.excerpt,
+        body: req.body.body,
+        featuredImageUrl: req.body.featuredImageUrl,
+        featuredImageAlt: req.body.featuredImageAlt,
+        authorDisplayName: req.body.authorDisplayName,
+        authorAvatarUrl: req.body.authorAvatarUrl,
+        publishedAt: req.body.publishedAt,
+        tagIds: req.body.tagIds,
+        allowSlugOverride: req.body.allowSlugOverride
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog post updated successfully.'
+      });
+    },
+
+    async publishBlogPost(req, res) {
+      const result = await adminService.publishBlogPost({
+        adminId: req.admin.id,
+        postId: req.params.id,
+        publishedAt: req.body.publishedAt
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog post published successfully.'
+      });
+    },
+
+    async unpublishBlogPost(req, res) {
+      const result = await adminService.unpublishBlogPost({
+        adminId: req.admin.id,
+        postId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog post unpublished successfully.'
+      });
+    },
+
+    async deleteBlogPost(req, res) {
+      const result = await adminService.deleteBlogPost({
+        adminId: req.admin.id,
+        postId: req.params.id
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog post archived successfully.'
+      });
+    },
+
+    async listBlogComments(req, res) {
+      const result = await adminService.listBlogComments({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog comments fetched successfully.'
+      });
+    },
+
+    async updateBlogComment(req, res) {
+      const result = await adminService.updateBlogComment({
+        adminId: req.admin.id,
+        commentId: req.params.id,
+        status: req.body.status
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Blog comment updated successfully.'
+      });
+    },
+
+    async listNewsletterSubscribers(req, res) {
+      const result = await adminService.listNewsletterSubscribers({
+        query: req.query
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Newsletter subscribers fetched successfully.'
+      });
+    },
+
+    async exportNewsletterSubscribers(req, res) {
+      const result = await adminService.exportNewsletterSubscribersCsv({
+        adminId: req.admin.id,
+        query: req.query
+      });
+
+      res.set('Content-Disposition', `attachment; filename="${result.filename}"`);
+      return res.status(200).type('text/csv').send(result.csv);
+    },
+
     async deleteVehicleTaxonomyEntry(req, res) {
       const result = await adminService.deleteVehicleTaxonomyEntry({
         vehicleTaxonomyId: req.params.id
@@ -132,6 +414,19 @@ function createAdminController({ adminService }) {
       return sendSuccess(res, {
         data: result,
         message: 'Orders fetched successfully.'
+      });
+    },
+
+    async reconcilePendingPayments(req, res) {
+      const result = await adminService.reconcilePendingPayments({
+        adminId: req.admin.id,
+        limit: req.body.limit,
+        olderThanMinutes: req.body.olderThanMinutes
+      });
+
+      return sendSuccess(res, {
+        data: result,
+        message: 'Pending payments reconciled successfully.'
       });
     },
 

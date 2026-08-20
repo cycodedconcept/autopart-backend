@@ -2,13 +2,25 @@ require('../../setup/jest');
 
 const {
   adminLoginSchema,
+  createAdminBlogCategorySchema,
+  createAdminBlogPostSchema,
+  createAdminBlogTagSchema,
   createCategorySchema,
   createVehicleTaxonomySchema,
+  exportAdminNewsletterSubscribersSchema,
   getAdminDashboardSchema,
+  getAdminBlogCategorySchema,
+  getAdminBlogPostSchema,
+  getAdminBlogTagSchema,
   getCategorySchema,
   getPlatformConfigSchema,
   getSellerVerificationCandidateSchema,
+  listAdminBlogCategoriesSchema,
+  listAdminBlogCommentsSchema,
+  listAdminBlogPostsSchema,
+  listAdminBlogTagsSchema,
   listAdminDisputesSchema,
+  listAdminNewsletterSubscribersSchema,
   listAdminOrdersSchema,
   listAdminPayoutsSchema,
   listAuditLogsSchema,
@@ -16,6 +28,12 @@ const {
   listSellerVerificationQueueSchema,
   listUsersSchema,
   listVehicleTaxonomySchema,
+  publishAdminBlogPostSchema,
+  unpublishAdminBlogPostSchema,
+  updateAdminBlogCategorySchema,
+  updateAdminBlogCommentSchema,
+  updateAdminBlogPostSchema,
+  updateAdminBlogTagSchema,
   updateAdminDisputeSchema,
   updateAdminOrderStatusSchema,
   updateAdminPayoutStatusSchema,
@@ -218,6 +236,93 @@ describe('admin validator', () => {
 
     expect(error).toBeUndefined();
     expect(value.body.status).toBe('active');
+  });
+
+  it('accepts a valid admin blog category creation payload', () => {
+    const { error, value } = createAdminBlogCategorySchema.validate({
+      body: {
+        name: 'Diagnostics',
+        description: 'Finding faults quickly in the workshop.'
+      },
+      params: {},
+      query: {}
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.body.name).toBe('Diagnostics');
+  });
+
+  it('accepts a paginated admin blog posts query', () => {
+    const { error, value } = listAdminBlogPostsSchema.validate({
+      body: {},
+      params: {},
+      query: {
+        status: 'published',
+        categoryId: '7101',
+        search: 'brake pads',
+        sort: 'oldest',
+        page: '2',
+        limit: '5'
+      }
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.query).toEqual({
+      status: 'published',
+      categoryId: 7101,
+      search: 'brake pads',
+      sort: 'oldest',
+      page: 2,
+      limit: 5,
+      offset: 5
+    });
+  });
+
+  it('accepts a valid admin blog post creation payload', () => {
+    const { error, value } = createAdminBlogPostSchema.validate({
+      body: {
+        categoryId: 7101,
+        title: 'Fuel Filter Warning Signs',
+        body: '<p>A clogged fuel filter can cause hesitation and hard starts in traffic.</p>',
+        authorDisplayName: 'Aisha Bello',
+        tagIds: [7201, 7202]
+      },
+      params: {},
+      query: {}
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.body.categoryId).toBe(7101);
+    expect(value.body.tagIds).toEqual([7201, 7202]);
+  });
+
+  it('rejects unsupported admin blog comment statuses', () => {
+    const { error } = updateAdminBlogCommentSchema.validate({
+      body: {
+        status: 'hidden'
+      },
+      params: {
+        id: 7401
+      },
+      query: {}
+    });
+
+    expect(error).toBeDefined();
+  });
+
+  it('accepts newsletter subscriber export filters', () => {
+    const { error, value } = exportAdminNewsletterSubscribersSchema.validate({
+      body: {},
+      params: {},
+      query: {
+        status: 'unsubscribed',
+        search: 'reader@example.com'
+      }
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.query.status).toBe('unsubscribed');
+    expect(value.query.search).toBe('reader@example.com');
   });
 
   it('accepts a valid vehicle taxonomy list query', () => {

@@ -9,6 +9,11 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO permissions (`key`, description)
 VALUES
   ('dashboard.read', 'Read the super admin dashboard overview and operational widgets.'),
+  ('blog_posts.manage', 'Create, update, publish, unpublish, and archive blog posts.'),
+  ('blog_categories.manage', 'Create, update, and archive blog categories.'),
+  ('blog_tags.manage', 'Create, update, and archive blog tags.'),
+  ('blog_comments.manage', 'Moderate blog comments and manage comment status.'),
+  ('newsletter_subscribers.read', 'Read and export newsletter subscriber records.'),
   ('admins.read_self', 'View the authenticated admin profile and assigned permissions.'),
   ('sellers.verify', 'Review and update seller verification decisions.'),
   ('categories.manage', 'Create, update, and delete catalogue categories.'),
@@ -28,6 +33,11 @@ SELECT r.id, p.id
 FROM roles r
 INNER JOIN permissions p ON p.`key` IN (
   'dashboard.read',
+  'blog_posts.manage',
+  'blog_categories.manage',
+  'blog_tags.manage',
+  'blog_comments.manage',
+  'newsletter_subscribers.read',
   'admins.read_self',
   'sellers.verify',
   'categories.manage',

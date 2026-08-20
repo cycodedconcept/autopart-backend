@@ -13,7 +13,7 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Authenticated buyer cart management with quantity updates and removal
 - Buyer checkout order creation with saved-or-inline delivery address support plus calculated delivery fees
 - Paystack payment initialization for paystack, bank transfer, and USSD checkout methods
-- Paystack payment verification via callback and webhook, including order confirmation on successful verification
+- Paystack payment verification with webhook-first confirmation, authenticated redirect fallback verification, and duplicate-safe order confirmation
 - Buyer order history listing, single-order detail, current status/history, and receipt responses
 - Order status-history persistence for `pending_payment` and `confirmed`, with buyer-readable lifecycle tracking
 - Seller registration with shared auth credentials plus seller business profile fields
@@ -41,6 +41,7 @@ Backend API for the AutoParts Marketplace buyer flow, Seller Flow Milestones `S-
 - Admin-protected buyer and seller oversight listing with search, pagination, and seller-profile summaries behind `users.manage`
 - Admin-controlled buyer/seller account statuses (`active`, `suspended`, `banned`) enforced at login and on protected routes
 - Admin-protected platform-wide order oversight list with search, payment filters, and controlled order-status intervention behind `orders.manage`
+- Admin-triggered reconciliation for stale pending Paystack payments behind `orders.manage`
 - Admin-protected payout review queue with seller or logistics-company detail plus approve, reject, and mark-paid transitions behind `payouts.approve`
 - Admin-owned platform config reads and updates for default commission, category overrides, seller-tier overrides, and platform settings behind `config.manage`
 - Admin-protected disputes queue with buyer/order/seller context plus resolve-or-reject actions behind `disputes.resolve`
@@ -101,6 +102,7 @@ Seller onboarding uses:
 - `UPLOAD_DIR` for local seller-document storage in development
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` for persistent product image uploads
 - `CORS_ALLOWED_ORIGINS` as an optional comma-separated frontend allowlist for browser requests; leave it blank to allow any origin during local development
+- `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_BASE_URL`, and `APP_URL` for checkout initialization, transaction verification, and webhook-safe redirect fallbacks
 - `DOJAH_BASE_URL`, `DOJAH_APP_ID`, and `DOJAH_API_KEY` for CAC lookups during seller registration
 - `PLATFORM_COMMISSION_RATE_PERCENT` as the bootstrap fallback commission rate before admin-managed config is changed in development and test
 - `DELIVERY_BASE_FEE_KOBO`, `DELIVERY_PER_KM_KOBO`, and `LOGISTICS_PLATFORM_MARGIN_PCT` for shared delivery-fee and settlement calculations
@@ -114,6 +116,14 @@ Local admin review uses:
 
 - `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_PASSWORD` for `npm run seed`
 - `npm run seed` to provision the seeded `super_admin` plus the scoped `verification_admin` role definitions
+
+Paystack deployment notes:
+
+- Configure the Paystack dashboard webhook URL separately in both test mode and live mode as `https://<railway-domain>/webhooks/paystack`.
+- `localhost` cannot receive Paystack webhooks directly; use the deployed Railway URL or a tunnel such as ngrok during local testing.
+- `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is mainly useful when switching between provider environments or test doubles.
+- `APP_URL` should point at the buyer-facing application origin used for Paystack redirect UX, for example `https://app.example.com`.
+- Railway deployments already set `app.set('trust proxy', 1)` in the Express app for proxy-aware request metadata.
 
 ## Commands
 
@@ -162,8 +172,12 @@ npm run lint
 ### Payments
 
 - `POST /api/v1/payments/initialize`
+- `GET /api/v1/payments/verify/:reference`
 - `GET /api/v1/payments/callback`
-- `POST /api/v1/payments/webhook`
+
+### Webhooks
+
+- `POST /webhooks/paystack`
 
 ### Seller
 
@@ -600,7 +614,8 @@ Authorization: Bearer <token>
 Verify a payment callback:
 
 ```text
-GET /api/v1/payments/callback?reference=APT-1-1234567890-ABCDEF12
+GET /api/v1/payments/verify/APT-1-1234567890-ABCDEF12
+Authorization: Bearer <token>
 ```
 
 List buyer orders:
@@ -652,9 +667,14 @@ GET /api/v1/orders/1/receipt?format=html
 - `GET /api/v1/orders/:id/status` returns the current buyer-visible order status plus the status history timeline.
 - `GET /api/v1/orders/:id/receipt` returns JSON by default and supports `?format=html` for a printable HTML receipt.
 - `POST /api/v1/payments/initialize` uses the authenticated buyer email by default. If the buyer registered without an email, the request can include an `email` field for Paystack initialization.
+- `POST /api/v1/payments/initialize` sends the Paystack amount in kobo, persists the generated reference on the order, and includes `order_id` plus `user_id` metadata for later verification.
+- `POST /webhooks/paystack` is the payment source of truth. The callback redirect is UX-only and the buyer-facing fallback should call `GET /api/v1/payments/verify/:reference` after the user lands back in the app.
 - Successful Paystack verification moves the order from `pending_payment` to `confirmed`.
 - The first successful payment confirmation decrements product stock for the matching order items.
 - Order creation records an initial `pending_payment` status-history entry, and successful payment verification records `confirmed`.
+- Webhook signatures are verified against the raw request body with `x-paystack-signature` and `PAYSTACK_SECRET_KEY`; duplicate webhook deliveries are deduplicated in `payment_webhook_events`.
+- Verification never trusts webhook amounts directly: the backend re-checks the reference against Paystack and flags mismatched `amount` or `currency` responses instead of fulfilling the order.
+- `POST /api/v1/admin/payments/reconcile-pending` lets an admin re-check stale pending payments older than a chosen threshold and settle or expire them through the same Paystack verification path.
 - `GET /api/v1/seller/inventory` returns `{ inventory, summary, pagination }` and supports `status` plus `lowStockOnly` filtering.
 - Low-stock alerts use a fixed threshold of `5` units for Milestone S-D.
 - `POST /api/v1/seller/inventory/bulk` currently treats each csv row as one listing with one compatibility entry; `imageUrls` should be pipe-separated when multiple image URLs are provided.
@@ -697,7 +717,7 @@ GET /api/v1/orders/1/receipt?format=html
 - `GET /api/v1/admin/disputes` returns `{ disputes, pagination, filters }` and supports `status`, `raisedBy`, `search`, `page`, and `limit`.
 - `PATCH /api/v1/admin/disputes/:id` accepts `resolved` or `rejected`; `resolutionNote` is required, refund metadata is optional for resolved disputes, and only open disputes can be reviewed.
 - `GET /api/v1/admin/audit-logs` returns `{ auditLogs, pagination, filters }` and supports `adminId`, `action`, `targetType`, `targetId`, `page`, and `limit`.
-- The webhook endpoint expects the `x-paystack-signature` header and stores only sanitized Paystack references/status metadata. No card data is stored.
+- The webhook endpoint expects the `x-paystack-signature` header, stores only sanitized Paystack references/status metadata, and never stores card data.
 
 ## Database
 

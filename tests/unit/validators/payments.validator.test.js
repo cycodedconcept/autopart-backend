@@ -2,7 +2,7 @@ require('../../setup/jest');
 
 const {
   initializePaymentSchema,
-  paystackWebhookSchema,
+  verifyPaymentSchema,
   verifyPaymentCallbackSchema
 } = require('../../../src/validators/payments.validator');
 
@@ -26,6 +26,21 @@ describe('payments validator', () => {
     });
   });
 
+  it('accepts a reference path param on the verify route', () => {
+    const { error, value } = verifyPaymentSchema.validate({
+      body: {},
+      params: {
+        reference: 'APT-101-REF'
+      },
+      query: {}
+    });
+
+    expect(error).toBeUndefined();
+    expect(value.params).toEqual({
+      reference: 'APT-101-REF'
+    });
+  });
+
   it('accepts either reference or trxref on the callback query', () => {
     const { error, value } = verifyPaymentCallbackSchema.validate({
       body: {},
@@ -39,20 +54,5 @@ describe('payments validator', () => {
     expect(value.query).toEqual({
       trxref: 'APT-101-REF'
     });
-  });
-
-  it('rejects a webhook payload without an event name', () => {
-    const { error } = paystackWebhookSchema.validate({
-      body: {
-        data: {
-          reference: 'APT-101-REF'
-        }
-      },
-      params: {},
-      query: {}
-    });
-
-    expect(error).toBeDefined();
-    expect(error.message).toContain('"body.event"');
   });
 });

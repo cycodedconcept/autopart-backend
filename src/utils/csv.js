@@ -72,6 +72,28 @@ function parseCsvText(csvText) {
   });
 }
 
+function escapeCsvValue(value) {
+  const normalizedValue = value === null || value === undefined
+    ? ''
+    : String(value);
+
+  if (/[",\n]/.test(normalizedValue)) {
+    return `"${normalizedValue.replace(/"/g, '""')}"`;
+  }
+
+  return normalizedValue;
+}
+
+function serializeCsvRows(headers = [], rows = []) {
+  const headerRow = headers.map((header) => escapeCsvValue(header.label)).join(',');
+  const bodyRows = rows.map((row) => headers
+    .map((header) => escapeCsvValue(row[header.key]))
+    .join(','));
+
+  return [headerRow, ...bodyRows].join('\n');
+}
+
 module.exports = {
-  parseCsvText
+  parseCsvText,
+  serializeCsvRows
 };

@@ -266,6 +266,7 @@ describe('Seller orders API integration', () => {
 
     await request(app)
       .get('/api/v1/payments/callback')
+      .set('Authorization', `Bearer ${buyerToken}`)
       .query({
         reference: initializeResponse.body.data.payment.reference
       })

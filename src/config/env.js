@@ -23,6 +23,8 @@ const envSchema = Joi.object({
   PASSWORD_RESET_TOKEN_TTL_MINUTES: Joi.number().integer().min(5).max(1440).default(30),
   PAYSTACK_SECRET_KEY: Joi.string().allow('').required(),
   PAYSTACK_PUBLIC_KEY: Joi.string().allow('').required(),
+  PAYSTACK_BASE_URL: Joi.string().uri().default('https://api.paystack.co'),
+  APP_URL: Joi.string().uri().allow('').default(''),
   CLOUDINARY_CLOUD_NAME: Joi.string().required(),
   CLOUDINARY_API_KEY: Joi.string().required(),
   CLOUDINARY_API_SECRET: Joi.string().required(),

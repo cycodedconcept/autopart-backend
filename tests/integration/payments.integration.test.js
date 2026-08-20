@@ -55,12 +55,52 @@ async function createPendingOrder(app, token, paymentMethod = 'paystack') {
   return orderResponse.body.data.id;
 }
 
+async function initializePayment(app, token, orderId, payload = {}) {
+  const response = await request(app)
+    .post('/api/v1/payments/initialize')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      orderId,
+      ...payload
+    })
+    .expect(200);
+
+  return response.body.data;
+}
+
+async function postPaystackWebhook(app, payload, signature = 'valid-signature') {
+  return request(app)
+    .post('/webhooks/paystack')
+    .set('x-paystack-signature', signature)
+    .send(payload);
+}
+
+async function waitFor(assertion, { attempts = 20, delayMs = 10 } = {}) {
+  let lastError;
+
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      return await assertion();
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => {
+        setTimeout(resolve, delayMs);
+      });
+    }
+  }
+
+  throw lastError;
+}
+
 describe('Payments API integration', () => {
   let app;
+  let commerceStore;
+  let paystackClient;
 
   beforeEach(() => {
-    const commerceStore = createInMemoryCommerceStore();
+    commerceStore = createInMemoryCommerceStore();
     const productsRepository = createInMemoryProductsRepository();
+    paystackClient = createFakePaystackClient();
 
     app = createApp({
       usersRepository: createInMemoryUsersRepository(),
@@ -69,7 +109,7 @@ describe('Payments API integration', () => {
       cartsRepository: createInMemoryCartsRepository({ productsRepository, store: commerceStore }),
       ordersRepository: createInMemoryOrdersRepository({ productsRepository, store: commerceStore }),
       paymentsRepository: createInMemoryPaymentsRepository({ productsRepository, store: commerceStore }),
-      paystackClient: createFakePaystackClient()
+      paystackClient
     });
   });
 
@@ -77,81 +117,180 @@ describe('Payments API integration', () => {
     const token = await registerBuyer(app);
     const orderId = await createPendingOrder(app, token, 'bank_transfer');
 
-    const response = await request(app)
-      .post('/api/v1/payments/initialize')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        orderId,
-        callbackUrl: 'https://example.com/payments/callback'
-      });
+    const payment = await initializePayment(app, token, orderId, {
+      callbackUrl: 'https://example.com/payments/callback'
+    });
 
-    expect(response.status).to.equal(200);
-    expect(response.body.success).to.equal(true);
-    expect(response.body.data.authorizationUrl).to.include('https://checkout.paystack.com/');
-    expect(response.body.data.channels).to.deep.equal(['bank_transfer']);
-    expect(response.body.data.order.id).to.equal(orderId);
-    expect(response.body.data.payment.provider).to.equal('paystack');
-    expect(response.body.data.payment.status).to.equal('pending');
+    expect(payment.authorizationUrl).to.include('https://checkout.paystack.com/');
+    expect(payment.channels).to.deep.equal(['bank_transfer']);
+    expect(payment.order.id).to.equal(orderId);
+    expect(payment.payment.provider).to.equal('paystack');
+    expect(payment.payment.status).to.equal('pending');
   });
 
-  it('verifies a payment callback and confirms the order', async () => {
+  it('verifies a redirect fallback and confirms the order', async () => {
     const token = await registerBuyer(app);
     const orderId = await createPendingOrder(app, token, 'paystack');
+    const initializedPayment = await initializePayment(app, token, orderId);
 
-    const initializeResponse = await request(app)
-      .post('/api/v1/payments/initialize')
+    const response = await request(app)
+      .get(`/api/v1/payments/verify/${initializedPayment.payment.reference}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
-        orderId
-      })
       .expect(200);
 
-    const reference = initializeResponse.body.data.payment.reference;
-    const callbackResponse = await request(app)
-      .get('/api/v1/payments/callback')
-      .query({
-        reference
-      });
-
-    expect(callbackResponse.status).to.equal(200);
-    expect(callbackResponse.body.success).to.equal(true);
-    expect(callbackResponse.body.data.verified).to.equal(true);
-    expect(callbackResponse.body.data.order.status).to.equal('confirmed');
-    expect(callbackResponse.body.data.order.paymentStatus).to.equal('paid');
-    expect(callbackResponse.body.data.payment.reference).to.equal(reference);
+    expect(response.body.success).to.equal(true);
+    expect(response.body.data.verified).to.equal(true);
+    expect(response.body.data.order.status).to.equal('confirmed');
+    expect(response.body.data.order.paymentStatus).to.equal('paid');
   });
 
-  it('verifies a webhook and confirms a ussd order', async () => {
+  it('fulfills a valid charge.success webhook exactly once', async () => {
     const token = await registerBuyer(app, {
       email: 'ussd-buyer@example.com'
     });
     const orderId = await createPendingOrder(app, token, 'ussd');
+    const initializedPayment = await initializePayment(app, token, orderId);
+    const reference = initializedPayment.payment.reference;
 
-    const initializeResponse = await request(app)
-      .post('/api/v1/payments/initialize')
+    const firstResponse = await postPaystackWebhook(app, {
+      event: 'charge.success',
+      data: {
+        id: 9001,
+        reference
+      }
+    });
+    const secondResponse = await postPaystackWebhook(app, {
+      event: 'charge.success',
+      data: {
+        id: 9001,
+        reference
+      }
+    });
+
+    expect(firstResponse.status).to.equal(200);
+    expect(secondResponse.status).to.equal(200);
+
+    await waitFor(() => {
+      const order = commerceStore.orders.find((entry) => entry.id === orderId);
+      const webhookEvent = commerceStore.paymentWebhookEvents[0];
+      const confirmedEntries = commerceStore.orderStatusHistory.filter((entry) => (
+        entry.orderId === orderId && entry.status === 'confirmed'
+      ));
+
+      expect(order.paymentStatus).to.equal('paid');
+      expect(order.status).to.equal('confirmed');
+      expect(webhookEvent.processingStatus).to.equal('processed');
+      expect(webhookEvent.attemptCount).to.equal(2);
+      expect(confirmedEntries).to.have.length(1);
+    });
+  });
+
+  it('rejects tampered webhook signatures without fulfilling the order', async () => {
+    const token = await registerBuyer(app);
+    const orderId = await createPendingOrder(app, token, 'paystack');
+    const initializedPayment = await initializePayment(app, token, orderId);
+
+    const response = await postPaystackWebhook(app, {
+      event: 'charge.success',
+      data: {
+        reference: initializedPayment.payment.reference
+      }
+    }, 'bad-signature');
+
+    expect(response.status).to.equal(401);
+
+    const order = commerceStore.orders.find((entry) => entry.id === orderId);
+
+    expect(order.paymentStatus).to.equal('pending');
+    expect(order.status).to.equal('pending_payment');
+    expect(commerceStore.paymentWebhookEvents).to.have.length(0);
+  });
+
+  it('flags amount mismatches instead of fulfilling the order', async () => {
+    const token = await registerBuyer(app);
+    const orderId = await createPendingOrder(app, token, 'paystack');
+    const initializedPayment = await initializePayment(app, token, orderId);
+    const reference = initializedPayment.payment.reference;
+
+    paystackClient.setTransaction(reference, {
+      amount: 1000
+    });
+
+    const response = await postPaystackWebhook(app, {
+      event: 'charge.success',
+      data: {
+        id: 9002,
+        reference
+      }
+    });
+
+    expect(response.status).to.equal(200);
+
+    await waitFor(() => {
+      const order = commerceStore.orders.find((entry) => entry.id === orderId);
+      const payment = commerceStore.payments.find((entry) => entry.reference === reference);
+
+      expect(order.paymentStatus).to.equal('flagged');
+      expect(order.status).to.equal('pending_payment');
+      expect(payment.status).to.equal('flagged');
+    });
+  });
+
+  it('treats the webhook as a no-op when redirect verification already settled the payment', async () => {
+    const token = await registerBuyer(app);
+    const orderId = await createPendingOrder(app, token, 'paystack');
+    const initializedPayment = await initializePayment(app, token, orderId);
+    const reference = initializedPayment.payment.reference;
+
+    await request(app)
+      .get(`/api/v1/payments/verify/${reference}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
-        orderId
-      })
       .expect(200);
 
-    const reference = initializeResponse.body.data.payment.reference;
-    const webhookResponse = await request(app)
-      .post('/api/v1/payments/webhook')
-      .set('x-paystack-signature', 'valid-signature')
-      .send({
-        event: 'charge.success',
-        data: {
-          reference
-        }
-      });
+    const response = await postPaystackWebhook(app, {
+      event: 'charge.success',
+      data: {
+        id: 9003,
+        reference
+      }
+    });
 
-    expect(webhookResponse.status).to.equal(200);
-    expect(webhookResponse.body.success).to.equal(true);
-    expect(webhookResponse.body.data.acknowledged).to.equal(true);
-    expect(webhookResponse.body.data.handled).to.equal(true);
-    expect(webhookResponse.body.data.order.status).to.equal('confirmed');
-    expect(webhookResponse.body.data.order.paymentMethod).to.equal('ussd');
-    expect(webhookResponse.body.data.payment.status).to.equal('paid');
+    expect(response.status).to.equal(200);
+
+    await waitFor(() => {
+      const confirmedEntries = commerceStore.orderStatusHistory.filter((entry) => (
+        entry.orderId === orderId && entry.status === 'confirmed'
+      ));
+      const webhookEvent = commerceStore.paymentWebhookEvents[0];
+
+      expect(confirmedEntries).to.have.length(1);
+      expect(webhookEvent.processingStatus).to.equal('processed');
+      expect(commerceStore.orders.find((entry) => entry.id === orderId).paymentStatus).to.equal('paid');
+    });
+  });
+
+  it('acknowledges unknown webhook events without crashing or mutating the order', async () => {
+    const token = await registerBuyer(app);
+    const orderId = await createPendingOrder(app, token, 'paystack');
+    const initializedPayment = await initializePayment(app, token, orderId);
+
+    const response = await postPaystackWebhook(app, {
+      event: 'transfer.success',
+      data: {
+        id: 9004,
+        reference: initializedPayment.payment.reference
+      }
+    });
+
+    expect(response.status).to.equal(200);
+
+    await waitFor(() => {
+      const order = commerceStore.orders.find((entry) => entry.id === orderId);
+      const webhookEvent = commerceStore.paymentWebhookEvents[0];
+
+      expect(order.paymentStatus).to.equal('pending');
+      expect(order.status).to.equal('pending_payment');
+      expect(webhookEvent.processingStatus).to.equal('ignored');
+    });
   });
 });

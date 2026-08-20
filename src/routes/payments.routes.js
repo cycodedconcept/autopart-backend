@@ -3,7 +3,7 @@ const asyncHandler = require('../middleware/async-handler');
 const { validateRequest } = require('../middleware/validate.middleware');
 const {
   initializePaymentSchema,
-  paystackWebhookSchema,
+  verifyPaymentSchema,
   verifyPaymentCallbackSchema
 } = require('../validators/payments.validator');
 
@@ -18,15 +18,17 @@ function createPaymentsRouter({ authMiddleware, paymentsController }) {
   );
 
   router.get(
-    '/callback',
-    validateRequest(verifyPaymentCallbackSchema),
-    asyncHandler(paymentsController.verifyPaymentCallback)
+    '/verify/:reference',
+    authMiddleware,
+    validateRequest(verifyPaymentSchema),
+    asyncHandler(paymentsController.verifyPayment)
   );
 
-  router.post(
-    '/webhook',
-    validateRequest(paystackWebhookSchema),
-    asyncHandler(paymentsController.handleWebhook)
+  router.get(
+    '/callback',
+    authMiddleware,
+    validateRequest(verifyPaymentCallbackSchema),
+    asyncHandler(paymentsController.verifyPaymentCallback)
   );
 
   return router;

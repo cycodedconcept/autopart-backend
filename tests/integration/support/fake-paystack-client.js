@@ -53,6 +53,27 @@ function createFakePaystackClient() {
     },
     verifyWebhookSignature({ signature }) {
       return signature === 'valid-signature';
+    },
+    getTransaction(reference) {
+      const transaction = transactions.get(reference);
+
+      return transaction ? JSON.parse(JSON.stringify(transaction)) : null;
+    },
+    setTransaction(reference, patch) {
+      const existingTransaction = transactions.get(reference);
+
+      if (!existingTransaction) {
+        return null;
+      }
+
+      const nextTransaction = {
+        ...existingTransaction,
+        ...patch
+      };
+
+      transactions.set(reference, nextTransaction);
+
+      return JSON.parse(JSON.stringify(nextTransaction));
     }
   };
 }

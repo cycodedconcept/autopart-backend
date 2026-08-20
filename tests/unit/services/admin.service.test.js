@@ -15,6 +15,102 @@ function buildCategory(overrides = {}) {
   };
 }
 
+function buildBlogCategory(overrides = {}) {
+  return {
+    id: 7101,
+    name: 'Maintenance Guides',
+    slug: 'maintenance-guides',
+    description: 'Hands-on service tips for common workshop jobs.',
+    status: 'active',
+    createdAt: '2026-07-15T09:00:00.000Z',
+    updatedAt: '2026-07-15T09:00:00.000Z',
+    ...overrides
+  };
+}
+
+function buildBlogTag(overrides = {}) {
+  return {
+    id: 7201,
+    name: 'Brake Care',
+    slug: 'brake-care',
+    status: 'active',
+    createdAt: '2026-07-15T09:00:00.000Z',
+    updatedAt: '2026-07-15T09:00:00.000Z',
+    ...overrides
+  };
+}
+
+function buildBlogPost(overrides = {}) {
+  const category = buildBlogCategory();
+
+  return {
+    id: 7301,
+    categoryId: category.id,
+    category,
+    title: 'How to Know When Brake Pads Need Immediate Replacement',
+    slug: 'how-to-know-when-brake-pads-need-immediate-replacement',
+    excerpt: 'A quick workshop checklist for spotting worn brake pads early.',
+    body: '<p>Brake pads usually warn drivers long before complete failure.</p>',
+    featuredImageUrl: 'https://images.example.com/blog/brake-pads-inspection.jpg',
+    featuredImageAlt: 'Mechanic inspecting worn brake pads on a sedan',
+    authorDisplayName: 'Aisha Bello',
+    authorAvatarUrl: 'https://images.example.com/authors/aisha-bello.jpg',
+    readTimeMinutes: 3,
+    status: 'draft',
+    publishedAt: null,
+    viewCount: 12,
+    createdAt: '2026-07-15T10:00:00.000Z',
+    updatedAt: '2026-07-15T10:00:00.000Z',
+    ...overrides
+  };
+}
+
+function buildBlogPostTag(overrides = {}) {
+  const tag = buildBlogTag();
+
+  return {
+    id: 1,
+    postId: 7301,
+    tagId: tag.id,
+    createdAt: '2026-07-15T10:05:00.000Z',
+    updatedAt: '2026-07-15T10:05:00.000Z',
+    tag,
+    ...overrides
+  };
+}
+
+function buildBlogComment(overrides = {}) {
+  return {
+    id: 7401,
+    postId: 7301,
+    parentId: null,
+    authorName: 'Chinedu',
+    authorEmail: 'chinedu@example.com',
+    body: 'This was helpful for my Camry service.',
+    status: 'pending',
+    ipAddress: '127.0.0.1',
+    approvedAt: null,
+    createdAt: '2026-07-15T11:00:00.000Z',
+    updatedAt: '2026-07-15T11:00:00.000Z',
+    ...overrides
+  };
+}
+
+function buildNewsletterSubscriber(overrides = {}) {
+  return {
+    id: 7501,
+    email: 'reader@example.com',
+    unsubscribeToken: 'token-123',
+    status: 'subscribed',
+    ipAddress: '127.0.0.1',
+    subscribedAt: '2026-07-16T08:00:00.000Z',
+    unsubscribedAt: null,
+    createdAt: '2026-07-16T08:00:00.000Z',
+    updatedAt: '2026-07-16T08:00:00.000Z',
+    ...overrides
+  };
+}
+
 function buildVehicleTaxonomyEntry(overrides = {}) {
   return {
     id: 3001,
@@ -341,9 +437,15 @@ describe('admin service', () => {
   let adminRepository;
   let assignmentService;
   let auditLogRepository;
+  let blogCategoriesRepository;
+  let blogCommentsRepository;
+  let blogPostTagsRepository;
+  let blogPostsRepository;
+  let blogTagsRepository;
   let deliveryJobsRepository;
   let disputesRepository;
   let logisticsRepository;
+  let newsletterSubscribersRepository;
   let productsRepository;
   let platformConfigRepository;
   let sellerFinanceRepository;
@@ -365,6 +467,38 @@ describe('admin service', () => {
     auditLogRepository = {
       createAuditLog: jest.fn(),
       listAuditLogs: jest.fn()
+    };
+    blogCategoriesRepository = {
+      createCategory: jest.fn(),
+      findById: jest.fn(),
+      findBySlug: jest.fn(),
+      listCategories: jest.fn(),
+      updateCategory: jest.fn()
+    };
+    blogCommentsRepository = {
+      countComments: jest.fn(),
+      findById: jest.fn(),
+      listComments: jest.fn(),
+      updateComment: jest.fn()
+    };
+    blogPostTagsRepository = {
+      listTagsForPost: jest.fn(),
+      replaceTagsForPost: jest.fn()
+    };
+    blogPostsRepository = {
+      countPosts: jest.fn(),
+      createPost: jest.fn(),
+      findById: jest.fn(),
+      findBySlug: jest.fn(),
+      listPosts: jest.fn(),
+      updatePost: jest.fn()
+    };
+    blogTagsRepository = {
+      createTag: jest.fn(),
+      findById: jest.fn(),
+      findBySlug: jest.fn(),
+      listTags: jest.fn(),
+      updateTag: jest.fn()
     };
     assignmentService = {
       assignJobToRider: jest.fn()
@@ -428,6 +562,10 @@ describe('admin service', () => {
       summarizeRiders: jest.fn(),
       updateCompanyStatus: jest.fn()
     };
+    newsletterSubscribersRepository = {
+      countSubscribers: jest.fn(),
+      listSubscribers: jest.fn()
+    };
 
     jwtUtils = {
       signAccessToken: jest.fn(() => 'signed-admin-token'),
@@ -442,12 +580,18 @@ describe('admin service', () => {
       adminRepository,
       assignmentService,
       auditLogRepository,
+      blogCategoriesRepository,
+      blogCommentsRepository,
+      blogPostTagsRepository,
+      blogPostsRepository,
+      blogTagsRepository,
       deliveryJobsRepository,
       disputesRepository,
       env: {
         PLATFORM_COMMISSION_RATE_PERCENT: 10
       },
       logisticsRepository,
+      newsletterSubscribersRepository,
       productsRepository,
       platformConfigRepository,
       sellerFinanceRepository,
@@ -742,6 +886,166 @@ describe('admin service', () => {
       );
       expect(result.status).toBe('archived');
       expect(result.children[0].status).toBe('archived');
+    });
+  });
+
+  describe('createBlogCategory', () => {
+    it('creates a blog category with a generated slug and audit log entry', async () => {
+      blogCategoriesRepository.findBySlug.mockResolvedValue(null);
+      blogCategoriesRepository.createCategory.mockResolvedValue(buildBlogCategory({
+        id: 7102,
+        name: 'Diagnostics',
+        slug: 'diagnostics'
+      }));
+
+      const result = await adminService.createBlogCategory({
+        adminId: 5,
+        name: 'Diagnostics'
+      });
+
+      expect(blogCategoriesRepository.createCategory).toHaveBeenCalledWith({
+        name: 'Diagnostics',
+        slug: 'diagnostics',
+        description: null,
+        status: 'active'
+      });
+      expect(auditLogRepository.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        adminId: 5,
+        action: 'blog_category.created',
+        targetType: 'blog_category',
+        targetId: 7102
+      }));
+      expect(result.slug).toBe('diagnostics');
+    });
+  });
+
+  describe('createBlogPost', () => {
+    it('sanitizes HTML, derives the excerpt, computes read time, and assigns tags', async () => {
+      const createdPost = buildBlogPost({
+        id: 7305,
+        categoryId: 7101,
+        category: buildBlogCategory(),
+        slug: 'fuel-filter-warning-signs',
+        excerpt: 'A clogged fuel filter can cause hesitation, weak acceleration, and hard starts.',
+        body: '<p>A clogged fuel filter can cause hesitation.</p><p>Replace it early to protect injectors.</p>',
+        readTimeMinutes: 1
+      });
+
+      blogCategoriesRepository.findById.mockResolvedValue(buildBlogCategory());
+      blogPostsRepository.findBySlug.mockResolvedValue(null);
+      blogTagsRepository.findById.mockResolvedValue(buildBlogTag());
+      blogPostsRepository.createPost.mockResolvedValue(createdPost);
+      blogPostTagsRepository.replaceTagsForPost.mockResolvedValue([
+        buildBlogPostTag({
+          postId: 7305,
+          tag: buildBlogTag()
+        })
+      ]);
+      blogPostsRepository.findById.mockResolvedValue(createdPost);
+      blogPostTagsRepository.listTagsForPost.mockResolvedValue([
+        buildBlogPostTag({
+          postId: 7305,
+          tag: buildBlogTag()
+        })
+      ]);
+      blogCommentsRepository.countComments.mockResolvedValue(0);
+
+      const result = await adminService.createBlogPost({
+        adminId: 5,
+        categoryId: 7101,
+        title: 'Fuel Filter Warning Signs',
+        body: '<p>A clogged fuel filter can cause hesitation.</p><script>alert(1)</script><p>Replace it early to protect injectors.</p>',
+        authorDisplayName: 'Aisha Bello',
+        tagIds: [7201]
+      });
+
+      expect(blogPostsRepository.createPost).toHaveBeenCalledWith(expect.objectContaining({
+        categoryId: 7101,
+        slug: 'fuel-filter-warning-signs',
+        body: '<p>A clogged fuel filter can cause hesitation.</p><p>Replace it early to protect injectors.</p>',
+        excerpt: expect.stringContaining('A clogged fuel filter can cause hesitation'),
+        readTimeMinutes: 1,
+        status: 'draft'
+      }));
+      expect(blogPostTagsRepository.replaceTagsForPost).toHaveBeenCalledWith(7305, [7201]);
+      expect(result.tags).toHaveLength(1);
+      expect(result.body).not.toContain('<script>');
+    });
+  });
+
+  describe('updateBlogPost', () => {
+    it('rejects slug changes for published posts unless explicitly overridden', async () => {
+      blogPostsRepository.findById.mockResolvedValue(buildBlogPost({
+        status: 'published',
+        publishedAt: '2026-07-20T09:00:00.000Z'
+      }));
+
+      await expect(adminService.updateBlogPost({
+        adminId: 5,
+        postId: 7301,
+        slug: 'new-live-url'
+      })).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'CONFLICT'
+      });
+    });
+  });
+
+  describe('updateBlogComment', () => {
+    it('approves a pending blog comment and stamps approvedAt', async () => {
+      blogCommentsRepository.findById.mockResolvedValue(buildBlogComment());
+      blogCommentsRepository.updateComment.mockResolvedValue(buildBlogComment({
+        status: 'approved',
+        approvedAt: '2026-08-20T10:00:00.000Z'
+      }));
+
+      const result = await adminService.updateBlogComment({
+        adminId: 5,
+        commentId: 7401,
+        status: 'approved'
+      });
+
+      expect(blogCommentsRepository.updateComment).toHaveBeenCalledWith(7401, expect.objectContaining({
+        status: 'approved',
+        approvedAt: expect.any(String)
+      }));
+      expect(result.status).toBe('approved');
+      expect(auditLogRepository.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'blog_comment.updated',
+        targetType: 'blog_comment',
+        targetId: 7401
+      }));
+    });
+  });
+
+  describe('exportNewsletterSubscribersCsv', () => {
+    it('exports filtered newsletter subscribers as CSV and records the export', async () => {
+      newsletterSubscribersRepository.listSubscribers.mockResolvedValue([
+        buildNewsletterSubscriber(),
+        buildNewsletterSubscriber({
+          id: 7502,
+          email: 'former-reader@example.com',
+          status: 'unsubscribed',
+          unsubscribedAt: '2026-08-01T08:00:00.000Z'
+        })
+      ]);
+
+      const result = await adminService.exportNewsletterSubscribersCsv({
+        adminId: 5,
+        query: {
+          status: 'all',
+          search: 'reader'
+        }
+      });
+
+      expect(result.filename).toMatch(/^newsletter-subscribers-\d{4}-\d{2}-\d{2}\.csv$/);
+      expect(result.csv).toContain('Email,Status,Subscribed At,Unsubscribed At,Created At');
+      expect(result.csv).toContain('reader@example.com');
+      expect(result.csv).toContain('former-reader@example.com');
+      expect(auditLogRepository.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        adminId: 5,
+        action: 'newsletter_subscribers.exported'
+      }));
     });
   });
 

@@ -90,6 +90,29 @@ function mapPaymentRow(row) {
   };
 }
 
+function mapWebhookEventRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    attemptCount: Number(row.attempt_count),
+    createdAt: row.created_at,
+    eventKey: row.event_key,
+    eventType: row.event_type,
+    id: row.id,
+    lastReceivedAt: row.last_received_at,
+    processedAt: row.processed_at,
+    processingNotes: row.processing_notes,
+    processingStatus: row.processing_status,
+    provider: row.provider,
+    rawPayload: parseJsonColumn(row.raw_payload),
+    receivedAt: row.received_at,
+    reference: row.reference,
+    updatedAt: row.updated_at
+  };
+}
+
 async function findPaymentByReferenceWithConnection(connection, reference, options = {}) {
   const forUpdateClause = options.forUpdate ? 'FOR UPDATE' : '';
   const [rows] = await connection.execute(
@@ -332,6 +355,172 @@ function createPaymentsRepository({ db }) {
       } finally {
         connection.release();
       }
+    },
+
+    async recordWebhookEvent(payload) {
+      const connection = await db.getConnection();
+
+      try {
+        const [rows] = await connection.execute(
+          `
+            SELECT
+              id,
+              provider,
+              event_type,
+              event_key,
+              reference,
+              processing_status,
+              processing_notes,
+              raw_payload,
+              attempt_count,
+              received_at,
+              last_received_at,
+              processed_at,
+              created_at,
+              updated_at
+            FROM payment_webhook_events
+            WHERE provider = ? AND event_type = ? AND event_key = ?
+            LIMIT 1
+          `,
+          [payload.provider, payload.eventType, payload.eventKey]
+        );
+
+        if (!rows.length) {
+          const [result] = await connection.execute(
+            `
+              INSERT INTO payment_webhook_events (
+                provider,
+                event_type,
+                event_key,
+                reference,
+                processing_status,
+                processing_notes,
+                raw_payload,
+                attempt_count,
+                received_at,
+                last_received_at
+              )
+              VALUES (?, ?, ?, ?, 'received', NULL, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `,
+            [
+              payload.provider,
+              payload.eventType,
+              payload.eventKey,
+              payload.reference || null,
+              payload.payload ? JSON.stringify(payload.payload) : null
+            ]
+          );
+
+          const [insertedRows] = await connection.execute(
+            `
+              SELECT
+                id,
+                provider,
+                event_type,
+                event_key,
+                reference,
+                processing_status,
+                processing_notes,
+                raw_payload,
+                attempt_count,
+                received_at,
+                last_received_at,
+                processed_at,
+                created_at,
+                updated_at
+              FROM payment_webhook_events
+              WHERE id = ?
+              LIMIT 1
+            `,
+            [result.insertId]
+          );
+
+          return mapWebhookEventRow(insertedRows[0]);
+        }
+
+        const existingWebhookEvent = mapWebhookEventRow(rows[0]);
+
+        await connection.execute(
+          `
+            UPDATE payment_webhook_events
+            SET
+              attempt_count = attempt_count + 1,
+              reference = COALESCE(?, reference),
+              raw_payload = COALESCE(?, raw_payload),
+              last_received_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `,
+          [
+            payload.reference || null,
+            payload.payload ? JSON.stringify(payload.payload) : null,
+            existingWebhookEvent.id
+          ]
+        );
+
+        return {
+          ...existingWebhookEvent,
+          attemptCount: existingWebhookEvent.attemptCount + 1
+        };
+      } finally {
+        connection.release();
+      }
+    },
+
+    async updateWebhookEventStatus(id, payload) {
+      const processedAtClause = (
+        payload.processingStatus === 'processed' || payload.processingStatus === 'ignored'
+      )
+        ? 'CURRENT_TIMESTAMP'
+        : 'NULL';
+
+      await db.execute(
+        `
+          UPDATE payment_webhook_events
+          SET
+            processing_status = ?,
+            processing_notes = ?,
+            processed_at = ${processedAtClause}
+          WHERE id = ?
+        `,
+        [
+          payload.processingStatus,
+          payload.processingNotes || null,
+          id
+        ]
+      );
+    },
+
+    async listPendingPaymentsForReconciliation(payload) {
+      const [rows] = await db.execute(
+        `
+          SELECT
+            p.id AS payment_id,
+            p.order_id,
+            p.provider,
+            p.reference,
+            p.amount_kobo,
+            p.status AS payment_status,
+            p.raw_response,
+            p.created_at AS payment_created_at,
+            p.updated_at AS payment_updated_at,
+            o.buyer_id,
+            o.status AS order_status,
+            o.payment_method AS order_payment_method,
+            o.total_kobo AS order_total_kobo,
+            o.payment_reference AS order_payment_reference,
+            o.payment_status AS order_payment_status
+          FROM payments p
+          INNER JOIN orders o ON o.id = p.order_id
+          WHERE p.status = 'pending'
+            AND o.payment_status = 'pending'
+            AND p.created_at <= ?
+          ORDER BY p.created_at ASC
+          LIMIT ?
+        `,
+        [payload.before, payload.limit]
+      );
+
+      return rows.map((row) => mapPaymentRow(row));
     }
   };
 }

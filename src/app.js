@@ -5,6 +5,12 @@ const logger = require('./utils/logger');
 const { createAdminDashboardRepository } = require('./repositories/admin-dashboard.repository');
 const { createAdminRepository } = require('./repositories/admin.repository');
 const { createAuditLogRepository } = require('./repositories/audit-log.repository');
+const { createBlogCategoriesRepository } = require('./repositories/blog-categories.repository');
+const { createBlogCommentsRepository } = require('./repositories/blog-comments.repository');
+const { createBlogPostTagsRepository } = require('./repositories/blog-post-tags.repository');
+const { createBlogPostsRepository } = require('./repositories/blog-posts.repository');
+const { createBlogTagsRepository } = require('./repositories/blog-tags.repository');
+const { createNewsletterSubscribersRepository } = require('./repositories/newsletter-subscribers.repository');
 const { createUsersRepository } = require('./repositories/users.repository');
 const { createPlatformConfigRepository } = require('./repositories/platform-config.repository');
 const { createProductsRepository } = require('./repositories/products.repository');
@@ -21,8 +27,10 @@ const { createAdminService } = require('./services/admin.service');
 const { createAdminDashboardService } = require('./services/admin-dashboard.service');
 const { createAssignmentService } = require('./services/assignment.service');
 const { createAuthService } = require('./services/auth.service');
+const { createBlogService } = require('./services/blog.service');
 const { createCartService } = require('./services/cart.service');
 const { createLogisticsService } = require('./services/logistics.service');
+const { createNewsletterService } = require('./services/newsletter.service');
 const { createOrdersService } = require('./services/orders.service');
 const { createPaymentsService } = require('./services/payments.service');
 const { createProductsService } = require('./services/products.service');
@@ -33,9 +41,11 @@ const { createCacVerificationService } = require('./services/cac-verification.se
 const { createAdminController } = require('./controllers/admin.controller');
 const { createAdminDashboardController } = require('./controllers/admin-dashboard.controller');
 const { createAuthController } = require('./controllers/auth.controller');
+const { createBlogController } = require('./controllers/blog.controller');
 const { createCartController } = require('./controllers/cart.controller');
 const { createLogisticsController } = require('./controllers/logistics.controller');
 const { createMeController } = require('./controllers/me.controller');
+const { createNewsletterController } = require('./controllers/newsletter.controller');
 const { createOrdersController } = require('./controllers/orders.controller');
 const { createPaymentsController } = require('./controllers/payments.controller');
 const { createProductsController } = require('./controllers/products.controller');
@@ -48,9 +58,11 @@ const { createSellerProductsController } = require('./controllers/seller-product
 const { createRiderController } = require('./controllers/rider.controller');
 const { createAdminRouter } = require('./routes/admin.routes');
 const { createAuthRouter } = require('./routes/auth.routes');
+const { createBlogRouter } = require('./routes/blog.routes');
 const { createCartRouter } = require('./routes/cart.routes');
 const { createLogisticsRouter } = require('./routes/logistics.routes');
 const { createMeRouter } = require('./routes/me.routes');
+const { createNewsletterRouter } = require('./routes/newsletter.routes');
 const { createOrdersRouter } = require('./routes/orders.routes');
 const { createPaymentsRouter } = require('./routes/payments.routes');
 const { createProductsRouter } = require('./routes/products.routes');
@@ -61,6 +73,7 @@ const { createSellerInventoryRouter } = require('./routes/seller-inventory.route
 const { createSellerOrdersRouter } = require('./routes/seller-orders.routes');
 const { createSellerRouter } = require('./routes/seller.routes');
 const { createSellerProductsRouter } = require('./routes/seller-products.routes');
+const { createWebhooksRouter } = require('./routes/webhooks.routes');
 const {
   createAdminAuthMiddleware,
   createAuthMiddleware,
@@ -88,6 +101,25 @@ function createDependencies(overrides = {}) {
   const usersRepository = overrides.usersRepository || createUsersRepository({
     db: resolveDb()
   });
+  const blogCategoriesRepository = overrides.blogCategoriesRepository || createBlogCategoriesRepository({
+    db: resolveDb()
+  });
+  const blogCommentsRepository = overrides.blogCommentsRepository || createBlogCommentsRepository({
+    db: resolveDb()
+  });
+  const blogPostTagsRepository = overrides.blogPostTagsRepository || createBlogPostTagsRepository({
+    db: resolveDb()
+  });
+  const blogPostsRepository = overrides.blogPostsRepository || createBlogPostsRepository({
+    db: resolveDb()
+  });
+  const blogTagsRepository = overrides.blogTagsRepository || createBlogTagsRepository({
+    db: resolveDb()
+  });
+  const newsletterSubscribersRepository = overrides.newsletterSubscribersRepository
+    || createNewsletterSubscribersRepository({
+      db: resolveDb()
+    });
   const adminRepository = overrides.adminRepository || createAdminRepository({
     db: resolveDb()
   });
@@ -132,7 +164,14 @@ function createDependencies(overrides = {}) {
   });
   const appEnv = overrides.env || env;
   const paystackClient = overrides.paystackClient || createPaystackClient({
+    baseUrl: appEnv.PAYSTACK_BASE_URL,
     secretKey: appEnv.PAYSTACK_SECRET_KEY,
+    logger: appLogger
+  });
+  const paymentsService = overrides.paymentsService || createPaymentsService({
+    paymentsRepository,
+    paystackClient,
+    env: appEnv,
     logger: appLogger
   });
   const cacVerificationService = overrides.cacVerificationService || createCacVerificationService({
@@ -146,6 +185,9 @@ function createDependencies(overrides = {}) {
     passwordResetUtils: overrides.passwordResetUtils || passwordResetUtils,
     env: appEnv
   });
+  const newsletterService = overrides.newsletterService || createNewsletterService({
+    newsletterSubscribersRepository
+  });
   const assignmentService = overrides.assignmentService || createAssignmentService({
     deliveryJobsRepository,
     logisticsRepository
@@ -155,15 +197,22 @@ function createDependencies(overrides = {}) {
     env: appEnv,
     adminRepository,
     auditLogRepository,
+    blogCategoriesRepository,
+    blogCommentsRepository,
+    blogPostTagsRepository,
+    blogPostsRepository,
+    blogTagsRepository,
     deliveryJobsRepository,
     disputesRepository,
     logisticsRepository,
+    newsletterSubscribersRepository,
     platformConfigRepository,
     productsRepository,
     sellerFinanceRepository,
     usersRepository,
     sellersRepository,
     ordersRepository,
+    paymentsService,
     jwtUtils: overrides.jwtUtils || jwtUtils,
     passwordUtils: overrides.passwordUtils || passwordUtils
   });
@@ -201,9 +250,13 @@ function createDependencies(overrides = {}) {
     productsRepository,
     sellersRepository
   });
-  const paymentsService = overrides.paymentsService || createPaymentsService({
-    paymentsRepository,
-    paystackClient
+  const blogService = overrides.blogService || createBlogService({
+    blogCategoriesRepository,
+    blogCommentsRepository,
+    blogPostTagsRepository,
+    blogPostsRepository,
+    blogTagsRepository,
+    productsService
   });
   const sellersService = overrides.sellersService || createSellersService({
     cacVerificationService,
@@ -232,13 +285,19 @@ function createDependencies(overrides = {}) {
     adminDashboardController: overrides.adminDashboardController
       || createAdminDashboardController({ adminDashboardService }),
     authController: overrides.authController || createAuthController({ authService }),
+    blogController: overrides.blogController || createBlogController({ blogService }),
     cartController: overrides.cartController || createCartController({ cartService }),
     logisticsController: overrides.logisticsController
       || createLogisticsController({ logisticsService }),
     riderController: overrides.riderController || createRiderController({ logisticsService }),
     meController: overrides.meController || createMeController(),
+    newsletterController: overrides.newsletterController
+      || createNewsletterController({ newsletterService }),
     ordersController: overrides.ordersController || createOrdersController({ ordersService }),
-    paymentsController: overrides.paymentsController || createPaymentsController({ paymentsService }),
+    paymentsController: overrides.paymentsController || createPaymentsController({
+      paymentsService,
+      logger: appLogger
+    }),
     productsController: overrides.productsController || createProductsController({ productsService }),
     sellerDashboardController: overrides.sellerDashboardController
       || createSellerDashboardController({ sellerDashboardService }),
@@ -269,11 +328,11 @@ function createApp(overrides = {}) {
   app.set('trust proxy', 1);
 
   app.use(createCorsMiddleware({ env: dependencies.env }));
-  app.use(express.json({
-    verify: (req, _res, buffer) => {
-      req.rawBody = buffer && buffer.length ? buffer.toString('utf8') : '';
-    }
+  app.use('/webhooks/paystack', express.raw({ type: 'application/json' }));
+  app.use('/webhooks', createWebhooksRouter({
+    paymentsController: dependencies.paymentsController
   }));
+  app.use(express.json());
   app.use(morgan('dev', { stream: dependencies.logger.stream }));
 
   app.get('/health', (req, res) => {
@@ -304,6 +363,14 @@ function createApp(overrides = {}) {
 
   app.use('/api/v1/products', createProductsRouter({
     productsController: dependencies.productsController
+  }));
+
+  app.use('/api/v1/blog', createBlogRouter({
+    blogController: dependencies.blogController
+  }));
+
+  app.use('/api/v1/newsletter', createNewsletterRouter({
+    newsletterController: dependencies.newsletterController
   }));
 
   app.use('/api/v1/cart', createCartRouter({

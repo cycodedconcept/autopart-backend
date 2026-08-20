@@ -15,6 +15,22 @@ function sanitizeObject(object) {
   }, {});
 }
 
+function normalizeBuffer(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    return Buffer.from(value, 'utf8');
+  }
+
+  return null;
+}
+
 function buildRequestedChannels(paymentMethod) {
   if (paymentMethod === PAYMENT_METHODS.BANK_TRANSFER) {
     return ['bank_transfer'];
@@ -63,17 +79,19 @@ function sanitizePaystackError(error) {
 }
 
 function verifyWebhookSignature({ rawBody, signature, secretKey }) {
-  if (!rawBody || !signature || !secretKey) {
+  const normalizedBody = normalizeBuffer(rawBody);
+
+  if (!normalizedBody || !signature || !secretKey || !/^[a-f0-9]{128}$/i.test(signature)) {
     return false;
   }
 
   const computedSignature = crypto
     .createHmac('sha512', secretKey)
-    .update(rawBody)
+    .update(normalizedBody)
     .digest('hex');
 
-  const expected = Buffer.from(computedSignature, 'utf8');
-  const actual = Buffer.from(signature, 'utf8');
+  const expected = Buffer.from(computedSignature, 'hex');
+  const actual = Buffer.from(signature, 'hex');
 
   if (expected.length !== actual.length) {
     return false;
@@ -141,7 +159,7 @@ function createPaystackClient({ secretKey, fetchImpl = fetch, logger, baseUrl = 
     async initializeTransaction(payload) {
       return request('/transaction/initialize', {
         method: 'POST',
-        body: {
+        body: sanitizeObject({
           amount: payload.amountKobo,
           callback_url: payload.callbackUrl,
           channels: payload.channels || undefined,
@@ -149,7 +167,7 @@ function createPaystackClient({ secretKey, fetchImpl = fetch, logger, baseUrl = 
           email: payload.email,
           metadata: payload.metadata,
           reference: payload.reference
-        },
+        }),
         errorCode: ERROR_CODES.PAYMENT_INITIALIZATION_FAILED,
         errorMessage: 'Unable to initialize payment with Paystack.'
       });

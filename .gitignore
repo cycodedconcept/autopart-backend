@@ -1,7 +1,8 @@
 node_modules/
 .env
-.env.example
+.env.*.local
 .DS_Store
 uploads/
 inventory.csv
-postman/
+npm-debug.log*
+.pm2/postman/*.postman_environment.json

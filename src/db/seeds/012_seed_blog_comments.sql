@@ -1,0 +1,103 @@
+INSERT INTO blog_comments (
+  id,
+  post_id,
+  parent_id,
+  author_name,
+  author_email,
+  body,
+  status,
+  ip_address,
+  approved_at,
+  created_at,
+  updated_at
+)
+VALUES
+  (
+    8401,
+    8301,
+    NULL,
+    'Chinedu Okoro',
+    'chinedu.okoro@example.com',
+    'This checklist helped me confirm a worn pad set before rotor damage got worse. Very practical write-up.',
+    'approved',
+    '102.89.4.21',
+    '2026-02-13 07:10:00',
+    '2026-02-12 18:30:00',
+    '2026-02-13 07:10:00'
+  ),
+  (
+    8402,
+    8301,
+    8401,
+    'AutoParts Team',
+    'support@example.com',
+    'Glad it helped. Checking pad thickness early usually saves both the rotor and the labour bill.',
+    'approved',
+    '102.89.4.22',
+    '2026-02-13 08:00:00',
+    '2026-02-13 07:45:00',
+    '2026-02-13 08:00:00'
+  ),
+  (
+    8403,
+    8301,
+    NULL,
+    'Bose Akin',
+    'bose.akin@example.com',
+    'Can a vibrating pedal also come from uneven rotor wear even when the pads still look okay?',
+    'pending',
+    '41.76.122.18',
+    NULL,
+    '2026-02-14 11:25:00',
+    '2026-02-14 11:25:00'
+  ),
+  (
+    8404,
+    8302,
+    NULL,
+    'Segun Adeyemi',
+    'segun.adeyemi@example.com',
+    'The intake hose check solved a similar rough idle case on a Corolla in our workshop last month.',
+    'approved',
+    '105.112.50.9',
+    '2026-02-27 09:40:00',
+    '2026-02-27 08:30:00',
+    '2026-02-27 09:40:00'
+  ),
+  (
+    8405,
+    8304,
+    NULL,
+    'Ngozi Eze',
+    'ngozi.eze@example.com',
+    'Keeping filters and brake pads ahead of schedule reduced our delivery van downtime more than anything else this year.',
+    'approved',
+    '154.120.76.44',
+    '2026-03-20 10:15:00',
+    '2026-03-20 09:05:00',
+    '2026-03-20 10:15:00'
+  ),
+  (
+    8406,
+    8306,
+    NULL,
+    'Fast Links',
+    'promo@example.net',
+    'Visit our profile for the cheapest offers and instant delivery links.',
+    'spam',
+    '197.210.55.203',
+    NULL,
+    '2026-04-17 13:55:00',
+    '2026-04-17 14:10:00'
+  )
+ON DUPLICATE KEY UPDATE
+  post_id = VALUES(post_id),
+  parent_id = VALUES(parent_id),
+  author_name = VALUES(author_name),
+  author_email = VALUES(author_email),
+  body = VALUES(body),
+  status = VALUES(status),
+  ip_address = VALUES(ip_address),
+  approved_at = VALUES(approved_at),
+  created_at = VALUES(created_at),
+  updated_at = VALUES(updated_at);

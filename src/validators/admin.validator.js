@@ -1,9 +1,11 @@
 const Joi = require('joi');
 const { buildPaginationQuerySchema } = require('./pagination.validator');
 const {
+  BLOG_COMMENT_STATUSES,
   CATEGORY_STATUSES,
   DISPUTE_RAISED_BY,
   DISPUTE_STATUSES,
+  NEWSLETTER_SUBSCRIBER_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
   PAYOUT_PAYEE_TYPES,
@@ -68,6 +70,12 @@ const adminDisputeRaisedByValues = [
   'all',
   ...Object.values(DISPUTE_RAISED_BY)
 ];
+const adminBlogPostStatuses = ['all', 'draft', 'published', 'archived'];
+const adminBlogCategoryStatuses = ['all', ...Object.values(CATEGORY_STATUSES)];
+const adminBlogTagStatuses = ['all', ...Object.values(CATEGORY_STATUSES)];
+const adminBlogCommentStatuses = ['all', ...Object.values(BLOG_COMMENT_STATUSES)];
+const adminNewsletterStatuses = ['all', ...Object.values(NEWSLETTER_SUBSCRIBER_STATUSES)];
+const adminBlogSortValues = ['latest', 'oldest', 'title_asc'];
 
 const adminLoginSchema = Joi.object({
   body: Joi.object({
@@ -175,6 +183,245 @@ const deleteCategorySchema = Joi.object({
   query: Joi.object({}).default({})
 });
 
+const listAdminBlogCategoriesSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: Joi.object({
+    status: Joi.string().valid(...adminBlogCategoryStatuses).default('all'),
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  }).default({})
+});
+
+const getAdminBlogCategorySchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const createAdminBlogCategorySchema = Joi.object({
+  body: Joi.object({
+    name: Joi.string().trim().min(2).max(120).required(),
+    slug: Joi.string().trim().min(2).max(140).optional(),
+    description: Joi.string().trim().max(255).allow('', null).optional(),
+    status: Joi.string().valid(...Object.values(CATEGORY_STATUSES)).optional()
+  }).required(),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
+});
+
+const updateAdminBlogCategorySchema = Joi.object({
+  body: Joi.object({
+    name: Joi.string().trim().min(2).max(120).optional(),
+    slug: Joi.string().trim().min(2).max(140).optional(),
+    description: Joi.string().trim().max(255).allow('', null).optional(),
+    status: Joi.string().valid(...Object.values(CATEGORY_STATUSES)).optional()
+  }).or('name', 'slug', 'description', 'status').required(),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const deleteAdminBlogCategorySchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const listAdminBlogTagsSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: Joi.object({
+    status: Joi.string().valid(...adminBlogTagStatuses).default('all'),
+    search: Joi.string().trim().max(120).allow('', null).optional()
+  }).default({})
+});
+
+const getAdminBlogTagSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const createAdminBlogTagSchema = Joi.object({
+  body: Joi.object({
+    name: Joi.string().trim().min(2).max(80).required(),
+    slug: Joi.string().trim().min(2).max(120).optional(),
+    status: Joi.string().valid(...Object.values(CATEGORY_STATUSES)).optional()
+  }).required(),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
+});
+
+const updateAdminBlogTagSchema = Joi.object({
+  body: Joi.object({
+    name: Joi.string().trim().min(2).max(80).optional(),
+    slug: Joi.string().trim().min(2).max(120).optional(),
+    status: Joi.string().valid(...Object.values(CATEGORY_STATUSES)).optional()
+  }).or('name', 'slug', 'status').required(),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const deleteAdminBlogTagSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const listAdminBlogPostsSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: buildPaginationQuerySchema({
+    status: Joi.string().valid(...adminBlogPostStatuses).default('all'),
+    categoryId: Joi.number().integer().positive().optional(),
+    search: Joi.string().trim().max(160).allow('', null).optional(),
+    sort: Joi.string().valid(...adminBlogSortValues).default('latest')
+  })
+});
+
+const getAdminBlogPostSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const createAdminBlogPostSchema = Joi.object({
+  body: Joi.object({
+    categoryId: Joi.number().integer().positive().required(),
+    title: Joi.string().trim().min(5).max(180).required(),
+    slug: Joi.string().trim().min(2).max(220).optional(),
+    excerpt: Joi.string().trim().max(500).allow('', null).optional(),
+    body: Joi.string().trim().min(20).required(),
+    featuredImageUrl: Joi.string().trim().uri().max(2048).allow('', null).optional(),
+    featuredImageAlt: Joi.string().trim().max(255).allow('', null).optional(),
+    authorDisplayName: Joi.string().trim().min(2).max(120).required(),
+    authorAvatarUrl: Joi.string().trim().uri().max(2048).allow('', null).optional(),
+    status: Joi.string().valid('draft', 'published', 'archived').optional(),
+    publishedAt: Joi.date().iso().allow(null).optional(),
+    tagIds: Joi.array().items(Joi.number().integer().positive()).unique().optional()
+  }).required(),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
+});
+
+const updateAdminBlogPostSchema = Joi.object({
+  body: Joi.object({
+    categoryId: Joi.number().integer().positive().optional(),
+    title: Joi.string().trim().min(5).max(180).optional(),
+    slug: Joi.string().trim().min(2).max(220).optional(),
+    excerpt: Joi.string().trim().max(500).allow('', null).optional(),
+    body: Joi.string().trim().min(20).optional(),
+    featuredImageUrl: Joi.string().trim().uri().max(2048).allow('', null).optional(),
+    featuredImageAlt: Joi.string().trim().max(255).allow('', null).optional(),
+    authorDisplayName: Joi.string().trim().min(2).max(120).optional(),
+    authorAvatarUrl: Joi.string().trim().uri().max(2048).allow('', null).optional(),
+    publishedAt: Joi.date().iso().allow(null).optional(),
+    tagIds: Joi.array().items(Joi.number().integer().positive()).unique().optional(),
+    allowSlugOverride: Joi.boolean().optional()
+  }).or(
+    'categoryId',
+    'title',
+    'slug',
+    'excerpt',
+    'body',
+    'featuredImageUrl',
+    'featuredImageAlt',
+    'authorDisplayName',
+    'authorAvatarUrl',
+    'publishedAt',
+    'tagIds',
+    'allowSlugOverride'
+  ).required(),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const publishAdminBlogPostSchema = Joi.object({
+  body: Joi.object({
+    publishedAt: Joi.date().iso().allow(null).optional()
+  }).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const unpublishAdminBlogPostSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const deleteAdminBlogPostSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const listAdminBlogCommentsSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: buildPaginationQuerySchema({
+    postId: Joi.number().integer().positive().optional(),
+    status: Joi.string().valid(...adminBlogCommentStatuses).default('all'),
+    search: Joi.string().trim().max(160).allow('', null).optional()
+  })
+});
+
+const updateAdminBlogCommentSchema = Joi.object({
+  body: Joi.object({
+    status: Joi.string()
+      .valid(
+        BLOG_COMMENT_STATUSES.PENDING,
+        BLOG_COMMENT_STATUSES.APPROVED,
+        BLOG_COMMENT_STATUSES.SPAM,
+        BLOG_COMMENT_STATUSES.DELETED
+      )
+      .required()
+  }).required(),
+  params: Joi.object({
+    id: Joi.number().integer().positive().required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
+const listAdminNewsletterSubscribersSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: buildPaginationQuerySchema({
+    status: Joi.string().valid(...adminNewsletterStatuses).default('all'),
+    search: Joi.string().trim().max(160).allow('', null).optional()
+  })
+});
+
+const exportAdminNewsletterSubscribersSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({}).default({}),
+  query: Joi.object({
+    status: Joi.string().valid(...adminNewsletterStatuses).default('all'),
+    search: Joi.string().trim().max(160).allow('', null).optional()
+  }).default({})
+});
+
 const listUsersSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
@@ -209,6 +456,15 @@ const listAdminOrdersSchema = Joi.object({
     paymentStatus: Joi.string().valid(...adminPaymentStatuses).default('all'),
     search: Joi.string().trim().max(120).allow('', null).optional()
   })
+});
+
+const reconcilePendingPaymentsSchema = Joi.object({
+  body: Joi.object({
+    olderThanMinutes: Joi.number().integer().min(1).max(1440).optional(),
+    limit: Joi.number().integer().min(1).max(100).optional()
+  }).default({}),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
 });
 
 const updateAdminOrderStatusSchema = Joi.object({
@@ -389,23 +645,45 @@ const deleteVehicleTaxonomySchema = Joi.object({
 
 module.exports = {
   adminLoginSchema,
+  createAdminBlogCategorySchema,
+  createAdminBlogPostSchema,
+  createAdminBlogTagSchema,
   createCategorySchema,
   createVehicleTaxonomySchema,
+  deleteAdminBlogCategorySchema,
+  deleteAdminBlogPostSchema,
+  deleteAdminBlogTagSchema,
   deleteCategorySchema,
   deleteVehicleTaxonomySchema,
+  exportAdminNewsletterSubscribersSchema,
   getAdminDashboardSchema,
+  getAdminBlogCategorySchema,
+  getAdminBlogPostSchema,
+  getAdminBlogTagSchema,
   getCategorySchema,
   getPlatformConfigSchema,
   getSellerVerificationCandidateSchema,
-  listAdminOrdersSchema,
+  listAdminBlogCategoriesSchema,
+  listAdminBlogCommentsSchema,
+  listAdminBlogPostsSchema,
+  listAdminBlogTagsSchema,
   listAdminDisputesSchema,
+  listAdminNewsletterSubscribersSchema,
+  listAdminOrdersSchema,
   listAdminPayoutsSchema,
   listAuditLogsSchema,
+  publishAdminBlogPostSchema,
+  reconcilePendingPaymentsSchema,
   getVehicleTaxonomySchema,
   listCategoriesSchema,
   listSellerVerificationQueueSchema,
   listUsersSchema,
   listVehicleTaxonomySchema,
+  unpublishAdminBlogPostSchema,
+  updateAdminBlogCategorySchema,
+  updateAdminBlogCommentSchema,
+  updateAdminBlogPostSchema,
+  updateAdminBlogTagSchema,
   updateAdminDisputeSchema,
   updateAdminOrderStatusSchema,
   updateAdminPayoutStatusSchema,

@@ -27,7 +27,12 @@ const ADMIN_ROLE_NAMES = {
 
 const ADMIN_PERMISSION_KEYS = {
   APPROVE_PAYOUTS: 'payouts.approve',
+  MANAGE_BLOG_CATEGORIES: 'blog_categories.manage',
+  MANAGE_BLOG_COMMENTS: 'blog_comments.manage',
+  MANAGE_BLOG_POSTS: 'blog_posts.manage',
+  MANAGE_BLOG_TAGS: 'blog_tags.manage',
   READ_DASHBOARD: 'dashboard.read',
+  READ_NEWSLETTER_SUBSCRIBERS: 'newsletter_subscribers.read',
   MANAGE_CATEGORIES: 'categories.manage',
   MANAGE_CONFIG: 'config.manage',
   MANAGE_LOGISTICS: 'logistics.manage',
@@ -43,6 +48,26 @@ const ADMIN_PERMISSION_DEFINITIONS = [
   {
     key: ADMIN_PERMISSION_KEYS.READ_DASHBOARD,
     description: 'Read the super admin dashboard overview and operational widgets.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS,
+    description: 'Create, update, publish, unpublish, and archive blog posts.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_BLOG_CATEGORIES,
+    description: 'Create, update, and archive blog categories.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_BLOG_TAGS,
+    description: 'Create, update, and archive blog tags.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.MANAGE_BLOG_COMMENTS,
+    description: 'Moderate blog comments and manage comment status.'
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.READ_NEWSLETTER_SUBSCRIBERS,
+    description: 'Read and export newsletter subscriber records.'
   },
   {
     key: ADMIN_PERMISSION_KEYS.READ_SELF,
@@ -110,6 +135,18 @@ const PRODUCT_STATUSES = {
 const CATEGORY_STATUSES = {
   ACTIVE: 'active',
   ARCHIVED: 'archived'
+};
+
+const BLOG_COMMENT_STATUSES = {
+  APPROVED: 'approved',
+  DELETED: 'deleted',
+  PENDING: 'pending',
+  SPAM: 'spam'
+};
+
+const NEWSLETTER_SUBSCRIBER_STATUSES = {
+  SUBSCRIBED: 'subscribed',
+  UNSUBSCRIBED: 'unsubscribed'
 };
 
 const SELLER_DOCUMENT_TYPES = {
@@ -184,7 +221,9 @@ const PAYMENT_METHODS = {
 
 const PAYMENT_STATUSES = {
   CANCELLED: 'cancelled',
+  EXPIRED: 'expired',
   FAILED: 'failed',
+  FLAGGED: 'flagged',
   PAID: 'paid',
   PENDING: 'pending'
 };
@@ -241,11 +280,13 @@ module.exports = {
   ADMIN_PERMISSION_KEYS,
   ADMIN_ROLE_DEFINITIONS,
   ADMIN_ROLE_NAMES,
+  BLOG_COMMENT_STATUSES,
   CATEGORY_STATUSES,
   DELIVERY_JOB_STATUSES,
   DISPUTE_RAISED_BY,
   DISPUTE_STATUSES,
   LOGISTICS_COMPANY_STATUSES,
+  NEWSLETTER_SUBSCRIBER_STATUSES,
   ORDER_ITEM_STATUSES,
   ORDER_STATUSES,
   PAYMENT_METHODS,

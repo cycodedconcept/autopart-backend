@@ -12,6 +12,7 @@ function createInMemoryCommerceStore() {
     orderStatusHistory: [],
     orders: [],
     payments: [],
+    paymentWebhookEvents: [],
     payoutItems: [],
     payouts: [],
     riders: [],
@@ -28,6 +29,7 @@ function createInMemoryCommerceStore() {
       orderItemId: 1,
       orderStatusHistoryId: 1,
       paymentId: 1,
+      paymentWebhookEventId: 1,
       payoutId: 1,
       payoutItemId: 1,
       riderId: 1

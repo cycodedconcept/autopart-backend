@@ -1,9 +1,11 @@
 const {
+  BLOG_COMMENT_STATUSES,
   CATEGORY_STATUSES,
   DISPUTE_RAISED_BY,
   DISPUTE_STATUSES,
   ERROR_CODES,
   LOGISTICS_COMPANY_STATUSES,
+  NEWSLETTER_SUBSCRIBER_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
   PAYOUT_PAYEE_TYPES,
@@ -31,6 +33,12 @@ const {
 } = require('../utils/logistics');
 const { sanitizeSellerAccount } = require('../utils/seller');
 const { sanitizeUser } = require('../utils/user');
+const {
+  computeReadTimeMinutes,
+  deriveExcerptFromHtml,
+  sanitizeBlogHtml
+} = require('../utils/blog-content');
+const { serializeCsvRows } = require('../utils/csv');
 
 function normalizeEmail(email) {
   return email ? email.trim().toLowerCase() : null;
@@ -82,6 +90,30 @@ function normalizeRiderStatus(status) {
 
 function normalizeDeliveryJobStatus(status) {
   return status || 'all';
+}
+
+function normalizeAdminBlogCategoryStatus(status) {
+  return status || 'all';
+}
+
+function normalizeAdminBlogTagStatus(status) {
+  return status || 'all';
+}
+
+function normalizeAdminBlogPostStatus(status) {
+  return status || 'all';
+}
+
+function normalizeAdminBlogCommentStatus(status) {
+  return status || 'all';
+}
+
+function normalizeAdminNewsletterStatus(status) {
+  return status || 'all';
+}
+
+function normalizeAdminBlogSort(sort) {
+  return sort || 'latest';
 }
 
 function normalizeSearchTerm(search) {
@@ -217,6 +249,165 @@ function formatVehicleTaxonomyLabel(entry) {
 
 function normalizeVehicleField(value) {
   return String(value || '').trim();
+}
+
+function normalizeOptionalText(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const trimmedValue = String(value).trim();
+
+  return trimmedValue ? trimmedValue : null;
+}
+
+function normalizeRequiredBlogText(value, fieldName) {
+  const normalizedValue = normalizeOptionalText(value);
+
+  if (!normalizedValue) {
+    throw new AppError(`${fieldName} is required.`, {
+      statusCode: 422,
+      code: ERROR_CODES.VALIDATION_ERROR
+    });
+  }
+
+  return normalizedValue;
+}
+
+function normalizeBlogSlug(fallbackValue, slug) {
+  const normalizedSlug = slugify(slug !== undefined ? slug : fallbackValue);
+
+  if (!normalizedSlug) {
+    throw new AppError('Blog slug could not be generated from the provided value.', {
+      statusCode: 422,
+      code: ERROR_CODES.VALIDATION_ERROR
+    });
+  }
+
+  return normalizedSlug;
+}
+
+function normalizeBlogPostBody(body) {
+  const sanitizedBody = sanitizeBlogHtml(body);
+
+  if (!sanitizedBody) {
+    throw new AppError('Blog post body must contain supported HTML content.', {
+      statusCode: 422,
+      code: ERROR_CODES.VALIDATION_ERROR
+    });
+  }
+
+  return sanitizedBody;
+}
+
+function mapAdminBlogCategory(category) {
+  if (!category) {
+    return null;
+  }
+
+  return {
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    status: category.status,
+    postCount: category.postCount === undefined ? undefined : category.postCount,
+    createdAt: category.createdAt,
+    updatedAt: category.updatedAt
+  };
+}
+
+function mapAdminBlogTag(tag) {
+  if (!tag) {
+    return null;
+  }
+
+  return {
+    id: tag.id,
+    name: tag.name,
+    slug: tag.slug,
+    status: tag.status,
+    postCount: tag.postCount === undefined ? undefined : tag.postCount,
+    createdAt: tag.createdAt,
+    updatedAt: tag.updatedAt
+  };
+}
+
+function mapAdminBlogPostTag(postTag) {
+  if (!postTag || !postTag.tag) {
+    return null;
+  }
+
+  return mapAdminBlogTag(postTag.tag);
+}
+
+function mapAdminBlogPostListItem(post) {
+  if (!post) {
+    return null;
+  }
+
+  return {
+    id: post.id,
+    categoryId: post.categoryId,
+    category: mapAdminBlogCategory(post.category),
+    title: post.title,
+    slug: post.slug,
+    excerpt: post.excerpt,
+    featuredImageUrl: post.featuredImageUrl,
+    featuredImageAlt: post.featuredImageAlt,
+    authorDisplayName: post.authorDisplayName,
+    authorAvatarUrl: post.authorAvatarUrl,
+    readTimeMinutes: post.readTimeMinutes,
+    status: post.status,
+    publishedAt: post.publishedAt,
+    viewCount: post.viewCount,
+    createdAt: post.createdAt,
+    updatedAt: post.updatedAt
+  };
+}
+
+function mapAdminBlogPostDetail(post, options = {}) {
+  return {
+    ...mapAdminBlogPostListItem(post),
+    body: post.body,
+    tags: (options.tags || []).map(mapAdminBlogPostTag).filter(Boolean),
+    commentCount: options.commentCount === undefined ? 0 : options.commentCount
+  };
+}
+
+function mapAdminBlogComment(comment) {
+  if (!comment) {
+    return null;
+  }
+
+  return {
+    id: comment.id,
+    postId: comment.postId,
+    parentId: comment.parentId,
+    authorName: comment.authorName,
+    authorEmail: comment.authorEmail,
+    body: comment.body,
+    status: comment.status,
+    approvedAt: comment.approvedAt,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt
+  };
+}
+
+function mapAdminNewsletterSubscriber(subscriber) {
+  if (!subscriber) {
+    return null;
+  }
+
+  return {
+    id: subscriber.id,
+    email: subscriber.email,
+    status: subscriber.status,
+    subscribedAt: subscriber.subscribedAt,
+    unsubscribedAt: subscriber.unsubscribedAt,
+    createdAt: subscriber.createdAt,
+    updatedAt: subscriber.updatedAt
+  };
 }
 
 function mapManagedSellerProfile(profile) {
@@ -651,12 +842,19 @@ function createAdminService({
   adminRepository,
   assignmentService,
   auditLogRepository,
+  blogCategoriesRepository,
+  blogCommentsRepository,
+  blogPostTagsRepository,
+  blogPostsRepository,
+  blogTagsRepository,
   deliveryJobsRepository,
   disputesRepository,
   env,
   jwtUtils,
   logisticsRepository,
+  newsletterSubscribersRepository,
   passwordUtils,
+  paymentsService,
   platformConfigRepository,
   productsRepository,
   sellerFinanceRepository,
@@ -882,6 +1080,179 @@ function createAdminService({
     return payout;
   }
 
+  async function ensureBlogCategoryExists(categoryId) {
+    if (!blogCategoriesRepository || typeof blogCategoriesRepository.findById !== 'function') {
+      throw new AppError('Blog category management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const category = await blogCategoriesRepository.findById(categoryId);
+
+    if (!category) {
+      throw new AppError('Blog category was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return category;
+  }
+
+  function ensureBlogCategoryIsActive(category, message = 'Archived blog categories cannot be used here.') {
+    if (category.status === CATEGORY_STATUSES.ARCHIVED) {
+      throw new AppError(message, {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+
+    return category;
+  }
+
+  async function ensureBlogTagExists(tagId) {
+    if (!blogTagsRepository || typeof blogTagsRepository.findById !== 'function') {
+      throw new AppError('Blog tag management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const tag = await blogTagsRepository.findById(tagId);
+
+    if (!tag) {
+      throw new AppError('Blog tag was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return tag;
+  }
+
+  function ensureBlogTagIsActive(tag, message = 'Archived blog tags cannot be assigned to posts.') {
+    if (tag.status === CATEGORY_STATUSES.ARCHIVED) {
+      throw new AppError(message, {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+
+    return tag;
+  }
+
+  async function ensureBlogPostExists(postId) {
+    if (!blogPostsRepository || typeof blogPostsRepository.findById !== 'function') {
+      throw new AppError('Blog post management is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const post = await blogPostsRepository.findById(postId);
+
+    if (!post) {
+      throw new AppError('Blog post was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return post;
+  }
+
+  async function ensureBlogCommentExists(commentId) {
+    if (!blogCommentsRepository || typeof blogCommentsRepository.findById !== 'function') {
+      throw new AppError('Blog comment moderation is unavailable.', {
+        statusCode: 500,
+        code: ERROR_CODES.INTERNAL_SERVER_ERROR
+      });
+    }
+
+    const comment = await blogCommentsRepository.findById(commentId);
+
+    if (!comment) {
+      throw new AppError('Blog comment was not found.', {
+        statusCode: 404,
+        code: ERROR_CODES.NOT_FOUND
+      });
+    }
+
+    return comment;
+  }
+
+  async function ensureBlogCategorySlugIsAvailable(slug, excludeCategoryId = null) {
+    const existingCategory = await blogCategoriesRepository.findBySlug(slug);
+
+    if (existingCategory && existingCategory.id !== Number(excludeCategoryId)) {
+      throw new AppError('A blog category with this slug already exists.', {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+  }
+
+  async function ensureBlogTagSlugIsAvailable(slug, excludeTagId = null) {
+    const existingTag = await blogTagsRepository.findBySlug(slug);
+
+    if (existingTag && existingTag.id !== Number(excludeTagId)) {
+      throw new AppError('A blog tag with this slug already exists.', {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+  }
+
+  async function ensureBlogPostSlugIsAvailable(slug, excludePostId = null) {
+    const existingPost = await blogPostsRepository.findBySlug(slug);
+
+    if (existingPost && existingPost.id !== Number(excludePostId)) {
+      throw new AppError('A blog post with this slug already exists.', {
+        statusCode: 409,
+        code: ERROR_CODES.CONFLICT
+      });
+    }
+  }
+
+  async function ensureBlogTagIdsAreAssignable(tagIds = []) {
+    const uniqueTagIds = Array.from(new Set(
+      (tagIds || [])
+        .map((tagId) => Number(tagId))
+        .filter((tagId) => Number.isInteger(tagId) && tagId > 0)
+    ));
+
+    const tags = await Promise.all(uniqueTagIds.map((tagId) => ensureBlogTagExists(tagId)));
+
+    tags.forEach((tag) => {
+      ensureBlogTagIsActive(tag);
+    });
+
+    return tags;
+  }
+
+  function resolveBlogPostExcerpt(body, excerpt) {
+    const normalizedExcerpt = normalizeOptionalText(excerpt);
+
+    return normalizedExcerpt || deriveExcerptFromHtml(body);
+  }
+
+  async function loadAdminBlogPostDetail(postId) {
+    const post = await ensureBlogPostExists(postId);
+    const [tags, commentCount] = await Promise.all([
+      blogPostTagsRepository.listTagsForPost(post.id),
+      blogCommentsRepository.countComments({
+        postId: post.id,
+        status: 'all'
+      })
+    ]);
+
+    return mapAdminBlogPostDetail(post, {
+      tags,
+      commentCount
+    });
+  }
+
   async function ensureDisputeExists(disputeId) {
     if (!disputesRepository || typeof disputesRepository.findDisputeByIdForAdmin !== 'function') {
       throw new AppError('Dispute management is unavailable.', {
@@ -1083,6 +1454,634 @@ function createAdminService({
       };
     },
 
+    async listBlogCategories(payload = {}) {
+      const filters = {
+        status: normalizeAdminBlogCategoryStatus(payload.query && payload.query.status),
+        search: normalizeSearchTerm(payload.query && payload.query.search)
+      };
+      const categories = await blogCategoriesRepository.listCategories(filters);
+
+      return {
+        categories: categories.map(mapAdminBlogCategory),
+        filters
+      };
+    },
+
+    async getBlogCategory(payload) {
+      const category = await ensureBlogCategoryExists(payload.categoryId);
+
+      return mapAdminBlogCategory(category);
+    },
+
+    async createBlogCategory(payload) {
+      const name = normalizeRequiredBlogText(payload.name, 'Blog category name');
+      const slug = normalizeBlogSlug(name, payload.slug);
+
+      await ensureBlogCategorySlugIsAvailable(slug);
+
+      const category = await blogCategoriesRepository.createCategory({
+        name,
+        slug,
+        description: normalizeOptionalText(payload.description),
+        status: payload.status || CATEGORY_STATUSES.ACTIVE
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_category.created',
+        targetType: 'blog_category',
+        targetId: category.id,
+        detail: {
+          name: category.name,
+          slug: category.slug,
+          status: category.status
+        }
+      });
+
+      return mapAdminBlogCategory(category);
+    },
+
+    async updateBlogCategory(payload) {
+      const existingCategory = await ensureBlogCategoryExists(payload.categoryId);
+      const name = payload.name !== undefined
+        ? normalizeRequiredBlogText(payload.name, 'Blog category name')
+        : existingCategory.name;
+      const slug = payload.slug !== undefined
+        ? normalizeBlogSlug(name, payload.slug)
+        : existingCategory.slug;
+      const description = payload.description !== undefined
+        ? normalizeOptionalText(payload.description)
+        : existingCategory.description;
+      const status = payload.status !== undefined
+        ? payload.status
+        : existingCategory.status;
+
+      await ensureBlogCategorySlugIsAvailable(slug, payload.categoryId);
+
+      const category = await blogCategoriesRepository.updateCategory(payload.categoryId, {
+        name: payload.name !== undefined ? name : undefined,
+        slug: payload.slug !== undefined ? slug : undefined,
+        description: payload.description !== undefined ? description : undefined,
+        status: payload.status !== undefined ? status : undefined
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_category.updated',
+        targetType: 'blog_category',
+        targetId: category.id,
+        detail: {
+          previousStatus: existingCategory.status,
+          nextStatus: category.status,
+          slugChanged: existingCategory.slug !== category.slug
+        }
+      });
+
+      return mapAdminBlogCategory(category);
+    },
+
+    async deleteBlogCategory(payload) {
+      const existingCategory = await ensureBlogCategoryExists(payload.categoryId);
+
+      if (existingCategory.status === CATEGORY_STATUSES.ARCHIVED) {
+        throw new AppError('Blog category is already archived.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const category = await blogCategoriesRepository.updateCategory(payload.categoryId, {
+        status: CATEGORY_STATUSES.ARCHIVED
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_category.archived',
+        targetType: 'blog_category',
+        targetId: category.id,
+        detail: {
+          previousStatus: existingCategory.status,
+          nextStatus: category.status
+        }
+      });
+
+      return mapAdminBlogCategory(category);
+    },
+
+    async listBlogTags(payload = {}) {
+      const filters = {
+        status: normalizeAdminBlogTagStatus(payload.query && payload.query.status),
+        search: normalizeSearchTerm(payload.query && payload.query.search)
+      };
+      const tags = await blogTagsRepository.listTags(filters);
+
+      return {
+        tags: tags.map(mapAdminBlogTag),
+        filters
+      };
+    },
+
+    async getBlogTag(payload) {
+      const tag = await ensureBlogTagExists(payload.tagId);
+
+      return mapAdminBlogTag(tag);
+    },
+
+    async createBlogTag(payload) {
+      const name = normalizeRequiredBlogText(payload.name, 'Blog tag name');
+      const slug = normalizeBlogSlug(name, payload.slug);
+
+      await ensureBlogTagSlugIsAvailable(slug);
+
+      const tag = await blogTagsRepository.createTag({
+        name,
+        slug,
+        status: payload.status || CATEGORY_STATUSES.ACTIVE
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_tag.created',
+        targetType: 'blog_tag',
+        targetId: tag.id,
+        detail: {
+          name: tag.name,
+          slug: tag.slug,
+          status: tag.status
+        }
+      });
+
+      return mapAdminBlogTag(tag);
+    },
+
+    async updateBlogTag(payload) {
+      const existingTag = await ensureBlogTagExists(payload.tagId);
+      const name = payload.name !== undefined
+        ? normalizeRequiredBlogText(payload.name, 'Blog tag name')
+        : existingTag.name;
+      const slug = payload.slug !== undefined
+        ? normalizeBlogSlug(name, payload.slug)
+        : existingTag.slug;
+      const status = payload.status !== undefined
+        ? payload.status
+        : existingTag.status;
+
+      await ensureBlogTagSlugIsAvailable(slug, payload.tagId);
+
+      const tag = await blogTagsRepository.updateTag(payload.tagId, {
+        name: payload.name !== undefined ? name : undefined,
+        slug: payload.slug !== undefined ? slug : undefined,
+        status: payload.status !== undefined ? status : undefined
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_tag.updated',
+        targetType: 'blog_tag',
+        targetId: tag.id,
+        detail: {
+          previousStatus: existingTag.status,
+          nextStatus: tag.status,
+          slugChanged: existingTag.slug !== tag.slug
+        }
+      });
+
+      return mapAdminBlogTag(tag);
+    },
+
+    async deleteBlogTag(payload) {
+      const existingTag = await ensureBlogTagExists(payload.tagId);
+
+      if (existingTag.status === CATEGORY_STATUSES.ARCHIVED) {
+        throw new AppError('Blog tag is already archived.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const tag = await blogTagsRepository.updateTag(payload.tagId, {
+        status: CATEGORY_STATUSES.ARCHIVED
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_tag.archived',
+        targetType: 'blog_tag',
+        targetId: tag.id,
+        detail: {
+          previousStatus: existingTag.status,
+          nextStatus: tag.status
+        }
+      });
+
+      return mapAdminBlogTag(tag);
+    },
+
+    async listBlogPosts(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        status: normalizeAdminBlogPostStatus(payload.query.status),
+        categoryId: payload.query.categoryId || null,
+        search: normalizeSearchTerm(payload.query.search),
+        sort: normalizeAdminBlogSort(payload.query.sort),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const [posts, total] = await Promise.all([
+        blogPostsRepository.listPosts(filters),
+        blogPostsRepository.countPosts(filters)
+      ]);
+
+      return {
+        posts: posts.map(mapAdminBlogPostListItem),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total
+        }),
+        filters: {
+          status: filters.status,
+          categoryId: filters.categoryId,
+          search: filters.search,
+          sort: filters.sort
+        }
+      };
+    },
+
+    async getBlogPost(payload) {
+      return loadAdminBlogPostDetail(payload.postId);
+    },
+
+    async createBlogPost(payload) {
+      const category = ensureBlogCategoryIsActive(
+        await ensureBlogCategoryExists(payload.categoryId),
+        'Archived blog categories cannot be assigned to posts.'
+      );
+      const title = normalizeRequiredBlogText(payload.title, 'Blog post title');
+      const slug = normalizeBlogSlug(title, payload.slug);
+      const body = normalizeBlogPostBody(payload.body);
+      const status = payload.status || 'draft';
+      const tagIds = Array.isArray(payload.tagIds) ? payload.tagIds : [];
+      const publishedAt = status === 'published'
+        ? (payload.publishedAt || new Date().toISOString())
+        : null;
+
+      await ensureBlogPostSlugIsAvailable(slug);
+      await ensureBlogTagIdsAreAssignable(tagIds);
+
+      const post = await blogPostsRepository.createPost({
+        categoryId: category.id,
+        title,
+        slug,
+        excerpt: resolveBlogPostExcerpt(body, payload.excerpt),
+        body,
+        featuredImageUrl: normalizeOptionalText(payload.featuredImageUrl),
+        featuredImageAlt: normalizeOptionalText(payload.featuredImageAlt),
+        authorDisplayName: normalizeRequiredBlogText(payload.authorDisplayName, 'Author display name'),
+        authorAvatarUrl: normalizeOptionalText(payload.authorAvatarUrl),
+        readTimeMinutes: computeReadTimeMinutes(body),
+        status,
+        publishedAt
+      });
+
+      if (tagIds.length) {
+        await blogPostTagsRepository.replaceTagsForPost(post.id, tagIds);
+      }
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_post.created',
+        targetType: 'blog_post',
+        targetId: post.id,
+        detail: {
+          categoryId: post.categoryId,
+          slug: post.slug,
+          status: post.status,
+          tagIds
+        }
+      });
+
+      return loadAdminBlogPostDetail(post.id);
+    },
+
+    async updateBlogPost(payload) {
+      const existingPost = await ensureBlogPostExists(payload.postId);
+      const title = payload.title !== undefined
+        ? normalizeRequiredBlogText(payload.title, 'Blog post title')
+        : existingPost.title;
+      const nextSlug = payload.slug !== undefined
+        ? normalizeBlogSlug(title, payload.slug)
+        : existingPost.slug;
+
+      if (
+        payload.slug !== undefined
+        && existingPost.status === 'published'
+        && nextSlug !== existingPost.slug
+        && !payload.allowSlugOverride
+      ) {
+        throw new AppError('Published blog post slugs are immutable unless allowSlugOverride is enabled.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      if (payload.slug !== undefined && nextSlug !== existingPost.slug) {
+        await ensureBlogPostSlugIsAvailable(nextSlug, payload.postId);
+      }
+
+      let categoryId;
+
+      if (payload.categoryId !== undefined) {
+        const category = ensureBlogCategoryIsActive(
+          await ensureBlogCategoryExists(payload.categoryId),
+          'Archived blog categories cannot be assigned to posts.'
+        );
+
+        categoryId = category.id;
+      }
+
+      const body = payload.body !== undefined
+        ? normalizeBlogPostBody(payload.body)
+        : existingPost.body;
+      const readTimeMinutes = payload.body !== undefined
+        ? computeReadTimeMinutes(body)
+        : existingPost.readTimeMinutes;
+      let excerpt;
+
+      if (payload.excerpt !== undefined) {
+        excerpt = resolveBlogPostExcerpt(body, payload.excerpt);
+      } else if (payload.body !== undefined) {
+        excerpt = resolveBlogPostExcerpt(body, null);
+      }
+
+      if (Array.isArray(payload.tagIds)) {
+        await ensureBlogTagIdsAreAssignable(payload.tagIds);
+      }
+
+      await blogPostsRepository.updatePost(payload.postId, {
+        categoryId,
+        title: payload.title !== undefined ? title : undefined,
+        slug: payload.slug !== undefined ? nextSlug : undefined,
+        excerpt,
+        body: payload.body !== undefined ? body : undefined,
+        featuredImageUrl: payload.featuredImageUrl !== undefined
+          ? normalizeOptionalText(payload.featuredImageUrl)
+          : undefined,
+        featuredImageAlt: payload.featuredImageAlt !== undefined
+          ? normalizeOptionalText(payload.featuredImageAlt)
+          : undefined,
+        authorDisplayName: payload.authorDisplayName !== undefined
+          ? normalizeRequiredBlogText(payload.authorDisplayName, 'Author display name')
+          : undefined,
+        authorAvatarUrl: payload.authorAvatarUrl !== undefined
+          ? normalizeOptionalText(payload.authorAvatarUrl)
+          : undefined,
+        readTimeMinutes: payload.body !== undefined ? readTimeMinutes : undefined,
+        publishedAt: payload.publishedAt !== undefined ? payload.publishedAt : undefined
+      });
+
+      if (Array.isArray(payload.tagIds)) {
+        await blogPostTagsRepository.replaceTagsForPost(payload.postId, payload.tagIds);
+      }
+
+      const updatedPost = await loadAdminBlogPostDetail(payload.postId);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_post.updated',
+        targetType: 'blog_post',
+        targetId: updatedPost.id,
+        detail: {
+          previousStatus: existingPost.status,
+          nextStatus: updatedPost.status,
+          slugChanged: existingPost.slug !== updatedPost.slug,
+          tagIds: Array.isArray(payload.tagIds)
+            ? payload.tagIds
+            : updatedPost.tags.map((tag) => tag.id)
+        }
+      });
+
+      return updatedPost;
+    },
+
+    async publishBlogPost(payload) {
+      const existingPost = await ensureBlogPostExists(payload.postId);
+
+      ensureBlogCategoryIsActive(
+        await ensureBlogCategoryExists(existingPost.categoryId),
+        'Archived blog categories cannot be published.'
+      );
+
+      const publishedAt = payload.publishedAt || existingPost.publishedAt || new Date().toISOString();
+
+      await blogPostsRepository.updatePost(payload.postId, {
+        status: 'published',
+        publishedAt
+      });
+
+      const post = await loadAdminBlogPostDetail(payload.postId);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_post.published',
+        targetType: 'blog_post',
+        targetId: post.id,
+        detail: {
+          previousStatus: existingPost.status,
+          nextStatus: post.status,
+          publishedAt: post.publishedAt
+        }
+      });
+
+      return post;
+    },
+
+    async unpublishBlogPost(payload) {
+      const existingPost = await ensureBlogPostExists(payload.postId);
+
+      await blogPostsRepository.updatePost(payload.postId, {
+        status: 'draft',
+        publishedAt: null
+      });
+
+      const post = await loadAdminBlogPostDetail(payload.postId);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_post.unpublished',
+        targetType: 'blog_post',
+        targetId: post.id,
+        detail: {
+          previousStatus: existingPost.status,
+          nextStatus: post.status
+        }
+      });
+
+      return post;
+    },
+
+    async deleteBlogPost(payload) {
+      const existingPost = await ensureBlogPostExists(payload.postId);
+
+      if (existingPost.status === 'archived') {
+        throw new AppError('Blog post is already archived.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      await blogPostsRepository.updatePost(payload.postId, {
+        status: 'archived'
+      });
+
+      const post = await loadAdminBlogPostDetail(payload.postId);
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_post.archived',
+        targetType: 'blog_post',
+        targetId: post.id,
+        detail: {
+          previousStatus: existingPost.status,
+          nextStatus: post.status
+        }
+      });
+
+      return post;
+    },
+
+    async listBlogComments(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 10,
+        maxLimit: 50
+      });
+      const filters = {
+        postId: payload.query.postId || null,
+        status: normalizeAdminBlogCommentStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const [comments, total] = await Promise.all([
+        blogCommentsRepository.listComments(filters),
+        blogCommentsRepository.countComments(filters)
+      ]);
+
+      return {
+        comments: comments.map(mapAdminBlogComment),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total
+        }),
+        filters: {
+          postId: filters.postId,
+          status: filters.status,
+          search: filters.search
+        }
+      };
+    },
+
+    async updateBlogComment(payload) {
+      const existingComment = await ensureBlogCommentExists(payload.commentId);
+
+      if (existingComment.status === payload.status) {
+        throw new AppError('Blog comment already has this status.', {
+          statusCode: 409,
+          code: ERROR_CODES.CONFLICT
+        });
+      }
+
+      const approvedAt = payload.status === BLOG_COMMENT_STATUSES.APPROVED
+        ? new Date().toISOString()
+        : null;
+      const comment = await blogCommentsRepository.updateComment(payload.commentId, {
+        status: payload.status,
+        approvedAt
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'blog_comment.updated',
+        targetType: 'blog_comment',
+        targetId: comment.id,
+        detail: {
+          postId: comment.postId,
+          previousStatus: existingComment.status,
+          nextStatus: comment.status
+        }
+      });
+
+      return mapAdminBlogComment(comment);
+    },
+
+    async listNewsletterSubscribers(payload) {
+      const pagination = normalizePagination(payload.query, {
+        defaultLimit: 25,
+        maxLimit: 100
+      });
+      const filters = {
+        status: normalizeAdminNewsletterStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search),
+        limit: pagination.limit,
+        offset: pagination.offset
+      };
+      const [subscribers, total] = await Promise.all([
+        newsletterSubscribersRepository.listSubscribers(filters),
+        newsletterSubscribersRepository.countSubscribers(filters)
+      ]);
+
+      return {
+        subscribers: subscribers.map(mapAdminNewsletterSubscriber),
+        pagination: buildPagination({
+          page: pagination.page,
+          limit: pagination.limit,
+          total
+        }),
+        filters: {
+          status: filters.status,
+          search: filters.search
+        }
+      };
+    },
+
+    async exportNewsletterSubscribersCsv(payload) {
+      const filters = {
+        status: normalizeAdminNewsletterStatus(payload.query.status),
+        search: normalizeSearchTerm(payload.query.search)
+      };
+      const subscribers = await newsletterSubscribersRepository.listSubscribers(filters);
+      const csv = serializeCsvRows([
+        { key: 'email', label: 'Email' },
+        { key: 'status', label: 'Status' },
+        { key: 'subscribedAt', label: 'Subscribed At' },
+        { key: 'unsubscribedAt', label: 'Unsubscribed At' },
+        { key: 'createdAt', label: 'Created At' }
+      ], subscribers.map(mapAdminNewsletterSubscriber));
+      const filename = `newsletter-subscribers-${new Date().toISOString().slice(0, 10)}.csv`;
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'newsletter_subscribers.exported',
+        targetType: 'newsletter_subscriber',
+        targetId: null,
+        detail: {
+          count: subscribers.length,
+          filters
+        }
+      });
+
+      return {
+        count: subscribers.length,
+        csv,
+        filename,
+        filters
+      };
+    },
+
     async listOrders(payload) {
       const pagination = normalizePagination(payload.query, {
         defaultLimit: 10,
@@ -1110,6 +2109,39 @@ function createAdminService({
           search: filters.search
         }
       };
+    },
+
+    async reconcilePendingPayments(payload) {
+      if (!paymentsService || typeof paymentsService.reconcilePendingPayments !== 'function') {
+        throw new AppError('Payment reconciliation is unavailable.', {
+          statusCode: 500,
+          code: ERROR_CODES.INTERNAL_SERVER_ERROR
+        });
+      }
+
+      const result = await paymentsService.reconcilePendingPayments({
+        limit: payload.limit,
+        olderThanMinutes: payload.olderThanMinutes
+      });
+
+      await recordAuditLog({
+        adminId: payload.adminId,
+        action: 'payments.reconciled',
+        targetType: 'payment',
+        targetId: null,
+        detail: {
+          checkedCount: result.checkedCount,
+          errors: result.errors.length,
+          expiredCount: result.expiredCount,
+          flaggedCount: result.flaggedCount,
+          olderThanMinutes: result.olderThanMinutes,
+          pendingCount: result.pendingCount,
+          settledCount: result.settledCount,
+          unsuccessfulCount: result.unsuccessfulCount
+        }
+      });
+
+      return result;
     },
 
     async listPayouts(payload) {

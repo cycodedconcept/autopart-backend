@@ -67,6 +67,7 @@ async function confirmOrderPayment(app, token, orderId) {
 
   await request(app)
     .get('/api/v1/payments/callback')
+    .set('Authorization', `Bearer ${token}`)
     .query({
       reference
     })

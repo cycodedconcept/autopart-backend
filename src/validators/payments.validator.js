@@ -10,6 +10,14 @@ const initializePaymentSchema = Joi.object({
   query: Joi.object({}).default({})
 });
 
+const verifyPaymentSchema = Joi.object({
+  body: Joi.object({}).default({}),
+  params: Joi.object({
+    reference: Joi.string().trim().min(6).required()
+  }).required(),
+  query: Joi.object({}).default({})
+});
+
 const verifyPaymentCallbackSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
@@ -19,17 +27,8 @@ const verifyPaymentCallbackSchema = Joi.object({
   }).or('reference', 'trxref').required()
 });
 
-const paystackWebhookSchema = Joi.object({
-  body: Joi.object({
-    event: Joi.string().trim().required(),
-    data: Joi.object().required().unknown(true)
-  }).required().unknown(true),
-  params: Joi.object({}).default({}),
-  query: Joi.object({}).default({})
-});
-
 module.exports = {
   initializePaymentSchema,
-  paystackWebhookSchema,
+  verifyPaymentSchema,
   verifyPaymentCallbackSchema
 };
