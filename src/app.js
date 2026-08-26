@@ -340,6 +340,7 @@ function createApp(overrides = {}) {
   app.use(express.json());
   app.use(morgan('dev', { stream: dependencies.logger.stream }));
 
+
   app.get('/health', (req, res) => {
     res.status(200).json({
       success: true,
@@ -349,6 +350,12 @@ function createApp(overrides = {}) {
       message: 'Service is healthy.'
     });
   });
+
+  app.use('/uploads', express.static(dependencies.env.UPLOAD_DIR, {
+    maxAge: '7d',
+    index: false,
+    dotfiles: 'deny'
+  }));
 
   app.use('/api/v1/auth', createAuthRouter({
     authController: dependencies.authController,
