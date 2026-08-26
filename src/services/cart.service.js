@@ -1,8 +1,9 @@
 const { ERROR_CODES } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { calculateCartSummary } = require('../utils/cart');
+const { buildPublicUrl } = require('../utils/product-image-files');
 
-function mapCartItem(item) {
+function mapCartItem(item, baseUrl) {
   return {
     id: item.id,
     quantity: item.quantity,
@@ -16,7 +17,7 @@ function mapCartItem(item) {
       location: item.product.location,
       stockQty: item.product.stockQty,
       status: item.product.status,
-      primaryImageUrl: item.product.primaryImageUrl,
+      primaryImageUrl: buildPublicUrl(baseUrl, item.product.primaryImageUrl),
       seller: {
         id: item.product.seller.id,
         businessName: item.product.seller.businessName,
@@ -26,8 +27,8 @@ function mapCartItem(item) {
   };
 }
 
-function mapCart(cart) {
-  const items = cart.items.map(mapCartItem);
+function mapCart(cart, baseUrl) {
+  const items = cart.items.map((item) => mapCartItem(item, baseUrl));
   const summary = calculateCartSummary(items);
 
   return {
@@ -37,7 +38,7 @@ function mapCart(cart) {
   };
 }
 
-function createCartService({ cartsRepository, productsRepository }) {
+function createCartService({ cartsRepository, env = {}, productsRepository }) {
   async function addItem(payload) {
     const product = await productsRepository.findProductById(payload.productId);
 
@@ -72,11 +73,11 @@ function createCartService({ cartsRepository, productsRepository }) {
       });
     }
 
-    return mapCart(await cartsRepository.getCartByUserId(payload.userId));
+    return mapCart(await cartsRepository.getCartByUserId(payload.userId), env.BASE_URL);
   }
 
   async function getCart(userId) {
-    return mapCart(await cartsRepository.getCartByUserId(userId));
+    return mapCart(await cartsRepository.getCartByUserId(userId), env.BASE_URL);
   }
 
   async function removeItem(payload) {
@@ -94,7 +95,7 @@ function createCartService({ cartsRepository, productsRepository }) {
 
     await cartsRepository.deleteCartItem(payload.cartItemId);
 
-    return mapCart(await cartsRepository.getCartByUserId(payload.userId));
+    return mapCart(await cartsRepository.getCartByUserId(payload.userId), env.BASE_URL);
   }
 
   async function updateItemQuantity(payload) {
@@ -128,7 +129,7 @@ function createCartService({ cartsRepository, productsRepository }) {
 
     await cartsRepository.updateCartItemQuantity(payload.cartItemId, payload.quantity);
 
-    return mapCart(await cartsRepository.getCartByUserId(payload.userId));
+    return mapCart(await cartsRepository.getCartByUserId(payload.userId), env.BASE_URL);
   }
 
   return {

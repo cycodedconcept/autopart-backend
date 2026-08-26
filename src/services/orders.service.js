@@ -14,6 +14,7 @@ const {
 } = require('../utils/delivery-fee');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
 const { normalizeNigerianPhone } = require('../utils/phone');
+const { buildPublicUrl } = require('../utils/product-image-files');
 
 const receiptCurrencyFormatter = new Intl.NumberFormat('en-NG', {
   currency: 'NGN',
@@ -34,7 +35,7 @@ function formatKoboAsNaira(amountKobo) {
   return receiptCurrencyFormatter.format(Number(amountKobo || 0) / 100);
 }
 
-function mapCreatedOrderItem(item) {
+function mapCreatedOrderItem(item, baseUrl) {
   return {
     productId: item.product.id,
     title: item.product.title,
@@ -45,7 +46,7 @@ function mapCreatedOrderItem(item) {
     unitPriceKobo: item.unitPriceKobo,
     lineTotalKobo: item.lineTotalKobo,
     itemStatus: ORDER_ITEM_STATUSES.PENDING,
-    primaryImageUrl: item.product.primaryImageUrl || null,
+    primaryImageUrl: buildPublicUrl(baseUrl, item.product.primaryImageUrl) || null,
     seller: {
       id: item.product.seller.id,
       businessName: item.product.seller.businessName,
@@ -76,7 +77,7 @@ function mapOrderAddressFromOrder(order) {
   };
 }
 
-function mapStoredOrderItem(item) {
+function mapStoredOrderItem(item, baseUrl) {
   return {
     id: item.id,
     productId: item.productId,
@@ -88,7 +89,7 @@ function mapStoredOrderItem(item) {
     unitPriceKobo: item.unitPriceKobo,
     lineTotalKobo: item.lineTotalKobo,
     itemStatus: item.itemStatus,
-    primaryImageUrl: item.primaryImageUrl,
+    primaryImageUrl: buildPublicUrl(baseUrl, item.primaryImageUrl),
     seller: {
       id: item.sellerId,
       businessName: item.sellerBusinessName,
@@ -121,7 +122,7 @@ function mapOrderSummary(order) {
   };
 }
 
-function mapOrderDetail(order, items, statusHistory) {
+function mapOrderDetail(order, items, statusHistory, baseUrl) {
   return {
     id: order.id,
     status: order.status,
@@ -133,14 +134,14 @@ function mapOrderDetail(order, items, statusHistory) {
     totalKobo: order.totalKobo,
     totalItems: order.totalItems,
     deliveryAddress: mapOrderAddressFromOrder(order),
-    items: items.map(mapStoredOrderItem),
+    items: items.map((item) => mapStoredOrderItem(item, baseUrl)),
     statusHistory: statusHistory.map(mapStatusHistoryEntry),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt
   };
 }
 
-function mapSellerOrderSummary(order, items) {
+function mapSellerOrderSummary(order, items, baseUrl) {
   return {
     id: order.id,
     status: order.status,
@@ -155,15 +156,15 @@ function mapSellerOrderSummary(order, items) {
     sellerTotalItems: order.sellerTotalItems,
     sellerTotalKobo: order.sellerTotalKobo,
     deliveryAddress: mapOrderAddressFromOrder(order),
-    items: items.map(mapStoredOrderItem),
+    items: items.map((item) => mapStoredOrderItem(item, baseUrl)),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt
   };
 }
 
-function mapSellerOrderItemState(item) {
+function mapSellerOrderItemState(item, baseUrl) {
   return {
-    ...mapStoredOrderItem(item),
+    ...mapStoredOrderItem(item, baseUrl),
     order: {
       id: item.orderId,
       status: item.orderStatus,
@@ -396,7 +397,7 @@ function createOrdersService({
   buyerAddressesRepository,
   cartsRepository,
   deliveryJobsRepository,
-  env,
+  env = {},
   ordersRepository,
   sellersRepository
 }) {
@@ -573,7 +574,7 @@ function createOrdersService({
       deliveryFeeKobo: order.deliveryFeeKobo,
       totalKobo: order.totalKobo,
       deliveryAddress: mapAddress(deliveryAddress),
-      items: cart.items.map(mapCreatedOrderItem),
+      items: cart.items.map((item) => mapCreatedOrderItem(item, env.BASE_URL)),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt
     };
@@ -585,12 +586,12 @@ function createOrdersService({
     async getOrderById(payload) {
       const detail = await getOrderDetailRecord(payload.userId, payload.orderId);
 
-      return mapOrderDetail(detail.order, detail.items, detail.statusHistory);
+      return mapOrderDetail(detail.order, detail.items, detail.statusHistory, env.BASE_URL);
     },
 
     async getOrderReceipt(payload) {
       const detail = await getOrderDetailRecord(payload.userId, payload.orderId);
-      const receipt = buildReceipt(mapOrderDetail(detail.order, detail.items, detail.statusHistory));
+      const receipt = buildReceipt(mapOrderDetail(detail.order, detail.items, detail.statusHistory, env.BASE_URL));
 
       if (payload.format === 'html') {
         return {
@@ -670,7 +671,7 @@ function createOrdersService({
 
       return {
         orders: result.orders.map((order) => (
-          mapSellerOrderSummary(order, orderItemsById.get(order.id) || [])
+          mapSellerOrderSummary(order, orderItemsById.get(order.id) || [], env.BASE_URL)
         )),
         pagination: buildPagination({
           page: pagination.page,
@@ -746,7 +747,7 @@ function createOrdersService({
         }
       }
 
-      return mapSellerOrderItemState(updatedOrderItem);
+      return mapSellerOrderItemState(updatedOrderItem, env.BASE_URL);
     }
   };
 }

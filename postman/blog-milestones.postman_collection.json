@@ -1,0 +1,1963 @@
+{
+  "info": {
+    "_postman_id": "8ca8144b-3e1a-4940-931b-348f6f94d8bc",
+    "name": "AutoParts Blog Milestones",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Sample Postman collection for the implemented blog milestones. Covers B-B public reads, B-C comments/newsletter/views, B-D admin blog CRUD + moderation, and B-E featured listings. Import with the existing postman/local.postman_environment.json after running the blog migrations and seeds."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api/v1"
+    },
+    {
+      "key": "adminEmail",
+      "value": "superadmin@autoparts.local"
+    },
+    {
+      "key": "adminPassword",
+      "value": "Password123"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "blogRunId",
+      "value": ""
+    },
+    {
+      "key": "seededPublicPostSlug",
+      "value": "how-to-know-when-brake-pads-need-immediate-replacement"
+    },
+    {
+      "key": "seededNewsletterToken",
+      "value": "6e1fcb75cbe75b95c0db4ae3f2d1b2d7d4af2d12a1d4f09c73031df4d8b6a4a1"
+    },
+    {
+      "key": "createdBlogCategoryId",
+      "value": ""
+    },
+    {
+      "key": "createdBlogTagId",
+      "value": ""
+    },
+    {
+      "key": "createdBlogPostId",
+      "value": ""
+    },
+    {
+      "key": "createdBlogPostSlug",
+      "value": ""
+    },
+    {
+      "key": "createdModerationCommentId",
+      "value": ""
+    },
+    {
+      "key": "blogCommentIp",
+      "value": ""
+    },
+    {
+      "key": "blogViewIp",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "B-B Public Reads",
+      "item": [
+        {
+          "name": "1. List Blog Posts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts?page=1&per_page=9&sort=latest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "9"
+                },
+                {
+                  "key": "sort",
+                  "value": "latest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('blog list returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const posts = json.data && json.data.posts ? json.data.posts : [];",
+                  "",
+                  "pm.test('blog list returns the standard success envelope', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(posts).to.be.an('array');",
+                  "  pm.expect(json.data.pagination).to.be.an('object');",
+                  "});",
+                  "",
+                  "if (posts.length > 0) {",
+                  "  pm.test('blog list items do not expose the full body field', function () {",
+                  "    pm.expect(posts[0]).to.not.have.property('body');",
+                  "  });",
+                  "}",
+                  "",
+                  "pm.collectionVariables.set('blogRunId', String(Date.now()));",
+                  "['createdBlogCategoryId', 'createdBlogTagId', 'createdBlogPostId', 'createdBlogPostSlug', 'createdModerationCommentId', 'blogCommentIp', 'blogViewIp'].forEach(function (key) {",
+                  "  pm.collectionVariables.unset(key);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Reject Oversized Per Page",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts?per_page=60",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "60"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('oversized per_page is rejected with 422', function () {",
+                  "  pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('validation errors use the standard error envelope', function () {",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Get Seeded Blog Post Detail",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{seededPublicPostSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{seededPublicPostSlug}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('blog detail returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('blog detail includes full post fields', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.slug).to.eql(pm.collectionVariables.get('seededPublicPostSlug'));",
+                  "  pm.expect(json.data.body).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.data.tags).to.be.an('array');",
+                  "  pm.expect(json.data.commentCount).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Get Related Posts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{seededPublicPostSlug}}/related",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{seededPublicPostSlug}}",
+                "related"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('related posts return 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const posts = json.data && json.data.posts ? json.data.posts : [];",
+                  "",
+                  "pm.test('related posts array stays within the expected cap', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(posts).to.be.an('array');",
+                  "  pm.expect(posts.length).to.be.at.most(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Get Blog Categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('blog categories return 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const categories = json.data && json.data.categories ? json.data.categories : [];",
+                  "",
+                  "pm.test('blog categories include grouped counts', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(categories).to.be.an('array');",
+                  "  if (categories.length > 0) {",
+                  "    pm.expect(categories[0]).to.have.property('postCount');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Get Popular Tags",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/tags/popular",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "tags",
+                "popular"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('popular tags return 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const tags = json.data && json.data.tags ? json.data.tags : [];",
+                  "",
+                  "pm.test('popular tags payload is shaped correctly', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(tags).to.be.an('array');",
+                  "  if (tags.length > 0) {",
+                  "    pm.expect(tags[0]).to.have.property('postCount');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Get Featured Listings",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/featured-listings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "featured-listings"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('featured listings return 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const products = json.data && json.data.products ? json.data.products : [];",
+                  "",
+                  "pm.test('featured listings reuse the product DTO shape', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(products).to.be.an('array');",
+                  "  if (products.length > 0) {",
+                  "    pm.expect(products[0]).to.have.property('seller');",
+                  "    pm.expect(products[0]).to.have.property('category');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Get Approved Public Comments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{seededPublicPostSlug}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{seededPublicPostSlug}}",
+                "comments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('public comments return 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const comments = json.data && json.data.comments ? json.data.comments : [];",
+                  "",
+                  "pm.test('public comments exclude private moderation fields', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(comments).to.be.an('array');",
+                  "  if (comments.length > 0) {",
+                  "    pm.expect(comments[0]).to.not.have.property('authorEmail');",
+                  "    pm.expect(comments[0]).to.not.have.property('ipAddress');",
+                  "    pm.expect(comments[0]).to.have.property('replies');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "B-C Comments, Newsletter, Views",
+      "item": [
+        {
+          "name": "9. Submit Public Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Forwarded-For",
+                "value": "{{blogCommentIp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"authorName\": \"Postman Smoke {{blogRunId}}\",\n  \"authorEmail\": \"postman+{{blogRunId}}@example.com\",\n  \"body\": \"Blog comment smoke trace {{blogRunId}} for admin moderation lookup.\",\n  \"honeypot\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{seededPublicPostSlug}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{seededPublicPostSlug}}",
+                "comments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('blogRunId')) {",
+                  "  pm.collectionVariables.set('blogRunId', String(Date.now()));",
+                  "}",
+                  "",
+                  "const second = Math.floor(Math.random() * 180) + 20;",
+                  "const third = Math.floor(Math.random() * 180) + 20;",
+                  "const fourth = Math.floor(Math.random() * 180) + 20;",
+                  "pm.collectionVariables.set('blogCommentIp', '41.' + second + '.' + third + '.' + fourth);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('public comment submission returns 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('public comment submissions are queued for moderation', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('pending');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Record Blog Post View",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Forwarded-For",
+                "value": "{{blogViewIp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{seededPublicPostSlug}}/view",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{seededPublicPostSlug}}",
+                "view"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const second = Math.floor(Math.random() * 180) + 20;",
+                  "const third = Math.floor(Math.random() * 180) + 20;",
+                  "const fourth = Math.floor(Math.random() * 180) + 20;",
+                  "pm.collectionVariables.set('blogViewIp', '41.' + second + '.' + third + '.' + fourth);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('view ping returns 204', function () {",
+                  "  pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "pm.test('204 view response is empty', function () {",
+                  "  pm.expect(pm.response.text()).to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Record Same Blog Post View Again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Forwarded-For",
+                "value": "{{blogViewIp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{seededPublicPostSlug}}/view",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{seededPublicPostSlug}}",
+                "view"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('blogViewIp')) {",
+                  "  throw new Error('blogViewIp is empty. Run \"Record Blog Post View\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('repeat view ping still returns 204', function () {",
+                  "  pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Subscribe Newsletter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"fleet-updates+{{blogRunId}}@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/newsletter/subscribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "newsletter",
+                "subscribe"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('blogRunId')) {",
+                  "  pm.collectionVariables.set('blogRunId', String(Date.now()));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('newsletter subscribe returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('newsletter subscribe returns subscribed status', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('subscribed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13. Reject Invalid Newsletter Subscribe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/newsletter/subscribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "newsletter",
+                "subscribe"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid newsletter subscribe returns 422', function () {",
+                  "  pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('invalid newsletter subscribe uses validation envelope', function () {",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14. Unsubscribe Seeded Subscriber",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/newsletter/unsubscribe/{{seededNewsletterToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "newsletter",
+                "unsubscribe",
+                "{{seededNewsletterToken}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('seeded unsubscribe returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('seeded unsubscribe returns unsubscribed state', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('unsubscribed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15. Reject Unknown Newsletter Token",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/newsletter/unsubscribe/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "newsletter",
+                "unsubscribe",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('unknown unsubscribe token returns 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('unknown unsubscribe token uses not-found envelope', function () {",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "B-D Admin CRUD And B-E Smoke",
+      "item": [
+        {
+          "name": "16. Admin Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('blogRunId')) {",
+                  "  pm.collectionVariables.set('blogRunId', String(Date.now()));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('admin login returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('admin login returns token', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('adminToken', json.data.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17. Create Blog Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Blog Smoke Category {{blogRunId}}\",\n  \"slug\": \"blog-smoke-category-{{blogRunId}}\",\n  \"description\": \"Temporary category created by the blog Postman smoke collection.\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('blogRunId')) {",
+                  "  pm.collectionVariables.set('blogRunId', String(Date.now()));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create blog category returns 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('create blog category returns the new record', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.name).to.contain(pm.collectionVariables.get('blogRunId'));",
+                  "  pm.expect(json.data.status).to.eql('active');",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('createdBlogCategoryId', String(json.data.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18. Create Blog Tag",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Blog Smoke Tag {{blogRunId}}\",\n  \"slug\": \"blog-smoke-tag-{{blogRunId}}\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/tags",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "tags"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('blogRunId')) {",
+                  "  pm.collectionVariables.set('blogRunId', String(Date.now()));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create blog tag returns 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('create blog tag returns the new record', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.slug).to.eql('blog-smoke-tag-' + pm.collectionVariables.get('blogRunId'));",
+                  "  pm.expect(json.data.status).to.eql('active');",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('createdBlogTagId', String(json.data.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19. Create Draft Blog Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": {{createdBlogCategoryId}},\n  \"title\": \"Blog Smoke Post {{blogRunId}}\",\n  \"slug\": \"blog-smoke-post-{{blogRunId}}\",\n  \"excerpt\": \"Temporary draft post created by the blog Postman smoke collection.\",\n  \"body\": \"<p>This is a temporary draft post created by the Postman smoke collection for the blog milestones.</p><h2>Smoke Coverage</h2><p>It exists only to verify the draft, publish, public visibility, slug override, and archive flows.</p>\",\n  \"featuredImageUrl\": \"https://images.example.com/blog/postman-smoke.jpg\",\n  \"featuredImageAlt\": \"Temporary smoke test article image\",\n  \"authorDisplayName\": \"Postman Smoke\",\n  \"authorAvatarUrl\": \"https://images.example.com/authors/postman-smoke.jpg\",\n  \"status\": \"draft\",\n  \"tagIds\": [{{createdBlogTagId}}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "posts"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogCategoryId')) {",
+                  "  throw new Error('createdBlogCategoryId is empty. Run \"Create Blog Category\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogTagId')) {",
+                  "  throw new Error('createdBlogTagId is empty. Run \"Create Blog Tag\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create draft blog post returns 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('draft post is returned with tags and draft status', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('draft');",
+                  "  pm.expect(json.data.tags).to.be.an('array');",
+                  "  pm.expect(json.data.tags.length).to.be.at.least(1);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('createdBlogPostId', String(json.data.id));",
+                  "pm.collectionVariables.set('createdBlogPostSlug', json.data.slug);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20. Draft Post Hidden From Public API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{createdBlogPostSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{createdBlogPostSlug}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('createdBlogPostSlug')) {",
+                  "  throw new Error('createdBlogPostSlug is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('draft post is not publicly visible', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('draft post returns the not-found envelope instead of 403', function () {",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21. Publish Blog Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/posts/{{createdBlogPostId}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "posts",
+                "{{createdBlogPostId}}",
+                "publish"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogPostId')) {",
+                  "  throw new Error('createdBlogPostId is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('publish blog post returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('published post includes a published timestamp', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('published');",
+                  "  pm.expect(json.data.publishedAt).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22. Published Post Visible In Public API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{createdBlogPostSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{createdBlogPostSlug}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('createdBlogPostSlug')) {",
+                  "  throw new Error('createdBlogPostSlug is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('published post becomes publicly visible', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('published public detail matches the created post slug', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.slug).to.eql(pm.collectionVariables.get('createdBlogPostSlug'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23. List Admin Blog Posts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/posts?status=all&page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "posts"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogPostId')) {",
+                  "  throw new Error('createdBlogPostId is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('admin blog post list returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const posts = json.data && json.data.posts ? json.data.posts : [];",
+                  "const createdId = Number(pm.collectionVariables.get('createdBlogPostId'));",
+                  "const match = posts.find(function (post) { return Number(post.id) === createdId; });",
+                  "",
+                  "pm.test('admin blog post list contains the created record', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(posts).to.be.an('array');",
+                  "  pm.expect(json.data.pagination).to.be.an('object');",
+                  "  pm.expect(match).to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "24. Reject Published Slug Change Without Override",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"blog-smoke-post-no-override-{{blogRunId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/posts/{{createdBlogPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "posts",
+                "{{createdBlogPostId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogPostId')) {",
+                  "  throw new Error('createdBlogPostId is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('published slug change without override returns 409', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('published slug immutability uses the conflict envelope', function () {",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.error.code).to.eql('CONFLICT');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25. Update Published Slug With Override",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"blog-smoke-post-updated-{{blogRunId}}\",\n  \"allowSlugOverride\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/posts/{{createdBlogPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "posts",
+                "{{createdBlogPostId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogPostId')) {",
+                  "  throw new Error('createdBlogPostId is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('published slug override returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('published slug override updates the slug', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.slug).to.eql('blog-smoke-post-updated-' + pm.collectionVariables.get('blogRunId'));",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('createdBlogPostSlug', json.data.slug);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26. Updated Slug Visible In Public API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{createdBlogPostSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{createdBlogPostSlug}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('createdBlogPostSlug')) {",
+                  "  throw new Error('createdBlogPostSlug is empty. Run \"Update Published Slug With Override\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('updated public slug returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('updated public slug matches the overridden slug', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.slug).to.eql(pm.collectionVariables.get('createdBlogPostSlug'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27. Find Pending Smoke Comment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/comments?status=pending&search={{blogRunId}}&page=1&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "comments"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "search",
+                  "value": "{{blogRunId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('blogRunId')) {",
+                  "  throw new Error('blogRunId is empty. Run the public comment submission first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('admin comment queue returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const comments = json.data && json.data.comments ? json.data.comments : [];",
+                  "",
+                  "pm.test('admin comment queue finds the smoke comment', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(comments).to.be.an('array').and.not.empty;",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('createdModerationCommentId', String(comments[0].id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "28. Approve Pending Smoke Comment",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/comments/{{createdModerationCommentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "comments",
+                "{{createdModerationCommentId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdModerationCommentId')) {",
+                  "  throw new Error('createdModerationCommentId is empty. Run \"Find Pending Smoke Comment\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('approve blog comment returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('approve blog comment sets approved status and timestamp', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('approved');",
+                  "  pm.expect(json.data.approvedAt).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "29. List Newsletter Subscribers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/newsletter/subscribers?status=all&page=1&limit=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "newsletter",
+                "subscribers"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "25"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('newsletter subscriber list returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const subscribers = json.data && json.data.subscribers ? json.data.subscribers : [];",
+                  "",
+                  "pm.test('newsletter subscriber list is paginated', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(subscribers).to.be.an('array');",
+                  "  pm.expect(json.data.pagination).to.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "30. Export Newsletter Subscribers CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/newsletter/subscribers/export?status=all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "newsletter",
+                "subscribers",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('newsletter export returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const contentType = pm.response.headers.get('Content-Type') || '';",
+                  "const disposition = pm.response.headers.get('Content-Disposition') || '';",
+                  "const text = pm.response.text();",
+                  "",
+                  "pm.test('newsletter export returns csv headers and attachment metadata', function () {",
+                  "  pm.expect(contentType.toLowerCase()).to.include('text/csv');",
+                  "  pm.expect(disposition).to.include('newsletter-subscribers-');",
+                  "  pm.expect(text).to.include('Email,Status,Subscribed At,Unsubscribed At,Created At');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "31. Archive Blog Post",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/posts/{{createdBlogPostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "posts",
+                "{{createdBlogPostId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogPostId')) {",
+                  "  throw new Error('createdBlogPostId is empty. Run \"Create Draft Blog Post\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('archive blog post returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('archive blog post changes the status to archived', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('archived');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "32. Archived Post Hidden From Public API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/blog/posts/{{createdBlogPostSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "blog",
+                "posts",
+                "{{createdBlogPostSlug}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('createdBlogPostSlug')) {",
+                  "  throw new Error('createdBlogPostSlug is empty. Run the blog post creation flow first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('archived post is no longer publicly visible', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('archived public detail uses the not-found envelope', function () {",
+                  "  pm.expect(json.success).to.eql(false);",
+                  "  pm.expect(json.error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "33. Archive Blog Tag",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/tags/{{createdBlogTagId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "tags",
+                "{{createdBlogTagId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogTagId')) {",
+                  "  throw new Error('createdBlogTagId is empty. Run \"Create Blog Tag\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('archive blog tag returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('archive blog tag changes the status to archived', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('archived');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "34. Archive Blog Category",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/blog/categories/{{createdBlogCategoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "blog",
+                "categories",
+                "{{createdBlogCategoryId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('adminToken')) {",
+                  "  throw new Error('adminToken is empty. Run \"Admin Login\" first.');",
+                  "}",
+                  "if (!pm.collectionVariables.get('createdBlogCategoryId')) {",
+                  "  throw new Error('createdBlogCategoryId is empty. Run \"Create Blog Category\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('archive blog category returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('archive blog category changes the status to archived', function () {",
+                  "  pm.expect(json.success).to.eql(true);",
+                  "  pm.expect(json.data.status).to.eql('archived');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

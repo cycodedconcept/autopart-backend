@@ -3,11 +3,17 @@ const { sendSuccess } = require('../utils/responses');
 function createSellerProductsController({ productsService }) {
   return {
     async createProduct(req, res) {
-      const product = await productsService.createSellerProduct({
-        userId: req.user.id,
-        ...req.body,
-        photos: req.uploadedProductImages || []
-      });
+      let product;
+      try {
+        product = await productsService.createSellerProduct({
+          userId: req.user.id,
+          ...req.body,
+          photos: req.uploadedProductImages || []
+        });
+      } catch (error) {
+        if (req.cleanupUploadedProductImages) await req.cleanupUploadedProductImages();
+        throw error;
+      }
 
       return sendSuccess(res, {
         statusCode: 201,
@@ -41,12 +47,18 @@ function createSellerProductsController({ productsService }) {
     },
 
     async updateProduct(req, res) {
-      const product = await productsService.updateSellerProduct({
-        userId: req.user.id,
-        productId: req.params.id,
-        ...req.body,
-        photos: req.uploadedProductImages
-      });
+      let product;
+      try {
+        product = await productsService.updateSellerProduct({
+          userId: req.user.id,
+          productId: req.params.id,
+          ...req.body,
+          photos: req.uploadedProductImages
+        });
+      } catch (error) {
+        if (req.cleanupUploadedProductImages) await req.cleanupUploadedProductImages();
+        throw error;
+      }
 
       return sendSuccess(res, {
         data: product,

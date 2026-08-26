@@ -3,8 +3,10 @@ const {
   ADMIN_PERMISSION_KEYS
 } = require('../config/constants');
 const asyncHandler = require('../middleware/async-handler');
+const { parseJsonFields } = require('../middleware/parse-json-fields.middleware');
 const { authorizePermissions } = require('../middleware/permission.middleware');
 const { createAuthRateLimiter } = require('../middleware/rate-limit.middleware');
+const { createAdminBlogImageUploadMiddleware } = require('../middleware/upload.middleware');
 const { validateRequest } = require('../middleware/validate.middleware');
 const {
   adminLoginSchema,
@@ -64,9 +66,10 @@ const {
   updateAdminLogisticsCompanyStatusSchema
 } = require('../validators/logistics.validator');
 
-function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboardController }) {
+function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboardController, env }) {
   const router = express.Router();
   const authRateLimiter = createAuthRateLimiter();
+  const uploadBlogImage = createAdminBlogImageUploadMiddleware({ env });
 
   router.post(
     '/login',
@@ -198,6 +201,8 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   router.get(
     '/blog/posts',
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    uploadBlogImage,
+    parseJsonFields(['tagIds']),
     validateRequest(listAdminBlogPostsSchema),
     asyncHandler(adminController.listBlogPosts)
   );
@@ -212,6 +217,8 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   router.get(
     '/blog/posts/:id',
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    uploadBlogImage,
+    parseJsonFields(['tagIds']),
     validateRequest(getAdminBlogPostSchema),
     asyncHandler(adminController.getBlogPost)
   );

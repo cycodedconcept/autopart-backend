@@ -87,6 +87,7 @@ const jwtUtils = require('./utils/jwt');
 const { createPaystackClient } = require('./utils/paystack');
 const passwordUtils = require('./utils/password');
 const passwordResetUtils = require('./utils/password-reset');
+const { ensureProductUploadDirectory } = require('./utils/product-image-files');
 
 function createDependencies(overrides = {}) {
   const appLogger = overrides.logger || logger;
@@ -226,6 +227,7 @@ function createDependencies(overrides = {}) {
   });
   const cartService = overrides.cartService || createCartService({
     cartsRepository,
+    env: appEnv,
     productsRepository
   });
   const logisticsService = overrides.logisticsService || createLogisticsService({
@@ -247,6 +249,7 @@ function createDependencies(overrides = {}) {
     sellersRepository
   });
   const productsService = overrides.productsService || createProductsService({
+    env: appEnv,
     productsRepository,
     sellersRepository
   });
@@ -256,6 +259,7 @@ function createDependencies(overrides = {}) {
     blogPostTagsRepository,
     blogPostsRepository,
     blogTagsRepository,
+    env: appEnv,
     productsService
   });
   const sellersService = overrides.sellersService || createSellersService({
@@ -323,6 +327,7 @@ function createDependencies(overrides = {}) {
 
 function createApp(overrides = {}) {
   const dependencies = createDependencies(overrides);
+  ensureProductUploadDirectory(dependencies.env);
   const app = express();
 
   app.set('trust proxy', 1);
@@ -353,7 +358,8 @@ function createApp(overrides = {}) {
   app.use('/api/v1/admin', createAdminRouter({
     adminAuthMiddleware: dependencies.adminAuthMiddleware,
     adminController: dependencies.adminController,
-    adminDashboardController: dependencies.adminDashboardController
+    adminDashboardController: dependencies.adminDashboardController,
+    env: dependencies.env
   }));
 
   app.use('/api/v1', createMeRouter({

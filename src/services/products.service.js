@@ -3,6 +3,7 @@ const AppError = require('../utils/app-error');
 const { parseCsvText } = require('../utils/csv');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
 const { sellerInventoryCsvRowSchema } = require('../validators/seller-inventory.validator');
+const { buildPublicUrl, removeStoredProductImages } = require('../utils/product-image-files');
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -16,10 +17,10 @@ function mapCompatibility(compatibility) {
   };
 }
 
-function mapImage(image) {
+function mapImage(image, baseUrl) {
   return {
     id: image.id,
-    url: image.url,
+    url: buildPublicUrl(baseUrl, image.url),
     position: image.position
   };
 }
@@ -32,7 +33,7 @@ function mapSeller(product) {
   };
 }
 
-function mapListProduct(product) {
+function mapListProduct(product, baseUrl) {
   return {
     id: product.id,
     title: product.title,
@@ -47,11 +48,11 @@ function mapListProduct(product) {
     stockQty: product.stockQty,
     location: product.location,
     seller: mapSeller(product),
-    primaryImageUrl: product.primaryImageUrl
+    primaryImageUrl: buildPublicUrl(baseUrl, product.primaryImageUrl)
   };
 }
 
-function mapProductDetail(product, images, compatibility) {
+function mapProductDetail(product, images, compatibility, baseUrl) {
   return {
     id: product.id,
     title: product.title,
@@ -67,13 +68,13 @@ function mapProductDetail(product, images, compatibility) {
     stockQty: product.stockQty,
     location: product.location,
     seller: mapSeller(product),
-    primaryImageUrl: product.primaryImageUrl,
-    photos: images.map(mapImage),
+    primaryImageUrl: buildPublicUrl(baseUrl, product.primaryImageUrl),
+    photos: images.map((image) => mapImage(image, baseUrl)),
     compatibility: compatibility.map(mapCompatibility)
   };
 }
 
-function mapSellerProductSummary(product) {
+function mapSellerProductSummary(product, baseUrl) {
   return {
     id: product.id,
     title: product.title,
@@ -88,25 +89,25 @@ function mapSellerProductSummary(product) {
     stockQty: product.stockQty,
     location: product.location,
     status: product.status,
-    primaryImageUrl: product.primaryImageUrl,
+    primaryImageUrl: buildPublicUrl(baseUrl, product.primaryImageUrl),
     seller: mapSeller(product),
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   };
 }
 
-function mapSellerProductDetail(product, images, compatibility) {
+function mapSellerProductDetail(product, images, compatibility, baseUrl) {
   return {
-    ...mapProductDetail(product, images, compatibility),
+    ...mapProductDetail(product, images, compatibility, baseUrl),
     status: product.status,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   };
 }
 
-function mapSellerInventoryItem(product, threshold) {
+function mapSellerInventoryItem(product, threshold, baseUrl) {
   return {
-    ...mapSellerProductSummary(product),
+    ...mapSellerProductSummary(product, baseUrl),
     lowStockThreshold: threshold,
     isLowStock: product.stockQty > 0 && product.stockQty <= threshold,
     isOutOfStock: product.stockQty === 0
@@ -194,7 +195,7 @@ function buildSellerProductFields(payload) {
   return fields;
 }
 
-function createProductsService({ productsRepository, sellersRepository }) {
+function createProductsService({ env = {}, productsRepository, sellersRepository }) {
   function formatCompatibilityEntry(entry) {
     return `${entry.make} ${entry.model} ${entry.yearFrom}-${entry.yearTo}`;
   }
@@ -265,7 +266,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
       productsRepository.findProductCompatibilityByProductId(product.id)
     ]);
 
-    return mapSellerProductDetail(product, images, compatibility);
+    return mapSellerProductDetail(product, images, compatibility, env.BASE_URL);
   }
 
   async function resolveCategoriesForBulkRows(rows) {
@@ -426,11 +427,13 @@ function createProductsService({ productsRepository, sellersRepository }) {
       });
     }
 
+    const images = await productsRepository.findProductImagesByProductId(payload.productId);
     const product = await productsRepository.deactivateOwnedProduct(
       payload.productId,
       sellerAccount.sellerProfile.id
     );
 
+    await removeStoredProductImages(env, images);
     return buildSellerProductDetail(product);
   }
 
@@ -449,7 +452,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
       productsRepository.findProductCompatibilityByProductId(productId)
     ]);
 
-    return mapProductDetail(product, images, compatibility);
+    return mapProductDetail(product, images, compatibility, env.BASE_URL);
   }
 
   async function listProducts(query = {}) {
@@ -477,7 +480,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
     const result = await productsRepository.listProducts(filters);
 
     return {
-      products: result.products.map(mapListProduct),
+      products: result.products.map((product) => mapListProduct(product, env.BASE_URL)),
       pagination: buildPagination({
         page: pagination.page,
         limit: pagination.limit,
@@ -501,7 +504,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
     });
 
     return {
-      products: result.products.map(mapSellerProductSummary),
+      products: result.products.map((product) => mapSellerProductSummary(product, env.BASE_URL)),
       pagination: buildPagination({
         page: pagination.page,
         limit: pagination.limit,
@@ -534,7 +537,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
     ]);
 
     return {
-      inventory: result.products.map((product) => mapSellerInventoryItem(product, LOW_STOCK_THRESHOLD)),
+      inventory: result.products.map((product) => mapSellerInventoryItem(product, LOW_STOCK_THRESHOLD, env.BASE_URL)),
       summary: {
         ...summary,
         lowStockThreshold: LOW_STOCK_THRESHOLD
@@ -584,7 +587,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
     return {
       createdCount: createdProducts.length,
       lowStockThreshold: LOW_STOCK_THRESHOLD,
-      products: createdProducts.map((product) => mapSellerInventoryItem(product, LOW_STOCK_THRESHOLD))
+      products: createdProducts.map((product) => mapSellerInventoryItem(product, LOW_STOCK_THRESHOLD, env.BASE_URL))
     };
   }
 
@@ -627,6 +630,9 @@ function createProductsService({ productsRepository, sellersRepository }) {
       });
     }
 
+    const oldImages = shouldReplacePhotos
+      ? await productsRepository.findProductImagesByProductId(payload.productId)
+      : [];
     const product = await productsRepository.updateOwnedProduct(
       payload.productId,
       sellerAccount.sellerProfile.id,
@@ -637,6 +643,7 @@ function createProductsService({ productsRepository, sellersRepository }) {
       }
     );
 
+    await removeStoredProductImages(env, oldImages);
     return buildSellerProductDetail(product);
   }
 

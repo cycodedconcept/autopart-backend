@@ -18,6 +18,7 @@ const {
 } = require('../config/constants');
 const { sanitizeAdmin } = require('../utils/admin');
 const AppError = require('../utils/app-error');
+const { removeStoredBlogImage } = require('../utils/product-image-files');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
 const {
   buildPlatformConfig,
@@ -1849,6 +1850,10 @@ function createAdminService({
 
       const updatedPost = await loadAdminBlogPostDetail(payload.postId);
 
+      if (payload.featuredImageUrl !== undefined && existingPost.featuredImageUrl !== updatedPost.featuredImageUrl) {
+        await removeStoredBlogImage(env, existingPost.featuredImageUrl);
+      }
+
       await recordAuditLog({
         adminId: payload.adminId,
         action: 'blog_post.updated',
@@ -1938,6 +1943,8 @@ function createAdminService({
       });
 
       const post = await loadAdminBlogPostDetail(payload.postId);
+
+      await removeStoredBlogImage(env, existingPost.featuredImageUrl);
 
       await recordAuditLog({
         adminId: payload.adminId,

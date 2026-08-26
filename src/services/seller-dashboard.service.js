@@ -8,6 +8,7 @@ const {
 const {
   resolveCommissionRatePercent
 } = require('../utils/platform-config');
+const { buildPublicUrl } = require('../utils/product-image-files');
 
 const FEATURED_PRODUCT_LIMIT = 3;
 const LOW_STOCK_THRESHOLD = 5;
@@ -83,7 +84,7 @@ function buildCompatibilityLabel(entries = []) {
   return `${first.make} ${first.model}`;
 }
 
-function mapFeaturedProduct(product, compatibility) {
+function mapFeaturedProduct(product, compatibility, baseUrl) {
   const compatibilityLabel = buildCompatibilityLabel(compatibility);
 
   return {
@@ -95,7 +96,7 @@ function mapFeaturedProduct(product, compatibility) {
     location: product.location,
     condition: product.condition,
     status: product.status,
-    primaryImageUrl: product.primaryImageUrl,
+    primaryImageUrl: buildPublicUrl(baseUrl, product.primaryImageUrl),
     isLowStock: product.stockQty > 0 && product.stockQty <= LOW_STOCK_THRESHOLD,
     isOutOfStock: product.stockQty === 0,
     category: {
@@ -255,7 +256,7 @@ function createSellerDashboardService({
         sellerProducts.products.map(async (product) => {
           const compatibility = await productsRepository.findProductCompatibilityByProductId(product.id);
 
-          return mapFeaturedProduct(product, compatibility);
+          return mapFeaturedProduct(product, compatibility, env.BASE_URL);
         })
       );
       const healthyStockProducts = Math.max(

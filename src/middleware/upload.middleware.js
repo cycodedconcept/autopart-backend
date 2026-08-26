@@ -1,19 +1,26 @@
-const crypto = require('crypto');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
 const path = require('path');
 const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const { createCloudinaryClient } = require('../config/cloudinary');
 const { ERROR_CODES } = require('../config/constants');
 const AppError = require('../utils/app-error');
+const {
+  PRODUCT_IMAGE_TYPES,
+  buildBlogImagePath,
+  buildProductImageFilename,
+  buildProductImagePath,
+  createThumbnail,
+  getImageType,
+  removeStoredProductImages,
+  removeStoredBlogImage,
+  resolveBlogImageDirectory,
+  resolveUploadDirectory,
+  resolveUploadRoot,
+  stripExif
+} = require('../utils/product-image-files');
 
 const ALLOWED_FILE_TYPES = new Map([
   ['application/pdf', '.pdf'],
-  ['image/jpeg', '.jpg'],
-  ['image/png', '.png']
-]);
-const ALLOWED_PRODUCT_IMAGE_TYPES = new Map([
   ['image/jpeg', '.jpg'],
   ['image/png', '.png']
 ]);
@@ -25,17 +32,9 @@ const ALLOWED_CSV_TYPES = new Set([
 ]);
 const SELLER_DOCUMENT_FIELD_NAMES = ['cacDocument', 'proofOfAddressDocument'];
 const MAX_DOCUMENT_SIZE_BYTES = 5 * 1024 * 1024;
-const MAX_PRODUCT_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_PRODUCT_IMAGE_SIZE_BYTES = 2 * 1024 * 1024;
 const MAX_PRODUCT_IMAGE_COUNT = 6;
 const MAX_INVENTORY_CSV_SIZE_BYTES = 2 * 1024 * 1024;
-
-function resolveUploadDirectory(uploadRoot) {
-  if (path.isAbsolute(uploadRoot)) {
-    return uploadRoot;
-  }
-
-  return path.resolve(process.cwd(), uploadRoot);
-}
 
 function normalizeStoredFilePath(filePath) {
   const relativePath = path.relative(process.cwd(), filePath);
@@ -57,21 +56,15 @@ async function removeUploadedFiles(files = []) {
   }));
 }
 
-function buildProductImageExtension(file) {
-  return ALLOWED_PRODUCT_IMAGE_TYPES.get(file.mimetype)
-    || path.extname(file.originalname || '')
-    || '.jpg';
-}
-
-function buildProductImageUploadError(error) {
+function buildProductImageUploadError(error, subject = 'Product photos') {
   if (error instanceof AppError) {
     return error;
   }
 
   if (error instanceof multer.MulterError) {
     const message = error.code === 'LIMIT_FILE_SIZE'
-      ? 'Product photos must be 5MB or smaller.'
-      : 'Product photo upload failed.';
+      ? `${subject} must be 2MB or smaller.`
+      : `${subject} upload failed.`;
 
     return new AppError(message, {
       statusCode: 422,
@@ -84,21 +77,14 @@ function buildProductImageUploadError(error) {
 
 function mapUploadedProductImages(files = []) {
   return files.map((file, index) => ({
-    filePath: file.path || file.secure_url || null,
+    filePath: buildProductImagePath(file.filename),
     mimeType: file.mimetype,
     position: index + 1
   }));
 }
 
-function buildTestCloudinaryUrl(env, file) {
-  const extension = buildProductImageExtension(file);
-  const cloudName = env.CLOUDINARY_CLOUD_NAME || 'test-cloudinary';
-
-  return `https://res.cloudinary.com/${cloudName}/image/upload/v1/product-images/product-image-${Date.now()}-${crypto.randomUUID()}${extension}`;
-}
-
 function createSellerDocumentsUploadMiddleware({ env }) {
-  const uploadDirectory = path.join(resolveUploadDirectory(env.UPLOAD_DIR), 'seller-documents');
+  const uploadDirectory = path.join(resolveUploadRoot(env.UPLOAD_DIR), 'seller-documents');
   const storage = multer.diskStorage({
     destination(req, file, callback) {
       fs.mkdir(uploadDirectory, { recursive: true }, (error) => {
@@ -187,66 +173,97 @@ function createSellerDocumentsUploadMiddleware({ env }) {
 }
 
 function createSellerProductImagesUploadMiddleware({ env }) {
-  const upload = env.NODE_ENV === 'test'
-    ? multer({
-      storage: multer.memoryStorage(),
-      limits: {
-        fileSize: MAX_PRODUCT_IMAGE_SIZE_BYTES,
-        files: MAX_PRODUCT_IMAGE_COUNT
-      },
-      fileFilter(req, file, callback) {
-        if (!ALLOWED_PRODUCT_IMAGE_TYPES.has(file.mimetype)) {
-          return callback(new AppError('Only jpg and png files are allowed for product photos.', {
-            statusCode: 422,
-            code: ERROR_CODES.VALIDATION_ERROR
-          }));
-        }
-
-        return callback(null, true);
+  const uploadDirectory = resolveUploadDirectory(env.UPLOAD_DIR);
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination(_req, _file, callback) { callback(null, uploadDirectory); },
+      filename(_req, file, callback) { callback(null, buildProductImageFilename(file.mimetype)); }
+    }),
+    limits: { fileSize: MAX_PRODUCT_IMAGE_SIZE_BYTES, files: MAX_PRODUCT_IMAGE_COUNT },
+    fileFilter(_req, file, callback) {
+      if (!PRODUCT_IMAGE_TYPES.has(file.mimetype)) {
+        return callback(new AppError('Only jpeg, png, and webp files are allowed for product photos.', {
+          statusCode: 422,
+          code: ERROR_CODES.VALIDATION_ERROR
+        }));
       }
-    }).array('photos', MAX_PRODUCT_IMAGE_COUNT)
-    : multer({
-      storage: new CloudinaryStorage({
-        cloudinary: createCloudinaryClient({ env }),
-        params: async (_req, file) => ({
-          folder: 'product-images',
-          resource_type: 'image',
-          allowed_formats: ['jpg', 'jpeg', 'png'],
-          public_id: `product-image-${Date.now()}-${crypto.randomUUID()}`,
-          format: buildProductImageExtension(file).replace('.', '')
-        })
-      }),
-      limits: {
-        fileSize: MAX_PRODUCT_IMAGE_SIZE_BYTES,
-        files: MAX_PRODUCT_IMAGE_COUNT
-      },
-      fileFilter(req, file, callback) {
-        if (!ALLOWED_PRODUCT_IMAGE_TYPES.has(file.mimetype)) {
-          return callback(new AppError('Only jpg and png files are allowed for product photos.', {
-            statusCode: 422,
-            code: ERROR_CODES.VALIDATION_ERROR
-          }));
-        }
-
-        return callback(null, true);
-      }
-    }).array('photos', MAX_PRODUCT_IMAGE_COUNT);
+      return callback(null, true);
+    }
+  }).array('photos', MAX_PRODUCT_IMAGE_COUNT);
 
   return function sellerProductImagesUploadMiddleware(req, res, next) {
-    upload(req, res, (error) => {
+    upload(req, res, async (error) => {
       if (error) {
+        await removeUploadedFiles(req.files || []);
         return next(buildProductImageUploadError(error));
       }
 
-      req.uploadedProductImages = env.NODE_ENV === 'test'
-        ? (req.files || []).map((file, index) => ({
-          filePath: buildTestCloudinaryUrl(env, file),
-          mimeType: file.mimetype,
-          position: index + 1
-        }))
-        : mapUploadedProductImages(req.files || []);
+      try {
+        for (const file of req.files || []) {
+          const actualMimeType = getImageType(await fsPromises.readFile(file.path));
+          if (actualMimeType !== file.mimetype) {
+            throw new AppError('Product photo contents do not match its declared image type.', {
+              statusCode: 422,
+              code: ERROR_CODES.VALIDATION_ERROR
+            });
+          }
+          await stripExif(file.path, actualMimeType);
+          await createThumbnail(file.path, console);
+        }
+        req.uploadedProductImages = mapUploadedProductImages(req.files || []);
+        req.cleanupUploadedProductImages = () => removeStoredProductImages(env, req.uploadedProductImages);
+      } catch (processingError) {
+        await removeUploadedFiles(req.files || []);
+        await removeStoredProductImages(env, mapUploadedProductImages(req.files || []));
+        return next(buildProductImageUploadError(processingError));
+      }
 
       return next();
+    });
+  };
+}
+
+function createAdminBlogImageUploadMiddleware({ env }) {
+  const uploadDirectory = resolveBlogImageDirectory(env.UPLOAD_DIR);
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination(_req, _file, callback) { callback(null, uploadDirectory); },
+      filename(_req, file, callback) { callback(null, buildProductImageFilename(file.mimetype)); }
+    }),
+    limits: { fileSize: MAX_PRODUCT_IMAGE_SIZE_BYTES, files: 1 },
+    fileFilter(_req, file, callback) {
+      if (!PRODUCT_IMAGE_TYPES.has(file.mimetype)) {
+        return callback(new AppError('Only jpeg, png, and webp files are allowed for blog images.', {
+          statusCode: 422,
+          code: ERROR_CODES.VALIDATION_ERROR
+        }));
+      }
+      return callback(null, true);
+    }
+  }).single('featuredImage');
+
+  return function adminBlogImageUploadMiddleware(req, res, next) {
+    upload(req, res, async (error) => {
+      if (error) return next(buildProductImageUploadError(error, 'Blog images'));
+      if (!req.file) return next();
+      try {
+        const actualMimeType = getImageType(await fsPromises.readFile(req.file.path));
+        if (actualMimeType !== req.file.mimetype) {
+          throw new AppError('Blog image contents do not match its declared image type.', {
+            statusCode: 422,
+            code: ERROR_CODES.VALIDATION_ERROR
+          });
+        }
+        await stripExif(req.file.path, actualMimeType);
+        await createThumbnail(req.file.path, console);
+        req.uploadedBlogImage = { filePath: buildBlogImagePath(req.file.filename) };
+        req.body.featuredImageUrl = req.uploadedBlogImage.filePath;
+        req.cleanupUploadedBlogImage = () => removeStoredBlogImage(env, req.uploadedBlogImage.filePath);
+        return next();
+      } catch (processingError) {
+        await removeUploadedFiles([req.file]);
+        return next(buildProductImageUploadError(processingError, 'Blog images'));
+      }
     });
   };
 }
@@ -305,6 +322,7 @@ function createSellerInventoryCsvUploadMiddleware() {
 }
 
 module.exports = {
+  createAdminBlogImageUploadMiddleware,
   createSellerInventoryCsvUploadMiddleware,
   createSellerDocumentsUploadMiddleware,
   createSellerProductImagesUploadMiddleware,

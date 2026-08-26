@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "migrate": "node scripts/migrate.js",
+    "report:legacy-product-images": "node scripts/report-legacy-product-images.js",
     "seed": "node scripts/seed.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "NODE_ENV=test jest --runInBand",
@@ -23,7 +24,6 @@
   "license": "ISC",
   "dependencies": {
     "bcrypt": "^5.1.1",
-    "cloudinary": "^1.41.3",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.1",
@@ -31,7 +31,6 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
-    "multer-storage-cloudinary": "^4.0.0",
     "mysql2": "^3.11.0"
   },
   "devDependencies": {

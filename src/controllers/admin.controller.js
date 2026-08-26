@@ -195,21 +195,27 @@ function createAdminController({ adminService }) {
     },
 
     async createBlogPost(req, res) {
-      const result = await adminService.createBlogPost({
-        adminId: req.admin.id,
-        categoryId: req.body.categoryId,
-        title: req.body.title,
-        slug: req.body.slug,
-        excerpt: req.body.excerpt,
-        body: req.body.body,
-        featuredImageUrl: req.body.featuredImageUrl,
-        featuredImageAlt: req.body.featuredImageAlt,
-        authorDisplayName: req.body.authorDisplayName,
-        authorAvatarUrl: req.body.authorAvatarUrl,
-        status: req.body.status,
-        publishedAt: req.body.publishedAt,
-        tagIds: req.body.tagIds
-      });
+      let result;
+      try {
+        result = await adminService.createBlogPost({
+          adminId: req.admin.id,
+          categoryId: req.body.categoryId,
+          title: req.body.title,
+          slug: req.body.slug,
+          excerpt: req.body.excerpt,
+          body: req.body.body,
+          featuredImageUrl: req.uploadedBlogImage ? req.uploadedBlogImage.filePath : req.body.featuredImageUrl,
+          featuredImageAlt: req.body.featuredImageAlt,
+          authorDisplayName: req.body.authorDisplayName,
+          authorAvatarUrl: req.body.authorAvatarUrl,
+          status: req.body.status,
+          publishedAt: req.body.publishedAt,
+          tagIds: req.body.tagIds
+        });
+      } catch (error) {
+        if (req.cleanupUploadedBlogImage) await req.cleanupUploadedBlogImage();
+        throw error;
+      }
 
       return sendSuccess(res, {
         statusCode: 201,
@@ -219,7 +225,9 @@ function createAdminController({ adminService }) {
     },
 
     async updateBlogPost(req, res) {
-      const result = await adminService.updateBlogPost({
+      let result;
+      try {
+        result = await adminService.updateBlogPost({
         adminId: req.admin.id,
         postId: req.params.id,
         categoryId: req.body.categoryId,
@@ -227,14 +235,18 @@ function createAdminController({ adminService }) {
         slug: req.body.slug,
         excerpt: req.body.excerpt,
         body: req.body.body,
-        featuredImageUrl: req.body.featuredImageUrl,
+        featuredImageUrl: req.uploadedBlogImage ? req.uploadedBlogImage.filePath : req.body.featuredImageUrl,
         featuredImageAlt: req.body.featuredImageAlt,
         authorDisplayName: req.body.authorDisplayName,
         authorAvatarUrl: req.body.authorAvatarUrl,
         publishedAt: req.body.publishedAt,
         tagIds: req.body.tagIds,
         allowSlugOverride: req.body.allowSlugOverride
-      });
+        });
+      } catch (error) {
+        if (req.cleanupUploadedBlogImage) await req.cleanupUploadedBlogImage();
+        throw error;
+      }
 
       return sendSuccess(res, {
         data: result,

@@ -4,6 +4,7 @@ const {
 } = require('../config/constants');
 const AppError = require('../utils/app-error');
 const { buildPagination, normalizePagination } = require('../utils/pagination');
+const { buildPublicUrl } = require('../utils/product-image-files');
 
 const DEFAULT_POSTS_PER_PAGE = 9;
 const FEATURED_LISTING_LIMIT = 3;
@@ -31,13 +32,13 @@ function mapPublicAuthor(post) {
   };
 }
 
-function mapPublicPostListItem(post) {
+function mapPublicPostListItem(post, baseUrl) {
   return {
     id: post.id,
     title: post.title,
     slug: post.slug,
     excerpt: post.excerpt,
-    featuredImageUrl: post.featuredImageUrl,
+    featuredImageUrl: buildPublicUrl(baseUrl, post.featuredImageUrl),
     featuredImageAlt: post.featuredImageAlt,
     author: mapPublicAuthor(post),
     category: mapPublicCategory(post.category),
@@ -58,14 +59,14 @@ function mapPublicPostTag(postTag) {
   };
 }
 
-function mapPublicPostDetail(post, { commentCount, tags }) {
+function mapPublicPostDetail(post, { commentCount, tags }, baseUrl) {
   return {
     id: post.id,
     title: post.title,
     slug: post.slug,
     excerpt: post.excerpt,
     body: post.body,
-    featuredImageUrl: post.featuredImageUrl,
+    featuredImageUrl: buildPublicUrl(baseUrl, post.featuredImageUrl),
     featuredImageAlt: post.featuredImageAlt,
     author: mapPublicAuthor(post),
     category: mapPublicCategory(post.category),
@@ -178,6 +179,7 @@ function createBlogService({
   blogPostTagsRepository,
   blogPostsRepository,
   blogTagsRepository,
+  env = {},
   productsService
 }) {
   async function findPublicPostOrThrow(slug) {
@@ -236,7 +238,7 @@ function createBlogService({
       ]);
 
       return {
-        posts: posts.map(mapPublicPostListItem),
+        posts: posts.map((post) => mapPublicPostListItem(post, env.BASE_URL)),
         pagination: buildPagination({
           page: pagination.page,
           limit: pagination.limit,
@@ -258,7 +260,7 @@ function createBlogService({
       return mapPublicPostDetail(post, {
         commentCount,
         tags
-      });
+      }, env.BASE_URL);
     },
 
     async listRelatedPublicPosts(slug) {
@@ -270,7 +272,7 @@ function createBlogService({
       });
 
       if (sameCategoryPosts.length >= RELATED_POST_LIMIT) {
-        return sameCategoryPosts.map(mapPublicPostListItem);
+        return sameCategoryPosts.map((post) => mapPublicPostListItem(post, env.BASE_URL));
       }
 
       const recentPosts = await blogPostsRepository.listRecentPublicPostsExcluding({
@@ -281,7 +283,8 @@ function createBlogService({
         limit: RELATED_POST_LIMIT - sameCategoryPosts.length
       });
 
-      return [...sameCategoryPosts, ...recentPosts].map(mapPublicPostListItem);
+      return [...sameCategoryPosts, ...recentPosts]
+        .map((post) => mapPublicPostListItem(post, env.BASE_URL));
     },
 
     async listPublicCategories() {

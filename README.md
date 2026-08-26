@@ -99,8 +99,8 @@ Copy `.env.example` to `.env` and fill in the required values.
 
 Seller onboarding uses:
 
-- `UPLOAD_DIR` for local seller-document storage in development
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` for persistent product image uploads
+- `UPLOAD_DIR` for Apache-served seller documents and product images (for example, `./public_html/uploads`)
+- `BASE_URL` for the public API origin used when serializing stored product image paths
 - `CORS_ALLOWED_ORIGINS` as an optional comma-separated frontend allowlist for browser requests; leave it blank to allow any origin during local development
 - `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_BASE_URL`, and `APP_URL` for checkout initialization, transaction verification, and webhook-safe redirect fallbacks
 - `DOJAH_BASE_URL`, `DOJAH_APP_ID`, and `DOJAH_API_KEY` for CAC lookups during seller registration
@@ -109,8 +109,8 @@ Seller onboarding uses:
 
 Product image note:
 
-- New product image uploads now persist to Cloudinary.
-- Existing `product_images` rows that still point to old local or placeholder URLs need manual re-upload or backfill.
+- New product image uploads persist to `UPLOAD_DIR/products`; Apache serves them at `/uploads/products`.
+- Run `node scripts/report-legacy-product-images.js` to identify existing remote image URLs before deciding how to migrate them.
 
 Local admin review uses:
 

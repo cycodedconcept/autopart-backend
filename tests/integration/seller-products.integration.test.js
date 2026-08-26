@@ -11,6 +11,10 @@ const { createInMemorySellersRepository } = require('./support/in-memory-sellers
 const { createInMemoryUsersRepository } = require('./support/in-memory-users-repository');
 
 const { expect } = chai;
+const PNG_IMAGE = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL5hAAAAABJRU5ErkJggg==',
+  'base64'
+);
 
 async function registerAndLoginSeller(app, seller) {
   await request(app)
@@ -79,7 +83,8 @@ describe('Seller products API integration', () => {
         PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
         PAYSTACK_SECRET_KEY: '',
         PAYSTACK_PUBLIC_KEY: '',
-        UPLOAD_DIR: uploadDirectory
+        UPLOAD_DIR: uploadDirectory,
+        BASE_URL: 'https://api.test.local'
       }
     });
   });
@@ -123,11 +128,11 @@ describe('Seller products API integration', () => {
           yearTo: 2011
         }
       ]))
-      .attach('photos', Buffer.from('fake-image-1'), {
+      .attach('photos', PNG_IMAGE, {
         filename: 'disc-1.png',
         contentType: 'image/png'
       })
-      .attach('photos', Buffer.from('fake-image-2'), {
+      .attach('photos', PNG_IMAGE, {
         filename: 'disc-2.png',
         contentType: 'image/png'
       });
@@ -137,8 +142,10 @@ describe('Seller products API integration', () => {
     expect(createResponse.body.data.status).to.equal('active');
     expect(createResponse.body.data.photos).to.have.length(2);
     expect(createResponse.body.data.compatibility).to.have.length(1);
-    expect(createResponse.body.data.photos[0].url).to.match(/^https:\/\/res\.cloudinary\.com\//);
-    expect(createResponse.body.data.primaryImageUrl).to.match(/^https:\/\/res\.cloudinary\.com\//);
+    expect(createResponse.body.data.photos[0].url).to.match(/^https:\/\/api\.test\.local\/uploads\/products\/[a-f0-9]{32}\.png$/);
+    expect(createResponse.body.data.primaryImageUrl).to.equal(createResponse.body.data.photos[0].url);
+    const firstImageFile = path.join(uploadDirectory, 'products', path.basename(createResponse.body.data.photos[0].url));
+    await fs.access(firstImageFile);
 
     const productId = createResponse.body.data.id;
 
@@ -175,7 +182,7 @@ describe('Seller products API integration', () => {
           yearTo: 2012
         }
       ]))
-      .attach('photos', Buffer.from('replacement-image'), {
+      .attach('photos', PNG_IMAGE, {
         filename: 'disc-updated.png',
         contentType: 'image/png'
       });
@@ -185,7 +192,16 @@ describe('Seller products API integration', () => {
     expect(updateResponse.body.data.stockQty).to.equal(9);
     expect(updateResponse.body.data.photos).to.have.length(1);
     expect(updateResponse.body.data.compatibility[0].yearFrom).to.equal(2008);
-    expect(updateResponse.body.data.photos[0].url).to.match(/^https:\/\/res\.cloudinary\.com\//);
+    expect(updateResponse.body.data.photos[0].url).to.match(/^https:\/\/api\.test\.local\/uploads\/products\/[a-f0-9]{32}\.png$/);
+    let firstImageExists = true;
+    try {
+      await fs.access(firstImageFile);
+    } catch (_error) {
+      firstImageExists = false;
+    }
+    expect(firstImageExists).to.equal(false);
+    const replacementImageFile = path.join(uploadDirectory, 'products', path.basename(updateResponse.body.data.photos[0].url));
+    await fs.access(replacementImageFile);
 
     const publicDetailResponse = await request(app)
       .get(`/api/v1/products/${productId}`);
@@ -199,6 +215,13 @@ describe('Seller products API integration', () => {
 
     expect(deleteResponse.status).to.equal(200);
     expect(deleteResponse.body.data.status).to.equal('inactive');
+    let replacementImageExists = true;
+    try {
+      await fs.access(replacementImageFile);
+    } catch (_error) {
+      replacementImageExists = false;
+    }
+    expect(replacementImageExists).to.equal(false);
 
     await request(app)
       .get(`/api/v1/products/${productId}`)
@@ -249,7 +272,7 @@ describe('Seller products API integration', () => {
           yearTo: 2016
         }
       ]))
-      .attach('photos', Buffer.from('engine-mount-image'), {
+      .attach('photos', PNG_IMAGE, {
         filename: 'engine-mount.png',
         contentType: 'image/png'
       })
@@ -263,5 +286,43 @@ describe('Seller products API integration', () => {
     expect(response.status).to.equal(404);
     expect(response.body.success).to.equal(false);
     expect(response.body.error.code).to.equal('NOT_FOUND');
+  });
+
+  it('rejects renamed text files and photos larger than 2MB', async () => {
+    const token = await registerAndLoginSeller(app, {
+      fullName: 'Upload Validation Seller',
+      email: 'validation@example.com',
+      phone: '08012345672',
+      password: 'Password123',
+      businessName: 'Validation Auto Hub',
+      contactEmail: 'validation@example.com',
+      contactPhone: '08012345672',
+      address: '3 Broad Street, Lagos',
+      cacNumber: 'RC-500002'
+    });
+
+    const renamedTextResponse = await request(app)
+      .post('/api/v1/seller/products')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('photos', Buffer.from('not an image'), {
+        filename: 'not-an-image.jpg',
+        contentType: 'image/jpeg'
+      });
+
+    expect(renamedTextResponse.status).to.equal(422);
+    expect(renamedTextResponse.body.error.message).to.equal(
+      'Product photo contents do not match its declared image type.'
+    );
+
+    const oversizedResponse = await request(app)
+      .post('/api/v1/seller/products')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('photos', Buffer.alloc((2 * 1024 * 1024) + 1), {
+        filename: 'large.png',
+        contentType: 'image/png'
+      });
+
+    expect(oversizedResponse.status).to.equal(422);
+    expect(oversizedResponse.body.error.message).to.equal('Product photos must be 2MB or smaller.');
   });
 });
