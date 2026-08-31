@@ -201,8 +201,6 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   router.get(
     '/blog/posts',
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
-    uploadBlogImage,
-    parseJsonFields(['tagIds']),
     validateRequest(listAdminBlogPostsSchema),
     asyncHandler(adminController.listBlogPosts)
   );
@@ -210,6 +208,8 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   router.post(
     '/blog/posts',
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    uploadBlogImage,
+    parseJsonFields(['tagIds']),
     validateRequest(createAdminBlogPostSchema),
     asyncHandler(adminController.createBlogPost)
   );
@@ -217,8 +217,6 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   router.get(
     '/blog/posts/:id',
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
-    uploadBlogImage,
-    parseJsonFields(['tagIds']),
     validateRequest(getAdminBlogPostSchema),
     asyncHandler(adminController.getBlogPost)
   );
@@ -226,6 +224,8 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   router.patch(
     '/blog/posts/:id',
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_BLOG_POSTS),
+    uploadBlogImage,
+    parseJsonFields(['tagIds']),
     validateRequest(updateAdminBlogPostSchema),
     asyncHandler(adminController.updateBlogPost)
   );
