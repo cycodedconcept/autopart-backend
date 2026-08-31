@@ -351,7 +351,6 @@ function createApp(overrides = {}) {
     });
   });
 
-  console.log('STATIC DIR:', dependencies.env.UPLOAD_DIR);
 
   app.use('/uploads', express.static(dependencies.env.UPLOAD_DIR, {
     maxAge: '7d',
