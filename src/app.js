@@ -24,6 +24,9 @@ const { createPaymentsRepository } = require('./repositories/payments.repository
 const { createSellerFinanceRepository } = require('./repositories/seller-finance.repository');
 const { createSellersRepository } = require('./repositories/sellers.repository');
 const { createAdminService } = require('./services/admin.service');
+const { createAdminAnalyticsRepository } = require('./repositories/admin-analytics.repository');
+const { createAdminAnalyticsService } = require('./services/admin-analytics.service');
+const { createAdminDisputesService } = require('./services/admin-disputes.service');
 const { createAdminDashboardService } = require('./services/admin-dashboard.service');
 const { createAssignmentService } = require('./services/assignment.service');
 const { createAuthService } = require('./services/auth.service');
@@ -164,6 +167,11 @@ function createDependencies(overrides = {}) {
     db: resolveDb()
   });
   const appEnv = overrides.env || env;
+  const adminAnalyticsRepository = overrides.adminAnalyticsRepository || createAdminAnalyticsRepository({ db: resolveDb() });
+  const adminAnalyticsService = overrides.adminAnalyticsService || createAdminAnalyticsService({ adminAnalyticsRepository });
+  const adminDisputesService = overrides.adminDisputesService || createAdminDisputesService({
+    disputesRepository, auditLogRepository, platformConfigRepository
+  });
   const paystackClient = overrides.paystackClient || createPaystackClient({
     baseUrl: appEnv.PAYSTACK_BASE_URL,
     secretKey: appEnv.PAYSTACK_SECRET_KEY,
@@ -285,7 +293,7 @@ function createDependencies(overrides = {}) {
   });
 
   return {
-    adminController: overrides.adminController || createAdminController({ adminService }),
+    adminController: overrides.adminController || createAdminController({ adminService, adminAnalyticsService, adminDisputesService }),
     adminDashboardController: overrides.adminDashboardController
       || createAdminDashboardController({ adminDashboardService }),
     authController: overrides.authController || createAuthController({ authService }),

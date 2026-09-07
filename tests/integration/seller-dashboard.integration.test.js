@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const chai = require('chai');
 const request = require('supertest');
+const { PNG_IMAGE } = require('./support/image-fixtures');
 const { createApp } = require('../../src/app');
 const { createInMemoryBuyerAddressesRepository } = require('./support/in-memory-buyer-addresses-repository');
 const { createInMemoryCartsRepository } = require('./support/in-memory-carts-repository');
@@ -100,7 +101,7 @@ async function createSellerListing(app, token, product) {
     .field('stockQty', String(product.stockQty))
     .field('location', product.location)
     .field('compatibility', JSON.stringify(product.compatibility))
-    .attach('photos', Buffer.from('fake-image'), {
+    .attach('photos', PNG_IMAGE, {
       filename: `${product.partNumber}.png`,
       contentType: 'image/png'
     })

@@ -1,77 +1,172 @@
 CONTEXT
-Node.js + Express backend for a car parts marketplace, MySQL database.
-Product images are currently uploaded to Cloudinary via multer + CloudinaryStorage.
-The app has been migrated from Railway to shared cPanel hosting (persistent disk,
-Apache + Phusion Passenger). The Cloudinary account has lapsed.
+Node.js + Express backend (CommonJS) for the AutoParts marketplace, MySQL.
+Architecture is repository → service → controller → route, wired through
+createDependencies() in src/app.js. Joi validation, admin auth via
+adminAuthMiddleware. Migrations run through scripts/migrate.js.
 
-GOAL
-Replace Cloudinary with local disk storage. Images are written to the server's
-filesystem and served directly by Apache, not streamed through Express.
+Adding three areas to the super-admin API: platform analytics, dispute
+management, and seller context on orders.
 
 BEFORE CHANGING ANYTHING
 Read and report back on:
-- the multer/Cloudinary config file and every place it is imported
-- seller-products.routes.js and its controller
-- the Joi validation schema for product creation
-- the product_images table definition and any seed files referencing image URLs
-- whether the project uses ESM or CommonJS, and its existing error-handling pattern
-Match existing conventions. Do not introduce new patterns or libraries beyond what
-is listed below.
+- src/repositories/admin-dashboard.repository.js, disputes.repository.js,
+  orders.repository.js, sellers.repository.js, audit-log.repository.js
+- src/services/admin.service.js and admin-dashboard.service.js
+- src/routes/admin.routes.js and src/controllers/admin.controller.js
+- the MySQL schema for orders, order_items, disputes, sellers, products,
+  categories, payments — list the ACTUAL column names and enum values
+- scripts/migrate.js and how existing migrations are structured
+- the existing success/error response envelope and pagination convention
 
-TASKS
-1. Replace CloudinaryStorage with multer.diskStorage.
-   - Destination: an uploads directory served by Apache (e.g. public_html/uploads/products).
-     Read the base path from an env var UPLOAD_DIR with a sensible default.
-   - Filenames: crypto.randomBytes(16).toString("hex") plus the lowercased extension.
-     Never use the client-supplied filename.
-   - Limits: 2MB per file.
-   - fileFilter: accept only image/jpeg, image/png, image/webp. Reject anything else
-     with a clear error that surfaces through the existing error handler.
+Then report: which order status values represent a completed/revenue-counting
+sale, and the current dispute status enum. Do NOT invent either — I will
+confirm before you build. Wait for approval after this report.
 
-2. Validate the real file type, not just the declared MIME type. Check magic bytes
-   after write and delete the file if it does not match an allowed image format.
+--------------------------------------------------------------------
+TASK 1 — PLATFORM ANALYTICS
+--------------------------------------------------------------------
+GET /api/v1/admin/analytics/platform?period=7d|30d|90d|1y
 
-3. Strip EXIF metadata on upload.
+Single endpoint returning everything the analytics screen needs:
 
-4. Generate one resized thumbnail per image (max width 400px).
-   Try sharp first. If sharp cannot be installed in this environment, fall back to
-   ImageMagick via child_process, and if neither is available, skip thumbnail
-   generation and log a warning rather than failing the upload.
+summary: four metrics, each with current value and percentage change against
+the immediately preceding window of equal length
+  - totalGmvKobo
+  - totalOrders
+  - activeSellers   (sellers with at least one order in the window)
+  - avgOrderValueKobo
 
-5. Store a RELATIVE path in product_images.url (e.g. /uploads/products/<hash>.webp),
-   not an absolute URL. Add a helper that builds the full URL from a BASE_URL env var
-   when serializing responses, so the stored value stays portable.
+gmvSeries: time series over the selected period
+  - daily buckets for 7d/30d, weekly for 90d, monthly for 1y
+  - each point: { bucket, gmvKobo }
 
-6. On product deletion or image replacement, delete the corresponding files from
-   disk. Orphaned files must not accumulate.
+ordersByWeek: last 8 weeks, each { weekLabel, orderCount }
 
-7. Create the uploads directory at startup if missing, and write an .htaccess into it
-   containing:
-       php_flag engine off
-       Options -ExecCGI
-       AddType text/plain .php .phtml .php3 .php4 .php5 .pl .py .cgi
-   This is a security requirement, not optional.
+categoryBreakdown: array of { categoryId, name, orderCount, percentage }
+  ordered desc, top 5 with the remainder grouped as "Other"
 
-8. Remove the cloudinary dependency from package.json, delete its config file, and
-   strip CLOUDINARY_* variables from .env.example. Add UPLOAD_DIR and BASE_URL.
+revenueByCategory: array of { categoryId, name, revenueKobo, percentage }
 
-9. Write a migration script that finds product_images rows still holding Cloudinary
-   URLs and reports them. Do not delete rows automatically — print a summary and let
-   me decide.
+topSellers: array of { rank, sellerId, businessName, location, gmvKobo,
+  orderCount, rating } — limit configurable via ?topSellersLimit, default 5,
+  max 20
 
+GET /api/v1/admin/analytics/platform/export?period=30d
+  Returns CSV of the same data. Set Content-Disposition attachment.
+
+Rules:
+- All money in kobo as integers. Never format currency server-side.
+- Bucket dates in Africa/Lagos, not UTC, or daily totals will be wrong.
+- Only count orders whose status represents a completed sale (from your report).
+- Empty buckets must appear with zero, not be omitted — the chart needs a
+  continuous axis.
+- Percentage change when the previous period is zero: return null, not
+  Infinity or 0.
+- Aggregate in SQL. Do not pull rows into Node and reduce.
+- Add indexes for the date-range and seller grouping queries if missing.
+- avgOrderValueKobo MUST be derived as totalGmvKobo / totalOrders over the
+  identical filtered order set — not computed from a separate query. The three
+  figures must reconcile exactly.
+- Where totalOrders is zero, return null for avgOrderValueKobo, not zero.
+
+--------------------------------------------------------------------
+TASK 2 — DISPUTES
+--------------------------------------------------------------------
+GET /api/v1/admin/disputes/stats
+  { open, inReview, escalated, resolved, total }
+  Drives the cards at the top of the disputes page.
+
+GET /api/v1/admin/disputes
+  Paginated list. Filters: status, sellerId, dateFrom, dateTo.
+  Each row: disputeId, orderId, buyer name, seller business name, reason,
+  status, openedAt, slaRemainingMinutes.
+
+GET /api/v1/admin/disputes/:id
+  Full detail:
+  - dispute: id, orderId, buyer {id,name}, seller {id,businessName}, reason,
+    status, openedAt, description
+  - evidence: { buyer: { summary, attachments[] },
+                seller: { summary, attachments[] } }
+    attachments are { id, url, filename, uploadedAt }
+  - order: { partName, orderValueKobo, placedAt }
+  - sla: { deadlineAt, remainingMinutes, breached }
+  - timeline: chronological events (opened, info requested, escalated, ruled,
+    closed) with actor and timestamp
+
+ACTIONS — all admin-only, all recorded to the audit log AND the dispute
+timeline with the acting admin id:
+
+POST /api/v1/admin/disputes/:id/request-info
+  body: { message, requestedFrom: "buyer"|"seller"|"both" }
+  Sets status to in_review.
+
+POST /api/v1/admin/disputes/:id/escalate
+  body: { reason }
+  Sets status to escalated.
+
+POST /api/v1/admin/disputes/:id/ruling
+  body: {
+    notes            (required, min 10 chars),
+    decision         ("refund_buyer_full" | "refund_seller" |
+                      "partial_refund" | "no_action"),
+    partialAmountKobo (required only when decision is partial_refund; must be
+                       > 0 and <= order value),
+    requireReverseLogistics (boolean, default false)
+  }
+  Records the ruling and sets status to resolved.
+
+POST /api/v1/admin/disputes/:id/close
+  body: { reason }
+  Sets status to closed. Only allowed from resolved or escalated.
+
+Status transitions must be validated in the service layer. Reject invalid
+moves with 409 and a clear message — do not silently allow them.
+
+IMPORTANT — do NOT wire refunds to Paystack. Record the ruling and leave a
+clearly marked TODO where the refund would be triggered. Report what the
+payments service currently supports so I can decide separately. Likewise for
+reverse logistics: set the flag, do not auto-create a delivery job.
+
+Schema: add whatever tables are needed (dispute_events, dispute_rulings,
+dispute_attachments) as a new migration following the existing pattern. Do not
+alter existing tables destructively. SLA duration should read from
+platform_config if that table supports it, otherwise an env var with a
+sensible default — tell me which you chose.
+
+--------------------------------------------------------------------
+TASK 3 — SELLER CONTEXT ON ADMIN ORDERS
+--------------------------------------------------------------------
+Extend the existing admin orders list so each order includes:
+  seller: { id, businessName, location }
+
+Add GET /api/v1/admin/orders/:id returning full detail: buyer, seller,
+line items with part names and quantities, amounts, payment status, delivery
+status, current status, timestamps, and any linked dispute id.
+
+Use a JOIN. Do not introduce an N+1 query per order in the list endpoint.
+
+--------------------------------------------------------------------
 CONSTRAINTS
-- Do not route image serving through Express. Apache serves the uploads directory.
-- Do not store files outside the configured upload directory. Sanitise any path input.
-- Keep all existing endpoint paths, request field names, and response shapes unchanged
-  so the frontend and Postman collection keep working.
-- No new dependencies except sharp (optional, with the fallback above).
+--------------------------------------------------------------------
+- Follow the existing repository/service/controller/route structure exactly.
+  No logic in controllers, no SQL outside repositories.
+- Joi validation for every query param and body, matching existing schemas.
+- Match the existing response envelope and error codes.
+- Admin auth on every new route.
+- No new dependencies without asking.
+- Do not modify seller-facing or buyer-facing endpoints.
 
 ACCEPTANCE
-- POST to the existing seller product image endpoint with form-data succeeds and
-  returns a working image URL.
-- A .txt renamed to .jpg is rejected.
-- A 5MB file is rejected with a clear message.
-- Deleting a product removes its files from disk.
-- No reference to "cloudinary" remains anywhere in the codebase.
+- Every endpoint returns correctly shaped data against seeded test data.
+- Analytics numbers reconcile: summary totals equal the sum of their series.
+- Invalid dispute status transitions return 409.
+- partial_refund without partialAmountKobo returns 422.
+- Ruling, escalation, info request and close all appear in the audit log.
+- The orders list issues one query regardless of result count.
+- npm run migrate runs clean on a fresh database.
+- avgOrderValueKobo × totalOrders equals totalGmvKobo (within rounding).
+- categoryBreakdown percentages sum to 100.
+- The sum of topSellers gmvKobo does not exceed totalGmvKobo.
 
-When done, list every file you changed and anything you could not complete.
+When done, list every file created or changed, every new endpoint, the
+migration filename, and anything you could not complete or had to assume.

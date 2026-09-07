@@ -4,6 +4,7 @@ const {
   PAYMENT_STATUSES
 } = require('../config/constants');
 const { sanitizeLimit, sanitizeLimitOffset } = require('./pagination.repository');
+const { epochIso, jsonValue } = require('../utils/admin-reporting');
 
 function mapOrderRow(row) {
   if (!row) {
@@ -64,6 +65,9 @@ function mapAdminOrderRow(row) {
 
   return {
     ...order,
+    sellers: jsonValue(row.sellers, [])
+      .sort((a, b) => a.firstItemId - b.firstItemId)
+      .map(({ id, businessName, location }) => ({ id: Number(id), businessName, location })),
     buyerFullName: row.buyer_full_name,
     buyerEmail: row.buyer_email,
     buyerPhone: row.buyer_phone,
@@ -223,6 +227,7 @@ async function findOrderByIdForAdminWithConnection(connection, orderId) {
   const [rows] = await connection.execute(
     `
       SELECT
+        UNIX_TIMESTAMP(o.created_at) AS created_epoch, UNIX_TIMESTAMP(o.updated_at) AS updated_epoch,
         o.id,
         o.buyer_id,
         o.status,
@@ -275,7 +280,8 @@ async function findOrderByIdForAdminWithConnection(connection, orderId) {
     [orderId]
   );
 
-  return mapAdminOrderRow(rows[0]);
+  if (!rows[0]) return null;
+  return { ...mapAdminOrderRow(rows[0]), createdAt: epochIso(rows[0].created_epoch), updatedAt: epochIso(rows[0].updated_epoch) };
 }
 
 function createOrdersRepository({ db }) {
@@ -558,76 +564,73 @@ function createOrdersRepository({ db }) {
 
       const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-      const [countRows] = await db.execute(
-        `
-          SELECT COUNT(*) AS total
-          FROM orders o
-          INNER JOIN users u ON u.id = o.buyer_id
-          ${whereSql}
-        `,
-        params
-      );
-
-      const [rows] = await db.execute(
-        `
-          SELECT
-            o.id,
-            o.buyer_id,
-            o.status,
-            o.payment_method,
-            o.subtotal_kobo,
-            o.delivery_fee_kobo,
-            o.total_kobo,
-            o.delivery_address_id,
-            o.delivery_label,
-            o.delivery_street,
-            o.delivery_city,
-            o.delivery_state,
-            o.delivery_phone,
-            o.payment_reference,
-            o.payment_status,
-            COALESCE(SUM(oi.quantity), 0) AS total_items,
-            COUNT(DISTINCT oi.seller_id) AS seller_count,
-            u.full_name AS buyer_full_name,
-            u.email AS buyer_email,
-            u.phone AS buyer_phone,
-            o.created_at,
-            o.updated_at
-          FROM orders o
-          INNER JOIN users u ON u.id = o.buyer_id
-          LEFT JOIN order_items oi ON oi.order_id = o.id
-          ${whereSql}
-          GROUP BY
-            o.id,
-            o.buyer_id,
-            o.status,
-            o.payment_method,
-            o.subtotal_kobo,
-            o.delivery_fee_kobo,
-            o.total_kobo,
-            o.delivery_address_id,
-            o.delivery_label,
-            o.delivery_street,
-            o.delivery_city,
-            o.delivery_state,
-            o.delivery_phone,
-            o.payment_reference,
-            o.payment_status,
-            u.full_name,
-            u.email,
-            u.phone,
-            o.created_at,
-            o.updated_at
-          ORDER BY o.created_at DESC, o.id DESC
+      // The totals row survives even when the requested page is empty.
+      const [rows] = await db.execute(`
+        WITH filtered AS (
+          SELECT o.*, u.full_name AS buyer_full_name, u.email AS buyer_email, u.phone AS buyer_phone
+          FROM orders o INNER JOIN users u ON u.id = o.buyer_id ${whereSql}
+        ), page_orders AS (
+          SELECT * FROM filtered ORDER BY created_at DESC, id DESC
           LIMIT ${pagination.limit} OFFSET ${pagination.offset}
-        `,
-        params
-      );
-
+        ), page_sellers AS (
+          SELECT oi.order_id, sp.id, sp.business_name, sp.address, MIN(oi.id) AS first_item_id
+          FROM page_orders po INNER JOIN order_items oi ON oi.order_id = po.id
+          INNER JOIN seller_profiles sp ON sp.id = oi.seller_id
+          GROUP BY oi.order_id, sp.id, sp.business_name, sp.address
+        ), seller_context AS (
+          SELECT order_id, COUNT(*) AS seller_count,
+            JSON_ARRAYAGG(JSON_OBJECT('id', id, 'businessName', business_name, 'location', address,
+              'firstItemId', first_item_id)) AS sellers
+          FROM page_sellers GROUP BY order_id
+        ), item_totals AS (
+          SELECT oi.order_id, SUM(oi.quantity) AS total_items
+          FROM page_orders po INNER JOIN order_items oi ON oi.order_id = po.id GROUP BY oi.order_id
+        )
+        SELECT po.*, totals.total, COALESCE(sc.seller_count, 0) AS seller_count,
+          sc.sellers, COALESCE(it.total_items, 0) AS total_items,
+          UNIX_TIMESTAMP(po.created_at) AS created_epoch, UNIX_TIMESTAMP(po.updated_at) AS updated_epoch
+        FROM (SELECT COUNT(*) AS total FROM filtered) totals
+        LEFT JOIN page_orders po ON TRUE
+        LEFT JOIN seller_context sc ON sc.order_id = po.id
+        LEFT JOIN item_totals it ON it.order_id = po.id
+        ORDER BY po.created_at DESC, po.id DESC
+      `, params);
       return {
-        orders: rows.map(mapAdminOrderRow),
-        total: Number(countRows[0].total || 0)
+        orders: rows.filter((row) => row.id !== null).map((row) => ({
+          ...mapAdminOrderRow(row), createdAt: epochIso(row.created_epoch), updatedAt: epochIso(row.updated_epoch)
+        })),
+        total: Number(rows[0].total)
       };
+    },
+
+    async findOrderItemsForAdmin(orderId) {
+      const [rows] = await db.execute(`SELECT oi.*, p.title AS part_name, p.part_number,
+        sp.business_name, sp.address AS seller_location,
+        dj.id AS delivery_job_id, dj.status AS delivery_status,
+        UNIX_TIMESTAMP(dj.assigned_at) AS assigned_epoch,
+        UNIX_TIMESTAMP(dj.picked_up_at) AS picked_up_epoch,
+        UNIX_TIMESTAMP(dj.in_transit_at) AS in_transit_epoch,
+        UNIX_TIMESTAMP(dj.delivered_at) AS delivered_epoch
+        FROM order_items oi INNER JOIN products p ON p.id = oi.product_id
+        INNER JOIN seller_profiles sp ON sp.id = oi.seller_id
+        LEFT JOIN delivery_jobs dj ON dj.order_item_id = oi.id
+        WHERE oi.order_id = ? ORDER BY oi.id`, [orderId]);
+      return rows.map((row) => ({
+        id: Number(row.id), productId: Number(row.product_id), partName: row.part_name,
+        partNumber: row.part_number, quantity: Number(row.quantity),
+        unitPriceKobo: Number(row.unit_price_kobo), lineTotalKobo: Number(row.line_total_kobo),
+        deliveryFeeKobo: Number(row.delivery_fee_kobo), status: row.item_status,
+        seller: { id: Number(row.seller_id), businessName: row.business_name, location: row.seller_location },
+        delivery: row.delivery_job_id ? { id: Number(row.delivery_job_id), status: row.delivery_status,
+          assignedAt: epochIso(row.assigned_epoch), pickedUpAt: epochIso(row.picked_up_epoch),
+          inTransitAt: epochIso(row.in_transit_epoch), deliveredAt: epochIso(row.delivered_epoch) } : null
+      }));
+    },
+
+    async findLinkedDisputesForAdmin(orderId) {
+      const [rows] = await db.execute(`SELECT id, status FROM disputes WHERE order_id = ?
+        ORDER BY created_at DESC, id DESC`, [orderId]);
+      return rows.map((row) => ({ id: Number(row.id), status: row.status }));
     },
 
     async summarizeSellerOrders({ sellerId }) {
@@ -765,7 +768,7 @@ function createOrdersRepository({ db }) {
       const connection = await db.getConnection();
 
       try {
-        return findOrderByIdForAdminWithConnection(connection, orderId);
+        return await findOrderByIdForAdminWithConnection(connection, orderId);
       } finally {
         connection.release();
       }

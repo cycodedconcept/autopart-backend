@@ -8,6 +8,8 @@ const { authorizePermissions } = require('../middleware/permission.middleware');
 const { createAuthRateLimiter } = require('../middleware/rate-limit.middleware');
 const { createAdminBlogImageUploadMiddleware } = require('../middleware/upload.middleware');
 const { validateRequest } = require('../middleware/validate.middleware');
+const { adminDetailSchema, closeDisputeSchema, disputeStatsSchema, escalateDisputeSchema,
+  platformAnalyticsSchema, requestDisputeInfoSchema, ruleDisputeSchema } = require('../validators/admin-platform.validator');
 const {
   adminLoginSchema,
   createAdminBlogCategorySchema,
@@ -79,6 +81,25 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
   );
 
   router.use(adminAuthMiddleware);
+
+  router.get('/analytics/platform/export', authorizePermissions(ADMIN_PERMISSION_KEYS.READ_DASHBOARD),
+    validateRequest(platformAnalyticsSchema), asyncHandler(adminController.exportPlatformAnalytics));
+  router.get('/analytics/platform', authorizePermissions(ADMIN_PERMISSION_KEYS.READ_DASHBOARD),
+    validateRequest(platformAnalyticsSchema), asyncHandler(adminController.getPlatformAnalytics));
+  router.get('/orders/:id', authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_ORDERS),
+    validateRequest(adminDetailSchema), asyncHandler(adminController.getOrder));
+  router.get('/disputes/stats', authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(disputeStatsSchema), asyncHandler(adminController.getDisputeStats));
+  router.get('/disputes/:id', authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(adminDetailSchema), asyncHandler(adminController.getDispute));
+  router.post('/disputes/:id/request-info', authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(requestDisputeInfoSchema), asyncHandler(adminController.requestDisputeInfo));
+  router.post('/disputes/:id/escalate', authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(escalateDisputeSchema), asyncHandler(adminController.escalateDispute));
+  router.post('/disputes/:id/ruling', authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(ruleDisputeSchema), asyncHandler(adminController.ruleDispute));
+  router.post('/disputes/:id/close', authorizePermissions(ADMIN_PERMISSION_KEYS.RESOLVE_DISPUTES),
+    validateRequest(closeDisputeSchema), asyncHandler(adminController.closeDispute));
 
   router.get(
     '/dashboard',

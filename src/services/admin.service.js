@@ -5,7 +5,6 @@ const {
   DISPUTE_STATUSES,
   ERROR_CODES,
   LOGISTICS_COMPANY_STATUSES,
-  NEWSLETTER_SUBSCRIBER_STATUSES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
   PAYOUT_PAYEE_TYPES,
@@ -40,6 +39,8 @@ const {
   sanitizeBlogHtml
 } = require('../utils/blog-content');
 const { serializeCsvRows } = require('../utils/csv');
+const { dateEpoch, disputeSla, disputeSlaHours } = require('../utils/admin-reporting');
+const { disputeSeller } = require('./admin-disputes.service');
 
 function normalizeEmail(email) {
   return email ? email.trim().toLowerCase() : null;
@@ -542,6 +543,9 @@ function mapAdminOrder(order, statusHistory = null) {
     totalKobo: order.totalKobo,
     totalItems: order.totalItems,
     sellerCount: order.sellerCount,
+    // Repositories and detail line items supply sellers in first-item order.
+    seller: (order.sellers || [])[0] || null,
+    sellers: [...(order.sellers || [])].sort((a, b) => a.id - b.id),
     buyer: {
       id: order.buyerId,
       fullName: order.buyerFullName,
@@ -2118,6 +2122,24 @@ function createAdminService({
       };
     },
 
+    async getOrder({ orderId }) {
+      const order = await ensureOrderExists(orderId);
+      const [items, disputes, history] = await Promise.all([
+        ordersRepository.findOrderItemsForAdmin(orderId),
+        ordersRepository.findLinkedDisputesForAdmin(orderId),
+        ordersRepository.findOrderStatusHistoryByOrderIdForAdmin(orderId)
+      ]);
+      const sellers = [...new Map(items.map((item) => [item.seller.id, item.seller])).values()];
+      const deliveryStatuses = [...new Set(items.map((item) => item.delivery?.status || 'not_created'))];
+      return {
+        ...mapAdminOrder({ ...order, sellers }, history), items,
+        deliveryStatus: deliveryStatuses.length === 1 ? deliveryStatuses[0] : deliveryStatuses.length ? 'mixed' : null,
+        deliveryAddress: { label: order.deliveryLabel, street: order.deliveryStreet, city: order.deliveryCity,
+          state: order.deliveryState, phone: order.deliveryPhone },
+        disputeId: disputes[0]?.id || null, disputes
+      };
+    },
+
     async reconcilePendingPayments(payload) {
       if (!paymentsService || typeof paymentsService.reconcilePendingPayments !== 'function') {
         throw new AppError('Payment reconciliation is unavailable.', {
@@ -2200,13 +2222,23 @@ function createAdminService({
         status: normalizeDisputeListStatus(payload.query.status),
         raisedBy: normalizeDisputeRaisedBy(payload.query.raisedBy),
         search: normalizeSearchTerm(payload.query.search),
+        sellerId: payload.query.sellerId || null,
+        dateFrom: payload.query.dateFrom ? dateEpoch(payload.query.dateFrom) : null,
+        dateTo: payload.query.dateTo ? dateEpoch(payload.query.dateTo) + 86400 : null,
         limit: pagination.limit,
         offset: pagination.offset
       };
       const result = await disputesRepository.listDisputesForAdmin(filters);
+      const hours = await disputeSlaHours(platformConfigRepository);
+      const now = new Date();
 
       return {
-        disputes: result.disputes.map((dispute) => mapAdminDispute(dispute)),
+        disputes: result.disputes.map((dispute) => {
+          const seller = disputeSeller(dispute);
+          return { ...mapAdminDispute(dispute), disputeId: dispute.id, buyerName: dispute.buyer?.fullName || null,
+            sellerBusinessName: seller?.businessName || null, openedAt: dispute.createdAt,
+            slaRemainingMinutes: disputeSla(dispute, hours, now).remainingMinutes };
+        }),
         pagination: buildPagination({
           page: pagination.page,
           limit: pagination.limit,
@@ -2215,6 +2247,9 @@ function createAdminService({
         filters: {
           status: filters.status,
           raisedBy: filters.raisedBy,
+          sellerId: filters.sellerId,
+          dateFrom: payload.query.dateFrom || null,
+          dateTo: payload.query.dateTo || null,
           search: filters.search
         }
       };

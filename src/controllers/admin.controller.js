@@ -1,7 +1,53 @@
 const { sendSuccess } = require('../utils/responses');
 
-function createAdminController({ adminService }) {
+function createAdminController({ adminService, adminAnalyticsService, adminDisputesService }) {
   return {
+    async getPlatformAnalytics(req, res) {
+      const result = await adminAnalyticsService.getPlatformAnalytics(req.query);
+      return sendSuccess(res, { data: result, message: 'Platform analytics fetched successfully.' });
+    },
+
+    async exportPlatformAnalytics(req, res) {
+      const result = await adminAnalyticsService.exportPlatformAnalytics(req.query);
+      res.set('Content-Disposition', `attachment; filename="${result.filename}"`);
+      return res.status(200).type('text/csv').send(result.csv);
+    },
+
+    async getOrder(req, res) {
+      const result = await adminService.getOrder({ orderId: req.params.id });
+      return sendSuccess(res, { data: result, message: 'Order fetched successfully.' });
+    },
+
+    async getDisputeStats(req, res) {
+      const result = await adminDisputesService.getDisputeStats();
+      return sendSuccess(res, { data: result, message: 'Dispute statistics fetched successfully.' });
+    },
+
+    async getDispute(req, res) {
+      const result = await adminDisputesService.getDispute({ disputeId: req.params.id });
+      return sendSuccess(res, { data: result, message: 'Dispute fetched successfully.' });
+    },
+
+    async requestDisputeInfo(req, res) {
+      const result = await adminDisputesService.requestInfo({ adminId: req.admin.id, disputeId: req.params.id, ...req.body });
+      return sendSuccess(res, { data: result, message: 'Dispute information request recorded successfully.' });
+    },
+
+    async escalateDispute(req, res) {
+      const result = await adminDisputesService.escalate({ adminId: req.admin.id, disputeId: req.params.id, ...req.body });
+      return sendSuccess(res, { data: result, message: 'Dispute escalated successfully.' });
+    },
+
+    async ruleDispute(req, res) {
+      const result = await adminDisputesService.rule({ adminId: req.admin.id, disputeId: req.params.id, ...req.body });
+      return sendSuccess(res, { data: result, message: 'Dispute ruling recorded successfully.' });
+    },
+
+    async closeDispute(req, res) {
+      const result = await adminDisputesService.close({ adminId: req.admin.id, disputeId: req.params.id, ...req.body });
+      return sendSuccess(res, { data: result, message: 'Dispute closed successfully.' });
+    },
+
     async createCategory(req, res) {
       const result = await adminService.createCategory({
         name: req.body.name,

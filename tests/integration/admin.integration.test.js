@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const chai = require('chai');
 const request = require('supertest');
+const { PNG_IMAGE } = require('./support/image-fixtures');
 const { ADMIN_ROLE_NAMES } = require('../../src/config/constants');
 const { createApp } = require('../../src/app');
 const { createInMemoryBuyerAddressesRepository } = require('./support/in-memory-buyer-addresses-repository');
@@ -111,7 +112,7 @@ async function createSellerListing(app, token, product) {
     .field('stockQty', String(product.stockQty))
     .field('location', product.location)
     .field('compatibility', JSON.stringify(product.compatibility))
-    .attach('photos', Buffer.from('fake-image'), {
+    .attach('photos', PNG_IMAGE, {
       filename: `${product.partNumber}.png`,
       contentType: 'image/png'
     })
@@ -506,7 +507,7 @@ describe('Admin API integration', () => {
           yearTo: 2021
         }
       ]))
-      .attach('photos', Buffer.from('fake-image-1'), {
+      .attach('photos', PNG_IMAGE, {
         filename: 'radiator-1.png',
         contentType: 'image/png'
       })

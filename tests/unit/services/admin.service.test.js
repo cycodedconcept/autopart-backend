@@ -1675,6 +1675,9 @@ describe('admin service', () => {
       });
 
       expect(disputesRepository.listDisputesForAdmin).toHaveBeenCalledWith({
+        sellerId: null,
+        dateFrom: null,
+        dateTo: null,
         status: 'open',
         raisedBy: 'buyer',
         search: 'damaged',

@@ -68,8 +68,8 @@ function buildAuditLogFilters(filters = {}) {
 
 function createAuditLogRepository({ db }) {
   return {
-    async createAuditLog(payload) {
-      await db.execute(
+    async createAuditLog(payload, executor = db) {
+      await executor.execute(
         `
           INSERT INTO audit_logs (
             admin_id,

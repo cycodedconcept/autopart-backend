@@ -12,6 +12,7 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "NODE_ENV=test jest --runInBand",
     "test:integration": "NODE_ENV=test mocha \"tests/integration/**/*.test.js\" --require tests/setup/mocha.js --exit",
+    "test:mysql": "NODE_ENV=test mocha \"tests/mysql/**/*.mysql.test.js\" --require tests/setup/mocha.js --exit",
     "lint": "eslint ."
   },
   "keywords": [

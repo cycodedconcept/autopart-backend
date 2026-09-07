@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { buildPaginationQuerySchema } = require('./pagination.validator');
+const { dateOnly } = require('./admin-platform.validator');
 const {
   BLOG_COMMENT_STATUSES,
   CATEGORY_STATUSES,
@@ -497,9 +498,13 @@ const listAdminDisputesSchema = Joi.object({
   params: Joi.object({}).default({}),
   query: buildPaginationQuerySchema({
     status: Joi.string().valid(...adminDisputeStatuses).default('all'),
+    sellerId: Joi.number().integer().positive().optional(),
+    dateFrom: dateOnly.optional(),
+    dateTo: dateOnly.optional(),
     raisedBy: Joi.string().valid(...adminDisputeRaisedByValues).default('all'),
     search: Joi.string().trim().max(120).allow('', null).optional()
-  })
+  }).custom((value, helpers) => value.dateFrom && value.dateTo && value.dateFrom > value.dateTo
+    ? helpers.message('dateTo must be on or after dateFrom.') : value)
 });
 
 const updateAdminPayoutStatusSchema = Joi.object({

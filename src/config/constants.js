@@ -246,6 +246,9 @@ const DISPUTE_RAISED_BY = {
 };
 
 const DISPUTE_STATUSES = {
+  CLOSED: 'closed',
+  ESCALATED: 'escalated',
+  IN_REVIEW: 'in_review',
   OPEN: 'open',
   REJECTED: 'rejected',
   RESOLVED: 'resolved'

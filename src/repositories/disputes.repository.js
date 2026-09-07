@@ -1,4 +1,7 @@
 const { sanitizeLimitOffset } = require('./pagination.repository');
+const { epochIso, jsonValue } = require('../utils/admin-reporting');
+const AppError = require('../utils/app-error');
+const { ERROR_CODES } = require('../config/constants');
 
 function toNumber(value) {
   return value === null || value === undefined ? null : Number(value);
@@ -31,6 +34,11 @@ function mapDisputeRow(row, sellers = []) {
   return {
     id: toNumber(row.id),
     orderId: toNumber(row.order_id),
+    sellerId: toNumber(row.seller_id),
+    description: row.description || null,
+    buyerEvidenceSummary: row.buyer_evidence_summary || null,
+    sellerEvidenceSummary: row.seller_evidence_summary || null,
+    closedAt: epochIso(row.closed_epoch),
     raisedBy: row.raised_by,
     reason: row.reason,
     status: row.status,
@@ -38,9 +46,9 @@ function mapDisputeRow(row, sellers = []) {
     refundReference: row.refund_reference,
     refundAmountKobo: toNumber(row.refund_amount_kobo),
     resolvedBy: toNumber(row.resolved_by),
-    resolvedAt: row.resolved_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    resolvedAt: epochIso(row.resolved_epoch),
+    createdAt: epochIso(row.created_epoch),
+    updatedAt: epochIso(row.updated_epoch),
     order: {
       id: toNumber(row.order_id),
       status: row.order_status,
@@ -48,8 +56,8 @@ function mapDisputeRow(row, sellers = []) {
       paymentReference: row.payment_reference,
       paymentStatus: row.payment_status,
       totalKobo: toNumber(row.total_kobo),
-      createdAt: row.order_created_at,
-      updatedAt: row.order_updated_at
+      createdAt: epochIso(row.order_created_epoch),
+      updatedAt: epochIso(row.order_updated_epoch)
     },
     buyer: {
       id: toNumber(row.buyer_id),
@@ -124,6 +132,21 @@ function buildDisputeFilters(filters = {}) {
     params.push(filters.raisedBy);
   }
 
+  if (filters.sellerId) {
+    whereClauses.push(`(d.seller_id = ? OR (d.seller_id IS NULL AND EXISTS (
+      SELECT 1 FROM order_items filter_item WHERE filter_item.order_id = d.order_id AND filter_item.seller_id = ?
+    )))`);
+    params.push(filters.sellerId, filters.sellerId);
+  }
+  if (filters.dateFrom) {
+    whereClauses.push('d.created_at >= FROM_UNIXTIME(?)');
+    params.push(filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    whereClauses.push('d.created_at < FROM_UNIXTIME(?)');
+    params.push(filters.dateTo);
+  }
+
   if (filters.search) {
     const normalizedSearch = `%${filters.search.trim().toLowerCase()}%`;
 
@@ -160,6 +183,13 @@ async function findDisputeByIdWithExecutor(executor, disputeId) {
     `
       SELECT
         d.id,
+        d.description, d.buyer_evidence_summary, d.seller_evidence_summary,
+        UNIX_TIMESTAMP(d.closed_at) AS closed_epoch,
+        UNIX_TIMESTAMP(d.resolved_at) AS resolved_epoch,
+        UNIX_TIMESTAMP(d.created_at) AS created_epoch,
+        UNIX_TIMESTAMP(d.updated_at) AS updated_epoch,
+        UNIX_TIMESTAMP(o.created_at) AS order_created_epoch,
+        UNIX_TIMESTAMP(o.updated_at) AS order_updated_epoch,
         d.order_id,
         d.seller_id,
         d.raised_by,
@@ -258,6 +288,12 @@ function createDisputesRepository({ db }) {
         `
           SELECT
             d.id,
+            UNIX_TIMESTAMP(d.closed_at) AS closed_epoch,
+            UNIX_TIMESTAMP(d.resolved_at) AS resolved_epoch,
+            UNIX_TIMESTAMP(d.created_at) AS created_epoch,
+            UNIX_TIMESTAMP(d.updated_at) AS updated_epoch,
+            UNIX_TIMESTAMP(o.created_at) AS order_created_epoch,
+            UNIX_TIMESTAMP(o.updated_at) AS order_updated_epoch,
             d.order_id,
             d.seller_id,
             d.raised_by,
@@ -323,6 +359,90 @@ function createDisputesRepository({ db }) {
       }
     },
 
+    async getDisputeStats() {
+      const [rows] = await db.execute(`SELECT COUNT(*) AS total,
+        COALESCE(SUM(status = 'open'), 0) AS open,
+        COALESCE(SUM(status = 'in_review'), 0) AS inReview,
+        COALESCE(SUM(status = 'escalated'), 0) AS escalated,
+        COALESCE(SUM(status = 'resolved'), 0) AS resolved FROM disputes`);
+      return Object.fromEntries(Object.entries(rows[0]).map(([key, value]) => [key, Number(value)]));
+    },
+
+    async findDisputeEvidenceAndTimeline(disputeId) {
+      const [attachments] = await db.execute(`SELECT id, submitted_by, url, filename,
+        UNIX_TIMESTAMP(uploaded_at) AS uploaded_epoch FROM dispute_attachments
+        WHERE dispute_id = ? ORDER BY uploaded_at, id`, [disputeId]);
+      const [events] = await db.execute(`SELECT e.id, e.event_type, e.admin_id, e.actor_user_id, e.detail,
+        UNIX_TIMESTAMP(e.created_at) AS created_epoch, COALESCE(a.full_name, u.full_name) AS actor_name
+        FROM dispute_events e LEFT JOIN admins a ON a.id = e.admin_id
+        LEFT JOIN users u ON u.id = e.actor_user_id
+        WHERE e.dispute_id = ? ORDER BY e.created_at, e.id`, [disputeId]);
+      const [items] = await db.execute(`SELECT oi.id, oi.quantity, p.title AS part_name
+        FROM order_items oi INNER JOIN products p ON p.id = oi.product_id
+        INNER JOIN disputes d ON d.order_id = oi.order_id WHERE d.id = ? ORDER BY oi.id`, [disputeId]);
+      const [rulings] = await db.execute(`SELECT id, admin_id, decision, notes, partial_amount_kobo,
+        require_reverse_logistics, UNIX_TIMESTAMP(created_at) AS created_epoch
+        FROM dispute_rulings WHERE dispute_id = ?`, [disputeId]);
+      return {
+        attachments: attachments.map((row) => ({ id: Number(row.id), submittedBy: row.submitted_by,
+          url: row.url, filename: row.filename, uploadedAt: epochIso(row.uploaded_epoch) })),
+        timeline: events.map((row) => ({ id: Number(row.id), event: row.event_type,
+          actor: { id: toNumber(row.admin_id || row.actor_user_id),
+            type: row.admin_id ? 'admin' : row.actor_user_id ? 'user' : 'unknown', name: row.actor_name },
+          timestamp: epochIso(row.created_epoch), detail: jsonValue(row.detail, null) })),
+        items: items.map((row) => ({ id: Number(row.id), partName: row.part_name, quantity: Number(row.quantity) })),
+        ruling: rulings.length ? {
+          id: Number(rulings[0].id), adminId: Number(rulings[0].admin_id), decision: rulings[0].decision,
+          notes: rulings[0].notes, partialAmountKobo: toNumber(rulings[0].partial_amount_kobo),
+          requireReverseLogistics: Boolean(rulings[0].require_reverse_logistics),
+          createdAt: epochIso(rulings[0].created_epoch)
+        } : null
+      };
+    },
+
+    async withLockedDispute(disputeId, callback) {
+      const connection = await db.getConnection();
+      try {
+        await connection.beginTransaction();
+        await connection.execute('SELECT id FROM disputes WHERE id = ? FOR UPDATE', [disputeId]);
+        const dispute = await findDisputeByIdWithExecutor(connection, disputeId);
+        const result = await callback({
+          dispute,
+          executor: connection,
+          async recordAction({ adminId, event, nextStatus, detail, ruling }) {
+            // Also covers disputes inserted by legacy integrations after migration 040.
+            await connection.execute(`INSERT INTO dispute_events (dispute_id, event_type, actor_user_id, detail, created_at)
+              SELECT d.id, 'opened', CASE WHEN d.raised_by = 'buyer' THEN o.buyer_id ELSE sp.user_id END,
+                JSON_OBJECT('raisedBy', d.raised_by), d.created_at
+              FROM disputes d INNER JOIN orders o ON o.id = d.order_id
+              LEFT JOIN seller_profiles sp ON sp.id = d.seller_id
+              WHERE d.id = ? AND NOT EXISTS (SELECT 1 FROM dispute_events e WHERE e.dispute_id = d.id AND e.event_type = 'opened')`,
+            [disputeId]);
+            await connection.execute(`UPDATE disputes SET status = ?,
+              resolution_note = CASE WHEN ? = 'resolved' THEN ? ELSE resolution_note END,
+              resolved_by = CASE WHEN ? = 'resolved' THEN ? ELSE resolved_by END,
+              resolved_at = CASE WHEN ? = 'resolved' THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+              closed_at = CASE WHEN ? = 'closed' THEN CURRENT_TIMESTAMP ELSE closed_at END
+              WHERE id = ?`, [nextStatus, nextStatus, ruling ? ruling.notes : null, nextStatus, adminId,
+              nextStatus, nextStatus, disputeId]);
+            if (ruling) await connection.execute(`INSERT INTO dispute_rulings
+              (dispute_id, admin_id, decision, notes, partial_amount_kobo, require_reverse_logistics)
+              VALUES (?, ?, ?, ?, ?, ?)`, [disputeId, adminId, ruling.decision, ruling.notes,
+              ruling.partialAmountKobo === undefined ? null : ruling.partialAmountKobo, ruling.requireReverseLogistics]);
+            await connection.execute(`INSERT INTO dispute_events (dispute_id, event_type, admin_id, detail)
+              VALUES (?, ?, ?, ?)`, [disputeId, event, adminId, JSON.stringify(detail)]);
+          }
+        });
+        await connection.commit();
+        return result;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
+
     async updateDisputeDecision({
       adminId,
       disputeId,
@@ -336,7 +456,7 @@ function createDisputesRepository({ db }) {
       try {
         await connection.beginTransaction();
 
-        await connection.execute(
+        const [updated] = await connection.execute(
           `
             UPDATE disputes
             SET
@@ -347,7 +467,7 @@ function createDisputesRepository({ db }) {
               resolved_by = ?,
               resolved_at = ?,
               updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND status = 'open'
           `,
           [
             status,
@@ -359,6 +479,13 @@ function createDisputesRepository({ db }) {
             disputeId
           ]
         );
+
+        if (!updated.affectedRows) throw new AppError('Only open disputes can be reviewed.', {
+          statusCode: 409, code: ERROR_CODES.CONFLICT
+        });
+        await connection.execute(`INSERT INTO dispute_events (dispute_id, event_type, admin_id, detail)
+          VALUES (?, 'ruled', ?, ?)`, [disputeId, adminId,
+          JSON.stringify({ legacyStatus: status, notes: resolutionNote })]);
 
         const dispute = await findDisputeByIdWithExecutor(connection, disputeId);
         await connection.commit();
