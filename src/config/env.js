@@ -26,6 +26,7 @@ const envSchema = Joi.object({
   PAYSTACK_BASE_URL: Joi.string().uri().default('https://api.paystack.co'),
   APP_URL: Joi.string().uri().allow('').default(''),
   UPLOAD_DIR: Joi.string().default('./public_html/uploads'),
+  DISPUTE_WINDOW_DAYS: Joi.number().integer().min(1).max(36500).default(7),
   BASE_URL: Joi.string().uri().allow('').default(''),
   CORS_ALLOWED_ORIGINS: Joi.string().allow('').default(''),
   DOJAH_BASE_URL: Joi.string().uri().default('https://api.dojah.io'),

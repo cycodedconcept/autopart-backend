@@ -17,6 +17,17 @@ const { createProductsRepository } = require('./repositories/products.repository
 const { createBuyerAddressesRepository } = require('./repositories/buyer-addresses.repository');
 const { createCartsRepository } = require('./repositories/carts.repository');
 const { createDisputesRepository } = require('./repositories/disputes.repository');
+const { createPartyDisputesRepository } = require('./repositories/party-disputes.repository');
+const { createDisputesService } = require('./services/disputes.service');
+const { createDisputesController } = require('./controllers/disputes.controller');
+const { createDisputeEvidenceController } = require('./controllers/dispute-evidence.controller');
+const { createOrderDisputesRouter } = require('./routes/order-disputes.routes');
+const { createDisputesRouter } = require('./routes/disputes.routes');
+const { createSellerDisputesRouter } = require('./routes/seller-disputes.routes');
+const { createDisputeEvidenceRouter } = require('./routes/dispute-evidence.routes');
+const { createDisputeEvidenceAuthMiddleware } = require('./middleware/dispute-evidence-auth.middleware');
+const { createDisputeUploadMiddleware, createDisputeUploadCleanupMiddleware,
+  denyDisputeStaticFiles } = require('./middleware/dispute-upload.middleware');
 const { createDeliveryJobsRepository } = require('./repositories/delivery-jobs.repository');
 const { createLogisticsRepository } = require('./repositories/logistics.repository');
 const { createOrdersRepository } = require('./repositories/orders.repository');
@@ -167,6 +178,10 @@ function createDependencies(overrides = {}) {
     db: resolveDb()
   });
   const appEnv = overrides.env || env;
+  const partyDisputesRepository = overrides.partyDisputesRepository || createPartyDisputesRepository({ db: resolveDb() });
+  const disputesService = overrides.disputesService || createDisputesService({
+    partyDisputesRepository, sellersRepository, platformConfigRepository, env: appEnv
+  });
   const adminAnalyticsRepository = overrides.adminAnalyticsRepository || createAdminAnalyticsRepository({ db: resolveDb() });
   const adminAnalyticsService = overrides.adminAnalyticsService || createAdminAnalyticsService({ adminAnalyticsRepository });
   const adminDisputesService = overrides.adminDisputesService || createAdminDisputesService({
@@ -294,6 +309,14 @@ function createDependencies(overrides = {}) {
 
   return {
     adminController: overrides.adminController || createAdminController({ adminService, adminAnalyticsService, adminDisputesService }),
+    disputesController: overrides.disputesController || createDisputesController({ disputesService, party: 'buyer' }),
+    sellerDisputesController: overrides.sellerDisputesController || createDisputesController({ disputesService, party: 'seller' }),
+    disputeEvidenceController: overrides.disputeEvidenceController || createDisputeEvidenceController({ disputesService }),
+    disputeEvidenceAuthMiddleware: overrides.disputeEvidenceAuthMiddleware
+      || createDisputeEvidenceAuthMiddleware({ authService, adminService }),
+    uploadEvidence: createDisputeUploadMiddleware({ env: appEnv }),
+    uploadAttachments: createDisputeUploadMiddleware({ env: appEnv, fieldName: 'attachments' }),
+    uploadCleanup: createDisputeUploadCleanupMiddleware({ env: appEnv, logger: appLogger }),
     adminDashboardController: overrides.adminDashboardController
       || createAdminDashboardController({ adminDashboardService }),
     authController: overrides.authController || createAuthController({ authService }),
@@ -360,7 +383,7 @@ function createApp(overrides = {}) {
   });
 
 
-  app.use('/uploads', express.static(dependencies.env.UPLOAD_DIR, {
+  app.use('/uploads', denyDisputeStaticFiles, express.static(dependencies.env.UPLOAD_DIR, {
     maxAge: '7d',
     index: false,
     dotfiles: 'deny'
@@ -414,6 +437,11 @@ function createApp(overrides = {}) {
     authMiddleware: dependencies.authMiddleware,
     ordersController: dependencies.ordersController
   }));
+
+  app.use('/api/v1/orders', createOrderDisputesRouter(dependencies));
+  app.use('/api/v1/disputes', createDisputesRouter(dependencies));
+  app.use('/api/v1/seller/disputes', createSellerDisputesRouter(dependencies));
+  app.use('/api/v1/dispute-evidence', createDisputeEvidenceRouter(dependencies));
 
   app.use('/api/v1/payments', createPaymentsRouter({
     authMiddleware: dependencies.authMiddleware,

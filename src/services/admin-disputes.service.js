@@ -74,6 +74,9 @@ function createAdminDisputesService({ disputesRepository, auditLogRepository, pl
       await transaction.recordAction({ adminId, event: rule.event, nextStatus: rule.status, detail, ruling });
       await auditLogRepository.createAuditLog({ adminId, action: `dispute.${rule.event}`,
         targetType: 'dispute', targetId: dispute.id, detail: { orderId: dispute.orderId, ...detail } }, transaction.executor);
+      // TODO(notifications): after requestInfo commits, notify payload.requestedFrom (buyer, seller, or both).
+      // TODO(notifications): after escalate commits, notify both parties.
+      // TODO(notifications): after ruling commits, notify both parties.
       // TODO(refunds): trigger the approved refund only after a separate Paystack integration is authorized.
       // TODO(reverse-logistics): consume the recorded flag in a separately authorized workflow; do not create a job here.
     });
