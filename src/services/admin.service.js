@@ -2351,6 +2351,27 @@ function createAdminService({
       };
     },
 
+    async createDeliveryZone({ name, state, city }) {
+      try {
+        const zone = await logisticsRepository.createZone({
+          name: name.trim(),
+          state: state.trim(),
+          city: city.trim()
+        });
+
+        return sanitizeDeliveryZone(zone);
+      } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+          throw new AppError('A delivery zone with this name, state and city already exists.', {
+            statusCode: 409,
+            code: ERROR_CODES.CONFLICT
+          });
+        }
+
+        throw error;
+      }
+    },
+
     async listLogisticsCompanies(payload) {
       const pagination = normalizePagination(payload.query, {
         defaultLimit: 10,

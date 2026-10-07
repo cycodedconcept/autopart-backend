@@ -389,6 +389,28 @@ function createInMemoryLogisticsRepository({ store }) {
       return buildRider(rider);
     },
 
+    async createZone({ name, state, city }) {
+      const duplicate = store.deliveryZones.some((zone) => (
+        zone.name.toLowerCase() === name.toLowerCase()
+        && zone.state.toLowerCase() === state.toLowerCase()
+        && zone.city.toLowerCase() === city.toLowerCase()
+      ));
+
+      if (duplicate) {
+        const error = new Error('Duplicate delivery zone');
+        error.code = 'ER_DUP_ENTRY';
+        throw error;
+      }
+
+      const now = new Date().toISOString();
+      const zone = {
+        id: store.counters.deliveryZoneId++, name, state, city,
+        createdAt: now, updatedAt: now
+      };
+      store.deliveryZones.push(zone);
+      return buildZone(zone);
+    },
+
     async findZoneById(zoneId) {
       const zone = store.deliveryZones.find((entry) => entry.id === Number(zoneId)) || null;
 

@@ -79,6 +79,16 @@ const getLogisticsMeSchema = Joi.object({
   query: Joi.object({}).default({})
 });
 
+const createAdminDeliveryZoneSchema = Joi.object({
+  body: Joi.object({
+    name: Joi.string().trim().max(160).required(),
+    state: Joi.string().trim().max(120).required(),
+    city: Joi.string().trim().max(120).required()
+  }).required(),
+  params: Joi.object({}).default({}),
+  query: Joi.object({}).default({})
+});
+
 const listDeliveryZonesSchema = Joi.object({
   body: Joi.object({}).default({}),
   params: Joi.object({}).default({}),
@@ -278,6 +288,7 @@ const updateDeliveryJobStatusSchema = Joi.object({
 
 module.exports = {
   assignAdminDeliveryJobSchema,
+  createAdminDeliveryZoneSchema,
   createLogisticsPayoutSchema,
   createRiderSchema,
   getDeliveryJobSchema,

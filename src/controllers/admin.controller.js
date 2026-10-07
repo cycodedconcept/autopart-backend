@@ -488,6 +488,20 @@ function createAdminController({ adminService, adminAnalyticsService, adminDispu
       });
     },
 
+    async createDeliveryZone(req, res) {
+      const result = await adminService.createDeliveryZone({
+        name: req.body.name,
+        state: req.body.state,
+        city: req.body.city
+      });
+
+      return sendSuccess(res, {
+        statusCode: 201,
+        data: result,
+        message: 'Delivery zone created successfully.'
+      });
+    },
+
     async listLogisticsCompanies(req, res) {
       const result = await adminService.listLogisticsCompanies({
         query: req.query

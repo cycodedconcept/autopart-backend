@@ -62,6 +62,7 @@ const {
 } = require('../validators/admin.validator');
 const {
   assignAdminDeliveryJobSchema,
+  createAdminDeliveryZoneSchema,
   listAdminLogisticsCompaniesSchema,
   listAdminDeliveryJobsSchema,
   listAdminLogisticsRidersSchema,
@@ -368,6 +369,13 @@ function createAdminRouter({ adminAuthMiddleware, adminController, adminDashboar
     authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_USERS),
     validateRequest(updateUserStatusSchema),
     asyncHandler(adminController.updateUserStatus)
+  );
+
+  router.post(
+    '/logistics/zones',
+    authorizePermissions(ADMIN_PERMISSION_KEYS.MANAGE_LOGISTICS),
+    validateRequest(createAdminDeliveryZoneSchema),
+    asyncHandler(adminController.createDeliveryZone)
   );
 
   router.get(

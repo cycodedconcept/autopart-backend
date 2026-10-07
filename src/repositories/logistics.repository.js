@@ -576,6 +576,15 @@ function createLogisticsRepository({ db }) {
       return this.findRiderById(riderId);
     },
 
+    async createZone({ name, state, city }) {
+      const [result] = await db.execute(
+        'INSERT INTO delivery_zones (name, state, city) VALUES (?, ?, ?)',
+        [name, state, city]
+      );
+
+      return this.findZoneById(result.insertId);
+    },
+
     async findZoneById(zoneId) {
       const [rows] = await db.execute(
         `
