@@ -93,6 +93,18 @@
       "value": "1000",
       "type": "string",
       "description": "Positive integer, at most the selected dispute order value; 1000 kobo = NGN 10."
+    },
+    {
+      "key": "partnerApiKey",
+      "value": "",
+      "type": "string",
+      "description": "Set locally. Secret API key, shown once on creation."
+    },
+    {
+      "key": "apiKeyId",
+      "value": "",
+      "type": "string",
+      "description": "Key ID to revoke; set deliberately."
     }
   ],
   "item": [
@@ -2016,6 +2028,252 @@
                   "});"
                 ]
               }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Partner catalogue",
+      "description": "catalog:read required; shared 120 requests/minute/key/process. Prices are integer kobo. City/state are null pending structured data.",
+      "item": [
+        {
+          "name": "List products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{partnerApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/partner/products?page=1&limit=10&sort=newest",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "Example success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "x-api-key",
+                    "value": "{{partnerApiKey}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/partner/products?page=1&limit=10&sort=newest",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        }\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "List sellers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{partnerApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/partner/sellers?page=1&limit=10",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "Example success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "x-api-key",
+                    "value": "{{partnerApiKey}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/partner/sellers?page=1&limit=10",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"sellers\": [\n      {\n        \"id\": 12,\n        \"businessName\": \"Martins Tech\",\n        \"city\": null,\n        \"state\": null,\n        \"verificationStatus\": \"verified\",\n        \"rating\": 4.5,\n        \"createdAt\": \"2026-01-01T10:00:00.000Z\",\n        \"productCount\": 1\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Seller products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{partnerApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/partner/sellers/{{sellerId}}/products?page=1&limit=10",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "Example success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "x-api-key",
+                    "value": "{{partnerApiKey}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/partner/sellers/{{sellerId}}/products?page=1&limit=10",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        }\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Partner API-key management",
+      "description": "Super-admin JWT required. Copy the key once from the creation response and keep it secret. No automatic storage.",
+      "item": [
+        {
+          "name": "Create API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/api-keys",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Martins Tech\",\n  \"scopes\": [\n    \"catalog:read\"\n  ],\n  \"expiresAt\": null\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "Example success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/api-keys",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Martins Tech\",\n  \"scopes\": [\n    \"catalog:read\"\n  ],\n  \"expiresAt\": null\n}"
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"name\": \"Martins Tech\",\n    \"keyPrefix\": \"ap_live_a\",\n    \"scopes\": [\n      \"catalog:read\"\n    ],\n    \"lastUsedAt\": null,\n    \"expiresAt\": null,\n    \"revokedAt\": null,\n    \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n    \"key\": \"<shown once: ap_live_ plus 64 random hex characters>\"\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "List API keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/api-keys"
+          },
+          "response": [
+            {
+              "name": "Example success",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/admin/api-keys"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"apiKeys\": [\n      {\n        \"id\": 1,\n        \"name\": \"Martins Tech\",\n        \"keyPrefix\": \"ap_live_a\",\n        \"scopes\": [\n          \"catalog:read\"\n        ],\n        \"lastUsedAt\": null,\n        \"expiresAt\": null,\n        \"revokedAt\": null,\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\"\n      }\n    ]\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Revoke API key",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/admin/api-keys/{{apiKeyId}}/revoke"
+          },
+          "response": [
+            {
+              "name": "Example success",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [],
+                "url": "{{baseUrl}}/admin/api-keys/{{apiKeyId}}/revoke"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"name\": \"Martins Tech\",\n    \"keyPrefix\": \"ap_live_a\",\n    \"scopes\": [\n      \"catalog:read\"\n    ],\n    \"lastUsedAt\": null,\n    \"expiresAt\": null,\n    \"revokedAt\": \"2026-10-19T11:00:00.000Z\",\n    \"createdAt\": \"2026-10-19T10:00:00.000Z\"\n  },\n  \"message\": \"Request completed successfully.\"\n}"
             }
           ]
         }

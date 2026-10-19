@@ -1,3 +1,12 @@
+const { createApiKeysRepository } = require('./repositories/api-keys.repository');
+const { createApiKeysService } = require('./services/api-keys.service');
+const { createApiKeysController } = require('./controllers/api-keys.controller');
+const { createRequireApiKey } = require('./middleware/api-key.middleware');
+const { createApiKeysRouter } = require('./routes/api-keys.routes');
+const { createPartnerRepository } = require('./repositories/partner.repository');
+const { createPartnerService } = require('./services/partner.service');
+const { createPartnerController } = require('./controllers/partner.controller');
+const { createPartnerRouter } = require('./routes/partner.routes');
 const express = require('express');
 const morgan = require('morgan');
 const { getPool } = require('./config/database');
@@ -113,6 +122,10 @@ function createDependencies(overrides = {}) {
 
     return dbInstance;
   };
+  const apiKeysRepository = overrides.apiKeysRepository || createApiKeysRepository({ db: resolveDb() });
+  const apiKeysService = overrides.apiKeysService || createApiKeysService({ apiKeysRepository });
+  const partnerRepository = overrides.partnerRepository || createPartnerRepository({ db: resolveDb() });
+  const partnerService = overrides.partnerService || createPartnerService({ partnerRepository });
   const usersRepository = overrides.usersRepository || createUsersRepository({
     db: resolveDb()
   });
@@ -308,6 +321,10 @@ function createDependencies(overrides = {}) {
   });
 
   return {
+    apiKeysService,
+    apiKeysController: createApiKeysController({ apiKeysService }),
+    requireApiKey: createRequireApiKey({ apiKeysService }),
+    partnerController: createPartnerController({ partnerService }),
     adminController: overrides.adminController || createAdminController({ adminService, adminAnalyticsService, adminDisputesService }),
     disputesController: overrides.disputesController || createDisputesController({ disputesService, party: 'buyer' }),
     sellerDisputesController: overrides.sellerDisputesController || createDisputesController({ disputesService, party: 'seller' }),
@@ -393,6 +410,9 @@ function createApp(overrides = {}) {
     authController: dependencies.authController,
     authMiddleware: dependencies.authMiddleware
   }));
+
+  app.use('/api/v1/partner', createPartnerRouter(dependencies));
+  app.use('/api/v1/admin/api-keys', createApiKeysRouter(dependencies));
 
   app.use('/api/v1/admin', createAdminRouter({
     adminAuthMiddleware: dependencies.adminAuthMiddleware,

@@ -725,3 +725,90 @@ GET /api/v1/orders/1/receipt?format=html
 - Run `npm run migrate` to apply SQL files in `src/db/migrations`.
 - Run `npm run seed` to load the sample catalogue data, delivery zones, and the dev admin user for local review flows.
 - The current migration set creates the auth, catalogue, cart, buyer address, order, payment, order-status-history, seller onboarding, seller payout, admin RBAC, `platform_config`, `audit_logs`, `disputes`, `logistics_companies`, `riders`, `delivery_zones`, delivery-job lifecycle data, and payout-settlement fields needed through Logistics Milestone `L-E`.
+
+## Partner catalogue API
+
+Partners authenticate with `x-api-key`, independently of buyer/seller JWTs. Keep keys on your server. Keys have the format `ap_live_` followed by 64 random hexadecimal characters. Only SHA-256 hashes are stored; the full key is returned once on creation. The eight-character display prefix is not unique and is not a credential.
+
+All three routes require `catalog:read` and share a limit of **120 requests per minute per API-key ID**. The limiter uses process-local memory: multiple PM2 workers each maintain their own counter, and restarts reset counters.
+
+| Method | Endpoint | Query parameters |
+| --- | --- | --- |
+| GET | `/api/v1/partner/products` | `page`, `limit`, `search`, `category`, `sellerId`, `minPrice`, `maxPrice`, `sort` |
+| GET | `/api/v1/partner/sellers` | `page`, `limit` |
+| GET | `/api/v1/partner/sellers/:id/products` | Product filters; the path ID always determines the seller |
+
+Pagination defaults to page 1 and limit 10, with a maximum limit of 100. `category` accepts an ID, slug or name. `search` matches product titles, descriptions and part numbers. `minPrice` and `maxPrice` are integers in **kobo**. `sort=newest` is the default; `sort=price` sorts ascending, with stable ID tie-breaking.
+
+Only `active` products from `verified` sellers whose user accounts are `active` and have role `seller` are included. There is no separate product approval field. Seller product counts include only active products. An unavailable or ineligible seller returns 404 on the seller-products route. City and state are currently `null` because the schema has no structured seller city/state columns. Responses never include seller addresses, contact details, account identifiers, bank information, KYC data, passwords or verification-provider payloads.
+
+```sh
+curl 'https://api.example.com/api/v1/partner/products?page=1&limit=10&search=brake&sort=price' \
+  -H "x-api-key: $PARTNER_API_KEY"
+curl 'https://api.example.com/api/v1/partner/sellers' -H "x-api-key: $PARTNER_API_KEY"
+curl 'https://api.example.com/api/v1/partner/sellers/12/products' -H "x-api-key: $PARTNER_API_KEY"
+```
+
+Example products response (seller-products uses the same shape):
+
+```json
+{
+  "success": true,
+  "data": {
+    "products": [{
+      "id": 42, "title": "Brake pad", "description": "Front brake pad set",
+      "partNumber": "BP-42", "priceKobo": 250000, "stockQty": 8,
+      "location": "Lagos", "condition": "new", "createdAt": "2026-10-19T10:00:00.000Z",
+      "category": {"id": 3, "name": "Brakes", "slug": "brakes"},
+      "seller": {"id": 12, "businessName": "Martins Tech", "city": null, "state": null,
+        "verificationStatus": "verified", "rating": 4.5, "createdAt": "2026-01-01T10:00:00.000Z"}
+    }],
+    "pagination": {"page": 1, "limit": 10, "total": 1, "totalPages": 1}
+  },
+  "message": "Request completed successfully."
+}
+```
+
+Example sellers response:
+
+```json
+{"success":true,"data":{"sellers":[{"id":12,"businessName":"Martins Tech","city":null,"state":null,"verificationStatus":"verified","rating":4.5,"createdAt":"2026-01-01T10:00:00.000Z","productCount":1}],"pagination":{"page":1,"limit":10,"total":1,"totalPages":1}},"message":"Request completed successfully."}
+```
+
+Missing keys return 401 `AUTH_REQUIRED`; malformed, unknown, expired or revoked keys return 401 `UNAUTHORIZED`; insufficient scopes return 403 `FORBIDDEN`; invalid inputs return 422 `VALIDATION_ERROR`. Rate limits return 429 `RATE_LIMIT_EXCEEDED`. Errors follow the existing envelope:
+
+```json
+{"success":false,"error":{"code":"UNAUTHORIZED","message":"Invalid or inactive API key."}}
+```
+
+### Key management
+
+Use an active admin JWT with the `super_admin` role for all management routes:
+
+- `POST /api/v1/admin/api-keys`: body `{"name":"Martins Tech","scopes":["catalog:read"],"expiresAt":null}`. Scopes default to `["catalog:read"]`; expiration defaults to null or accepts a future ISO timestamp. Returns 201 with metadata and a one-time `data.key`.
+- `GET /api/v1/admin/api-keys`: returns `data.apiKeys` with `id`, `name`, `keyPrefix`, `scopes`, `lastUsedAt`, `expiresAt`, `revokedAt`, `createdAt`. Never returns hashes or full keys.
+- `PATCH /api/v1/admin/api-keys/:id/revoke`: revokes a key immediately; repeated revocations preserve the original timestamp. Unknown IDs return 404.
+
+```sh
+curl -X POST 'https://api.example.com/api/v1/admin/api-keys' \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Martins Tech","scopes":["catalog:read"]}'
+npm run apikey:create -- --name "Martins Tech"
+```
+
+The CLI uses the configured database and prints the generated key once. Treat terminal output as a secret; do not redirect it to application logs. The CLI is a trusted operator tool and requires host/database access.
+
+The `Partner catalogue` and `Partner API-key management` folders in `postman/admin-platform.postman_collection.json` contain these requests and examples. Set `partnerApiKey` locally; no script automatically saves the returned key.
+
+### Partner deployment
+
+Deploy the code, configure the existing database environment, then apply `042_create_api_keys_table.sql` through the migration runner **before** restarting the API:
+
+```sh
+export PATH=/opt/cpanel/ea-nodejs20/bin:$PATH
+npm ci
+npm run migrate
+pm2 restart autopart-api --update-env
+```
+
+Ensure Apache forwards `x-api-key` and does not log that header. Create the partner key after migration, deliver it securely, and verify the partner endpoints. No new dependencies are required.
