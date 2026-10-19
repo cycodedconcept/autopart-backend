@@ -8,6 +8,7 @@ const { createPartnerService } = require('./services/partner.service');
 const { createPartnerController } = require('./controllers/partner.controller');
 const { createPartnerRouter } = require('./routes/partner.routes');
 const express = require('express');
+const { requirePublicImageExtension } = require('./middleware/public-uploads.middleware');
 const morgan = require('morgan');
 const { getPool } = require('./config/database');
 const logger = require('./utils/logger');
@@ -125,7 +126,7 @@ function createDependencies(overrides = {}) {
   const apiKeysRepository = overrides.apiKeysRepository || createApiKeysRepository({ db: resolveDb() });
   const apiKeysService = overrides.apiKeysService || createApiKeysService({ apiKeysRepository });
   const partnerRepository = overrides.partnerRepository || createPartnerRepository({ db: resolveDb() });
-  const partnerService = overrides.partnerService || createPartnerService({ partnerRepository });
+  const partnerService = overrides.partnerService || createPartnerService({ partnerRepository, env: overrides.env || env });
   const usersRepository = overrides.usersRepository || createUsersRepository({
     db: resolveDb()
   });
@@ -400,10 +401,12 @@ function createApp(overrides = {}) {
   });
 
 
-  app.use('/uploads', denyDisputeStaticFiles, express.static(dependencies.env.UPLOAD_DIR, {
+  app.use('/uploads', denyDisputeStaticFiles, requirePublicImageExtension, express.static(dependencies.env.UPLOAD_DIR, {
     maxAge: '7d',
     index: false,
-    dotfiles: 'deny'
+    dotfiles: 'deny',
+    redirect: false,
+    setHeaders(res) { res.setHeader('X-Content-Type-Options', 'nosniff'); }
   }));
 
   app.use('/api/v1/auth', createAuthRouter({

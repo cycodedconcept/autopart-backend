@@ -42,6 +42,13 @@ function createPartnerRepository({ db }) {
         category: { id: row.category_id, name: row.category_name, slug: row.category_slug }, seller: mapSeller(row)
       })) };
     },
+    async findImagesByProductIds(productIds) {
+      if (!productIds.length) return [];
+      const placeholders = productIds.map(() => '?').join(', ');
+      const [rows] = await db.execute(`SELECT product_id, url, position FROM product_images
+        WHERE product_id IN (${placeholders}) ORDER BY product_id ASC, position ASC, id ASC`, productIds);
+      return rows.map((row) => ({ productId: row.product_id, url: row.url, position: Number(row.position) }));
+    },
     async listSellers(filters) {
       const { limit, offset } = sanitizeLimitOffset(filters, { maxLimit: 100 });
       const from = `FROM seller_profiles sp JOIN users u ON u.id = sp.user_id WHERE ${eligibility}`;

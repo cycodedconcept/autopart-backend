@@ -2,6 +2,7 @@ require('../setup/env');
 const assert = require('node:assert/strict');
 const mysql = require('mysql2/promise');
 const request = require('supertest');
+const env = require('../../src/config/env');
 const { createApp } = require('../../src/app');
 const { createApiKeysRepository } = require('../../src/repositories/api-keys.repository');
 const { createApiKeysService } = require('../../src/services/api-keys.service');
@@ -13,9 +14,10 @@ describe('Partner catalogue against disposable MySQL', function () {
     db = await mysql.createConnection({ host: '127.0.0.1', port: 33316, user: 'root', database: 'autoparts_admin_test' });
     fixtures = createPartnerFixturesRepository(db);
     await fixtures.seed();
+    await fixtures.seedImages();
     service = createApiKeysService({ apiKeysRepository: createApiKeysRepository({ db }) });
     key = (await service.create({ name: 'MySQL partner' })).key;
-    app = createApp({ db });
+    app = createApp({ db, env: { ...env, APP_URL: 'https://autoparts.example.test' } });
   });
   after(async () => { if (fixtures) await fixtures.rollback(); if (db) await db.end(); });
   function get(path) { return request(app).get(`/api/v1/partner${path}`).set('x-api-key', key); }
@@ -51,6 +53,32 @@ describe('Partner catalogue against disposable MySQL', function () {
     await get('/sellers/8002/products').expect(404);
     await get('/sellers/8003/products').expect(404);
   });
+  for (const path of ['/products?sellerId=8001', '/sellers/8001/products?']) {
+    it(`loads the whole page's images with one query on ${path}`, async () => {
+      const execute = db.execute;
+      const imageQueries = [];
+      db.execute = function (sql, params) {
+        if (/FROM product_images/i.test(sql)) imageQueries.push({ sql, params });
+        return execute.call(this, sql, params);
+      };
+      let response;
+      try { response = await get(`${path}&sort=price&limit=3`).expect(200); }
+      finally { db.execute = execute; }
+      assert.equal(imageQueries.length, 1);
+      assert.match(imageQueries[0].sql, /WHERE product_id IN/);
+      assert.deepEqual(imageQueries[0].params, [8000, 8001, 8002]);
+      const products = response.body.data.products;
+      assert.deepEqual(products[0].images, [
+        { url: 'https://autoparts.example.test/uploads/products/first.jpg', isPrimary: true, position: 1 },
+        { url: 'https://autoparts.example.test/uploads/products/second.png', isPrimary: false, position: 3 }
+      ]);
+      assert.equal(products[0].thumbnailUrl, products[0].images[0].url);
+      assert.equal(products[1].images.length, 1);
+      assert.equal(products[1].images[0].isPrimary, true);
+      assert.deepEqual(products[2].images, []);
+      assert.equal(products[2].thumbnailUrl, null);
+    });
+  }
   it('persists usage and rejects revoked keys', async () => {
     await get('/products').expect(200);
     const records = await service.list();

@@ -8,3 +8,6 @@ uploads/
 inventory.csv
 npm-debug.log*
 .pm2/postman/*.postman_environment.json
+
+/public_html/uploads/
+/uploads-test/

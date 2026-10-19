@@ -1,6 +1,7 @@
 require('../setup/mocha');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
+const env = require('../../src/config/env');
 const request = require('supertest');
 const { createApp } = require('../../src/app');
 const { createApiKeysService } = require('../../src/services/api-keys.service');
@@ -16,13 +17,14 @@ function keysRepository() {
   };
 }
 describe('Partner API and key management', () => {
-  let app, repo, key, calls;
+  let app, repo, key, calls, imageRows, imageCalls;
   beforeEach(async () => {
-    repo = keysRepository(); calls = [];
+    repo = keysRepository(); calls = []; imageRows = []; imageCalls = [];
     key = (await createApiKeysService({ apiKeysRepository: repo }).create({ name: 'Partner' })).key;
-    app = createApp({ apiKeysRepository: repo,
+    app = createApp({ apiKeysRepository: repo, env: { ...env, APP_URL: 'https://autoparts.example.test/', BASE_URL: 'https://wrong.example.test' },
       adminAuthMiddleware(req, res, next) { req.admin = { roles: req.get('x-test-role') === 'super_admin' ? ['super_admin'] : [] }; next(); },
       partnerRepository: {
+        async findImagesByProductIds(ids) { imageCalls.push(ids); return imageRows; },
         async listProducts(query) { calls.push(query); return { products: [{ id: 1, seller: { id: 2, businessName: 'Parts', city: null, state: null, verificationStatus: 'verified', rating: 4, createdAt: '2026-01-01' } }], total: 1 }; },
         async listSellers(query) { calls.push(query); return { sellers: [{ id: 2, businessName: 'Parts', productCount: 1 }], total: 1 }; },
         async sellerExists(id) { return id === 2; }
@@ -35,6 +37,32 @@ describe('Partner API and key management', () => {
       const response = await request(app).get(`/api/v1/partner${path}?page=2&limit=100`).set('x-api-key', key).expect(200);
       assert.deepEqual(response.body.data.pagination, { page: 2, limit: 100, total: 1, totalPages: 1 });
       assert.equal(calls[0].offset, 100);
+    });
+  }
+  for (const path of ['/products', '/sellers/2/products']) {
+    it(`returns ordered, absolute public images without storage fields on ${path}`, async () => {
+      imageRows = [
+        { productId: 1, url: '/uploads/products/second.png', position: 4, id: 90, diskPath: '/private/second.png' },
+        { productId: 1, url: '/uploads/products/first.jpg', position: 2, id: 91 },
+        { productId: 1, url: '/private/server/secret.jpg', position: 1 },
+        { productId: 1, url: '/uploads/products/../secret.jpg', position: 0 },
+        { productId: 1, url: 'https://remote.test/secret.jpg?signature=secret', position: 0 }
+      ];
+      const response = await request(app).get(`/api/v1/partner${path}`).set('x-api-key', key).expect(200);
+      const product = response.body.data.products[0];
+      assert.deepEqual(product.images, [
+        { url: 'https://autoparts.example.test/uploads/products/first.jpg', isPrimary: true, position: 2 },
+        { url: 'https://autoparts.example.test/uploads/products/second.png', isPrimary: false, position: 4 }
+      ]);
+      assert.equal(product.thumbnailUrl, product.images[0].url);
+      assert.deepEqual(imageCalls, [[1]]);
+      assert.ok(!JSON.stringify(response.body).includes('/private/'));
+      assert.ok(!JSON.stringify(response.body).includes('signature'));
+    });
+    it(`returns an empty image array and null thumbnail on ${path}`, async () => {
+      const response = await request(app).get(`/api/v1/partner${path}`).set('x-api-key', key).expect(200);
+      assert.deepEqual(response.body.data.products[0].images, []);
+      assert.equal(response.body.data.products[0].thumbnailUrl, null);
     });
   }
   it('validates filters and pins seller route to its path id', async () => {

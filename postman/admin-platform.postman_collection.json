@@ -2051,7 +2051,8 @@
             "url": "{{baseUrl}}/partner/products?page=1&limit=10&sort=newest",
             "auth": {
               "type": "noauth"
-            }
+            },
+            "description": "Product images use APP_URL and local /uploads/products paths, ordered by position. First image is primary. No images: [] and thumbnailUrl: null. Images load once per page."
           },
           "response": [
             {
@@ -2078,7 +2079,33 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        }\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        },\n        \"images\": [\n          {\n            \"url\": \"https://autoparts.zubitechnologies.com/uploads/products/brake-front.jpg\",\n            \"isPrimary\": true,\n            \"position\": 1\n          },\n          {\n            \"url\": \"https://autoparts.zubitechnologies.com/uploads/products/brake-back.jpg\",\n            \"isPrimary\": false,\n            \"position\": 2\n          }\n        ],\n        \"thumbnailUrl\": \"https://autoparts.zubitechnologies.com/uploads/products/brake-front.jpg\"\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            },
+            {
+              "name": "Product without images",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "x-api-key",
+                    "value": "{{partnerApiKey}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/partner/products?page=1&limit=10&sort=newest",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        },\n        \"images\": [],\n        \"thumbnailUrl\": null\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
             }
           ]
         },
@@ -2096,7 +2123,8 @@
             "url": "{{baseUrl}}/partner/sellers?page=1&limit=10",
             "auth": {
               "type": "noauth"
-            }
+            },
+            "description": "Active verified sellers."
           },
           "response": [
             {
@@ -2141,7 +2169,8 @@
             "url": "{{baseUrl}}/partner/sellers/{{sellerId}}/products?page=1&limit=10",
             "auth": {
               "type": "noauth"
-            }
+            },
+            "description": "Product images use APP_URL and local /uploads/products paths, ordered by position. First image is primary. No images: [] and thumbnailUrl: null. Images load once per page."
           },
           "response": [
             {
@@ -2168,7 +2197,33 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        }\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        },\n        \"images\": [\n          {\n            \"url\": \"https://autoparts.zubitechnologies.com/uploads/products/brake-front.jpg\",\n            \"isPrimary\": true,\n            \"position\": 1\n          },\n          {\n            \"url\": \"https://autoparts.zubitechnologies.com/uploads/products/brake-back.jpg\",\n            \"isPrimary\": false,\n            \"position\": 2\n          }\n        ],\n        \"thumbnailUrl\": \"https://autoparts.zubitechnologies.com/uploads/products/brake-front.jpg\"\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
+            },
+            {
+              "name": "Product without images",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "x-api-key",
+                    "value": "{{partnerApiKey}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/partner/sellers/{{sellerId}}/products?page=1&limit=10",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"products\": [\n      {\n        \"id\": 42,\n        \"title\": \"Brake pad\",\n        \"description\": \"Front brake pad set\",\n        \"partNumber\": \"BP-42\",\n        \"priceKobo\": 250000,\n        \"stockQty\": 8,\n        \"location\": \"Lagos\",\n        \"condition\": \"new\",\n        \"createdAt\": \"2026-10-19T10:00:00.000Z\",\n        \"category\": {\n          \"id\": 3,\n          \"name\": \"Brakes\",\n          \"slug\": \"brakes\"\n        },\n        \"seller\": {\n          \"id\": 12,\n          \"businessName\": \"Martins Tech\",\n          \"city\": null,\n          \"state\": null,\n          \"verificationStatus\": \"verified\",\n          \"rating\": 4.5,\n          \"createdAt\": \"2026-01-01T10:00:00.000Z\"\n        },\n        \"images\": [],\n        \"thumbnailUrl\": null\n      }\n    ],\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 10,\n      \"total\": 1,\n      \"totalPages\": 1\n    }\n  },\n  \"message\": \"Request completed successfully.\"\n}"
             }
           ]
         }

@@ -122,7 +122,7 @@ Paystack deployment notes:
 - Configure the Paystack dashboard webhook URL separately in both test mode and live mode as `https://<railway-domain>/webhooks/paystack`.
 - `localhost` cannot receive Paystack webhooks directly; use the deployed Railway URL or a tunnel such as ngrok during local testing.
 - `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is mainly useful when switching between provider environments or test doubles.
-- `APP_URL` should point at the buyer-facing application origin used for Paystack redirect UX, for example `https://app.example.com`.
+- `APP_URL` is used for Paystack redirect UX and absolute partner product image URLs. Set it to the public origin that serves `/uploads`, for example `https://autoparts.zubitechnologies.com`. If this is a separate frontend origin, proxy `/uploads` to the API upload directory.
 - Railway deployments already set `app.set('trust proxy', 1)` in the Express app for proxy-aware request metadata.
 
 ## Commands
@@ -749,6 +749,14 @@ curl 'https://api.example.com/api/v1/partner/sellers' -H "x-api-key: $PARTNER_AP
 curl 'https://api.example.com/api/v1/partner/sellers/12/products' -H "x-api-key: $PARTNER_API_KEY"
 ```
 
+Partner product responses include `images: [{url, isPrimary, position}]` ordered by stored position, and `thumbnailUrl` containing the first image URL. The first eligible image is primary; there is no primary-image database flag. Products without eligible images return `images: []` and `thumbnailUrl: null`. Images for all products on a page are loaded in one additional query; empty pages perform no image query.
+
+URLs use the **APP_URL origin**, never `BASE_URL` or a request Host header. Set `APP_URL=https://autoparts.zubitechnologies.com` before deployment. If it is missing or invalid and a product has a local image, the endpoint returns a configuration error rather than an unusable relative URL. Only stored `/uploads/products/<image filename>` paths are exposed; legacy remote URLs, disk paths and invalid paths are omitted. No schema migration is needed.
+
+Multer saves files under `UPLOAD_DIR/products` and stores their public relative path in `product_images.url`. Express already mounts `UPLOAD_DIR` at `/uploads`; it now permits only jpg, jpeg, png, webp and gif extensions, denies dotfiles and directory access, and sends `Cache-Control: public, max-age=604800` plus `X-Content-Type-Options: nosniff` on served images. Dispute evidence remains blocked from static access. If Apache serves uploads directly, configure the same restrictions and headers there.
+
+`uploads/`, `public_html/uploads/` and `uploads-test/` are ignored by Git. Keep uploads persistent across releases and exclude them from deployment cleanup or synchronization deletion; `.gitignore` alone cannot prevent deployment tools from deleting files.
+
 Example products response (seller-products uses the same shape):
 
 ```json
@@ -758,6 +766,11 @@ Example products response (seller-products uses the same shape):
     "products": [{
       "id": 42, "title": "Brake pad", "description": "Front brake pad set",
       "partNumber": "BP-42", "priceKobo": 250000, "stockQty": 8,
+      "images": [
+        {"url": "https://autoparts.zubitechnologies.com/uploads/products/brake-front.jpg", "isPrimary": true, "position": 1},
+        {"url": "https://autoparts.zubitechnologies.com/uploads/products/brake-back.jpg", "isPrimary": false, "position": 2}
+      ],
+      "thumbnailUrl": "https://autoparts.zubitechnologies.com/uploads/products/brake-front.jpg",
       "location": "Lagos", "condition": "new", "createdAt": "2026-10-19T10:00:00.000Z",
       "category": {"id": 3, "name": "Brakes", "slug": "brakes"},
       "seller": {"id": 12, "businessName": "Martins Tech", "city": null, "state": null,

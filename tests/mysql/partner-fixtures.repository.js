@@ -16,6 +16,12 @@ function createPartnerFixturesRepository(db) {
         [8000 + i, i === 103 ? 8002 : i === 104 ? 8003 : 8001, `Partner Brake ${i}`, `PARTNER-${i}`, 100 + i, i === 102 ? 'inactive' : 'active']);
       }
     },
+    async seedImages() {
+      await db.execute(`INSERT INTO product_images (product_id, url, position) VALUES
+        (8000, '/uploads/products/second.png', 3),
+        (8000, '/uploads/products/first.jpg', 1),
+        (8001, '/uploads/products/another.webp', 2)`);
+    },
     async rollback() { await db.rollback(); }
   };
 }
